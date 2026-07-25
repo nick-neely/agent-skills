@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+cd "$repo"
+
+status=0
+count=0
+
+while IFS= read -r -d '' skill; do
+  count=$((count + 1))
+  if [[ "$(basename "$(dirname "$skill")")" == "skills" ]]; then
+    printf 'SKILL.md must be nested under skills/<skill-name>: %s\n' "$skill" >&2
+    status=1
+  fi
+
+  first_line=$(sed -n '1p' "$skill")
+  if [[ "$first_line" != "---" ]]; then
+    printf 'Missing YAML frontmatter: %s\n' "$skill" >&2
+    status=1
+  fi
+
+  frontmatter=$(awk 'NR == 1 { next } /^---$/ { exit } { print }' "$skill")
+  if ! rg -q '^name:[[:space:]]+[^[:space:]]' <<<"$frontmatter"; then
+    printf 'Missing frontmatter name: %s\n' "$skill" >&2
+    status=1
+  fi
+
+  if ! rg -q '^description:[[:space:]]+.+$' <<<"$frontmatter"; then
+    printf 'Missing frontmatter description: %s\n' "$skill" >&2
+    status=1
+  fi
+done < <(find skills -mindepth 2 -maxdepth 2 -name SKILL.md -print0 2>/dev/null)
+
+if rg -n --hidden \
+  '(/home/[^/[:space:]]+|/Users/[^/[:space:]]+|[A-Za-z]:\\Users\\[^\\[:space:]]+)' \
+  skills 2>/dev/null; then
+  printf 'Machine-specific absolute path detected.\n' >&2
+  status=1
+fi
+
+secret_pattern='(BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY|AKIA[0-9A-Z]{16}|github_pat_[A-Za-z0-9_]{20,}|gh[opsu]_[A-Za-z0-9]{30,}|sk_live_[A-Za-z0-9]{16,}|xox[baprs]-[A-Za-z0-9-]{16,})'
+if rg -n --hidden "$secret_pattern" skills 2>/dev/null; then
+  printf 'Potential secret material detected.\n' >&2
+  status=1
+fi
+
+if [[ $count -eq 0 ]]; then
+  printf 'No skills are present yet; public scaffold boundaries passed.\n'
+else
+  printf 'Validated %d skill(s).\n' "$count"
+fi
+
+exit "$status"
