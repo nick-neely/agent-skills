@@ -40,7 +40,8 @@ if rg -n --hidden \
 fi
 
 secret_pattern='(BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY|AKIA[0-9A-Z]{16}|github_pat_[A-Za-z0-9_]{20,}|gh[opsu]_[A-Za-z0-9]{30,}|sk_live_[A-Za-z0-9]{16,}|xox[baprs]-[A-Za-z0-9-]{16,})'
-if rg -n --hidden "$secret_pattern" skills 2>/dev/null; then
+if rg -n --hidden -g '!.git/**' -g '!scripts/validate' \
+  "$secret_pattern" . 2>/dev/null; then
   printf 'Potential secret material detected.\n' >&2
   status=1
 fi
