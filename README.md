@@ -39,6 +39,16 @@ skill directory.
 ./scripts/validate
 ```
 
-The initial scaffold contains no skills. Portable personal skills should be
-curated individually after their provenance and private-context boundaries are
-reviewed.
+## Skills
+
+- `visual-verification`: Nick-owned screenshot, browser-runtime, and local-auth
+  workflow generalized from the private working copy for portable use.
+- `to-spec`: Nick's MIT-licensed customization of Matt Pocock's spec publishing
+  workflow, using the `documentation` label.
+- `to-tickets`: Nick's MIT-licensed customization of Matt Pocock's tracer-bullet
+  ticket workflow, preserving native parent/sub-issue relationships.
+
+Portable personal skills are curated individually after their provenance and
+private-context boundaries are reviewed.
+
+See `THIRD_PARTY_NOTICES.md` for the provenance of customized upstream skills.

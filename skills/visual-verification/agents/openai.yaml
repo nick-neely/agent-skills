@@ -1,0 +1,4 @@
+interface:
+  display_name: "Visual Verification"
+  short_description: "Screenshot and inspect local app UI"
+  default_prompt: "Use $visual-verification to capture and inspect the local UI before calling this done."
