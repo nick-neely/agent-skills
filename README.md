@@ -3,8 +3,8 @@
 Public-design source repository for generalized, portable agent skills authored
 or customized by Nick.
 
-This local scaffold intentionally has no GitHub remote. Creating the public
-repository and pushing this content require explicit approval.
+This repository is intentionally public. Every addition must pass the
+portability, provenance, and private-context boundaries below.
 
 ## Public boundary
 
