@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+temporary=$(mktemp -d)
+trap 'rm -rf -- "$temporary"' EXIT
+
+expect_invalid() {
+  local fixture=$1
+  local expected=$2
+  if node "$repo/scripts/validate-skills.mjs" "$repo/tests/fixtures/$fixture" \
+    >"$temporary/stdout" 2>"$temporary/stderr"; then
+    printf 'Invalid fixture unexpectedly passed: %s\n' "$fixture" >&2
+    exit 1
+  fi
+  grep -Fq "$expected" "$temporary/stderr"
+}
+
+expect_invalid malformed-layout 'Malformed skill layout'
+expect_invalid malformed-frontmatter 'Malformed YAML frontmatter line'
+expect_invalid wrong-name 'Skill name must match directory'
+
+project="$temporary/project"
+mkdir -p "$project/app/admin"
+printf '{"scripts":{"dev":"next dev --port 3456"},"dependencies":{"next":"1","better-auth":"1"}}\n' \
+  >"$project/package.json"
+node "$repo/skills/visual-verification/scripts/detect-project.mjs" "$project" \
+  >"$temporary/detect.json"
+node -e '
+  const result = JSON.parse(require("node:fs").readFileSync(process.argv[1]));
+  if (result.framework !== "next" || result.auth.provider !== "better-auth") process.exit(1);
+' "$temporary/detect.json"
+
+(
+  cd "$project"
+  node "$repo/skills/visual-verification/scripts/init-config.mjs" >/dev/null
+)
+node -e '
+  const config = JSON.parse(require("node:fs").readFileSync(process.argv[1]));
+  if (!config.devServer?.startCommand || config.auth?.adapter !== "better-auth") process.exit(1);
+' "$project/.agents/visual-verification.json"
+
+printf 'Behavior tests passed.\n'

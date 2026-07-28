@@ -39,6 +39,11 @@ skill directory.
 ./scripts/validate
 ```
 
+The gate validates layout, YAML frontmatter, directory-name agreement, OpenAI
+metadata, local links, licenses and provenance, executable modes, JavaScript
+syntax, symlink containment, negative fixtures, and focused visual-verification
+behavior. CI runs it natively on x86_64 Linux and Apple Silicon macOS.
+
 ## Skills
 
 - `visual-verification`: Nick-owned screenshot, browser-runtime, and local-auth
