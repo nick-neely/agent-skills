@@ -6,6 +6,12 @@
 [`mattpocock/skills`](https://github.com/mattpocock/skills), licensed under the
 MIT License. Each skill directory includes a copy of the upstream license.
 
+The current upstream baseline is `v1.2.0` (`2ffb184`). The Codex metadata in
+both customized skills is synchronized with that release. The `to-spec` copy
+also carries its v1.2.0 terminology cleanup while retaining the local
+`documentation` label; `to-tickets` already carries the release's local-ticket
+and native-parent behavior plus Nick's tracker-frontier adjustments.
+
 Nick's changes are intentionally narrow:
 
 - `to-spec` applies the `documentation` label instead of `ready-for-agent`.
