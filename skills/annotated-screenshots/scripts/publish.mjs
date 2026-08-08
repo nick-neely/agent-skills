@@ -10,7 +10,7 @@
 
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
-import { basename, dirname, extname, isAbsolute, resolve } from "node:path";
+import { basename, dirname, extname, isAbsolute, resolve, sep } from "node:path";
 import { createHash } from "node:crypto";
 
 const START = "<!-- annotated-screenshots:start -->";
@@ -33,6 +33,7 @@ const HELP = `publish.mjs - upload images and splice a section into a PR or issu
   --section <path>         Markdown containing local image references
   --repo <owner/name>      Defaults to the current repository
   --mode <body|comment>    Edit the description, or manage a single comment (default body)
+  --image-root <path>      Directory images must live under (default: the section's directory)
   --dry-run                Upload nothing, print the resolved plan
 `;
 
@@ -65,6 +66,7 @@ function parseArgs(argv) {
     else if (arg === "--section") options.section = argv[++i];
     else if (arg === "--repo") options.repo = argv[++i];
     else if (arg === "--mode") options.mode = argv[++i];
+    else if (arg === "--image-root") options.imageRoot = argv[++i];
     else if (arg === "--dry-run") options.dryRun = true;
     else die(`unknown option ${arg}`);
   }
@@ -79,23 +81,45 @@ function parseArgs(argv) {
   return options;
 }
 
-// Matches markdown images and HTML <img> tags, capturing the source path.
-const IMAGE_REFS = [
-  /!\[[^\]]*\]\(\s*([^)\s]+)/g,
-  /<img\b[^>]*?\bsrc\s*=\s*["']([^"']+)["']/gi,
-];
+// Markdown images and HTML <img> tags. Each pattern splits into a prefix and
+// the reference itself, so a rewrite can replace the reference in place rather
+// than substituting matching text anywhere in the document.
+const MARKDOWN_IMAGE = /(!\[[^\]]*\]\(\s*)([^)\s]+)/g;
+const HTML_IMAGE = /(<img\b[^>]*?\bsrc\s*=\s*)(["'])([^"']+)\2/gi;
 
-function localImagePaths(markdown, baseDir) {
+const isRemote = (ref) => /^(https?:)?\/\//i.test(ref) || ref.startsWith("data:");
+
+function localImagePaths(markdown, imageRoot) {
   const found = new Map();
-  for (const pattern of IMAGE_REFS) {
-    for (const match of markdown.matchAll(pattern)) {
-      const ref = match[1];
-      if (/^(https?:)?\/\//i.test(ref) || ref.startsWith("data:")) continue;
-      const absolute = isAbsolute(ref) ? ref : resolve(baseDir, ref);
-      found.set(ref, absolute);
+  const consider = (ref) => {
+    if (isRemote(ref) || found.has(ref)) return;
+    const absolute = isAbsolute(ref) ? resolve(ref) : resolve(imageRoot, ref);
+    // A section is authored text; it should not be able to reach arbitrary
+    // files. Anything outside the image root is refused rather than uploaded.
+    const inside = absolute === imageRoot || absolute.startsWith(imageRoot + sep);
+    if (!inside) {
+      die(
+        `image reference escapes the image root: ${ref}\n` +
+          `  resolved: ${absolute}\n  root:     ${imageRoot}\n` +
+          `Move the image inside the root, or pass --image-root explicitly.`,
+      );
     }
-  }
+    found.set(ref, absolute);
+  };
+  for (const match of markdown.matchAll(MARKDOWN_IMAGE)) consider(match[2]);
+  for (const match of markdown.matchAll(HTML_IMAGE)) consider(match[3]);
   return found;
+}
+
+// Rewrite through the match callbacks. A global substring replace would let a
+// short name such as "a.png" corrupt an already-rewritten URL ending in
+// "hero-a.png", which the release-asset fallback URLs actually contain.
+function rewriteRefs(markdown, urls) {
+  return markdown
+    .replace(MARKDOWN_IMAGE, (match, prefix, ref) => prefix + (urls.get(ref) ?? ref))
+    .replace(HTML_IMAGE, (match, prefix, quote, ref) =>
+      prefix + quote + (urls.get(ref) ?? ref) + quote,
+    );
 }
 
 async function uploadAttachment(file, repositoryId, token) {
@@ -172,7 +196,8 @@ const repo = options.repo ?? gh(["repo", "view", "--json", "nameWithOwner", "--j
 const repositoryId = gh(["api", `repos/${repo}`, "--jq", ".id"]);
 const token = gh(["auth", "token"]);
 
-const images = localImagePaths(markdown, dirname(sectionPath));
+const imageRoot = resolve(options.imageRoot ?? dirname(sectionPath));
+const images = localImagePaths(markdown, imageRoot);
 for (const [ref, absolute] of images) {
   if (!existsSync(absolute)) die(`section references a missing image: ${ref} (${absolute})`);
 }
@@ -195,10 +220,8 @@ if (options.dryRun) {
 }
 
 const uploads = [];
-// Replace longer references first. Otherwise rewriting "a.png" would also
-// corrupt an unrelated "hero-a.png" that has not been uploaded yet.
-const ordered = [...images].sort(([a], [b]) => b.length - a.length);
-for (const [ref, absolute] of ordered) {
+const urls = new Map();
+for (const [ref, absolute] of images) {
   let url;
   let tier = "attachment";
   try {
@@ -208,10 +231,10 @@ for (const [ref, absolute] of ordered) {
     url = uploadReleaseAsset(absolute, repo);
     tier = "release-asset";
   }
-  // Replace every occurrence of this reference, in markdown and HTML alike.
-  markdown = markdown.split(ref).join(url);
+  urls.set(ref, url);
   uploads.push({ ref, url, tier });
 }
+markdown = rewriteRefs(markdown, urls);
 
 const issuesPath = `repos/${repo}/issues/${options.number}`;
 const bodyPath = options.kind === "pr" ? `repos/${repo}/pulls/${options.number}` : issuesPath;

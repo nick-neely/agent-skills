@@ -8,7 +8,17 @@ node "<skill-root>/scripts/publish.mjs" --target <pr:N|issue:N> --section <file.
 | --- | --- |
 | `--repo <owner/name>` | Defaults to the current repository |
 | `--mode body\|comment` | Edit the description, or manage a single comment; default `body` |
+| `--image-root <path>` | Directory images must live under; defaults to the section file's directory |
 | `--dry-run` | Resolve the repository and image references, upload nothing |
+
+Referencing an image outside the image root is refused rather than uploaded, so
+a section cannot reach arbitrary files on the machine. Widen it deliberately
+with `--image-root` when images genuinely live elsewhere.
+
+Editing a body is a read-modify-write, and the GitHub API does not support
+conditional writes on `PATCH`. An edit made between the read and the write is
+overwritten. In practice this means avoiding a publish while someone is editing
+the same description by hand.
 
 The script finds every local image the section references, in markdown
 `![](path)` form and HTML `<img src="path">` form alike, uploads each one,

@@ -76,7 +76,9 @@ function stripCode(text) {
     }
     kept.push(line);
   }
-  return kept.join("\n").replace(/`[^`\n]*`/g, "");
+  // Inline spans may be delimited by any run of backticks, so a doubled span
+  // like ``![alt](x)`` has to be matched by its own opening run.
+  return kept.join("\n").replace(/(`+)[^\n]*?\1/g, "");
 }
 
 function checkLinks(path, text, skillRoot) {

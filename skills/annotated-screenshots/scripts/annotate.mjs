@@ -31,7 +31,8 @@ const HELP = `annotate.mjs - draw annotations onto a screenshot
   --spec <path>   Annotation spec (JSON)
   --out <path>    Output PNG
   --keep-temp     Leave the intermediate HTML and crops on disk for debugging
-  --check         Verify dependencies and exit
+
+Run scripts/preflight.mjs to verify dependencies before starting work.
 `;
 
 function die(message) {
@@ -88,7 +89,7 @@ function magickRun(magick, args) {
 }
 
 function parseArgs(argv) {
-  const options = { keepTemp: false, check: false };
+  const options = { keepTemp: false };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === "--help" || arg === "-h") {
@@ -97,7 +98,6 @@ function parseArgs(argv) {
     } else if (arg === "--spec") options.spec = argv[++i];
     else if (arg === "--out") options.out = argv[++i];
     else if (arg === "--keep-temp") options.keepTemp = true;
-    else if (arg === "--check") options.check = true;
     else die(`unknown option ${arg}`);
   }
   return options;
@@ -149,6 +149,19 @@ function scaleFor(width) {
 
 const px = (value, scale, minimum = 1) => Math.max(minimum, Math.round(value * scale));
 
+// Colours land inside SVG attributes and inline styles. Anything other than a
+// plain hex value could close the attribute and inject markup into the page
+// the renderer then opens.
+const HEX_COLOUR = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
+
+function colourOf(annotation, index, total) {
+  if (annotation.color === undefined) return accentFor(index, total);
+  if (!HEX_COLOUR.test(String(annotation.color))) {
+    die(`"color" must be a hex value such as #0090ff, got: ${annotation.color}`);
+  }
+  return annotation.color;
+}
+
 // Labels are HTML rather than SVG text so the browser sizes the pill for us.
 function labelHtml(text, x, y, colour, anchor = "center") {
   const transforms = {
@@ -161,7 +174,7 @@ function labelHtml(text, x, y, colour, anchor = "center") {
 }
 
 function renderAnnotation(annotation, index, total, canvas) {
-  const colour = annotation.color ?? accentFor(index, total);
+  const colour = colourOf(annotation, index, total);
   const type = annotation.type;
   const scale = canvas.scale;
   const stroke = px(4, scale, 2);
@@ -220,7 +233,7 @@ function applyRedactions(magick, source, target, redactions) {
     if (annotation.style === "block") {
       magickRun(magick, [
         current,
-        "-fill", annotation.color ?? "#111827",
+        "-fill", annotation.color === undefined ? "#111827" : colourOf(annotation, 0, 1),
         "-draw", `rectangle ${b.x},${b.y} ${b.x + b.width},${b.y + b.height}`,
         next,
       ]);
@@ -241,14 +254,6 @@ function applyRedactions(magick, source, target, redactions) {
 }
 
 const options = parseArgs(process.argv.slice(2));
-
-if (options.check) {
-  const magick = resolveMagick();
-  requireAgentBrowser();
-  if (!existsSync(FONT_PATH)) die(`bundled font missing: ${FONT_PATH}`);
-  console.log(`ok: ImageMagick (${magick}), agent-browser, bundled font`);
-  process.exit(0);
-}
 
 if (!options.spec) die(`--spec is required\n\n${HELP}`);
 if (!options.out) die(`--out is required\n\n${HELP}`);
@@ -344,7 +349,7 @@ try {
       "-resize", `${Math.round(b.width * zoom)}x${Math.round(b.height * zoom)}!`,
       file,
     ]);
-    const colour = annotation.color ?? accentFor(index, shifted.length);
+    const colour = colourOf(annotation, index, shifted.length);
     const place = annotation.place ?? "bottom-right";
     const [vertical, horizontal] = place.split("-");
     const style = [

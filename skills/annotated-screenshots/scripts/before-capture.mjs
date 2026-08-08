@@ -104,10 +104,14 @@ if (command === "remove") {
   process.exit(0);
 }
 
+// A worktree created with --dir is only findable again with the same --dir, so
+// every command printed here carries it through.
+const dirArg = options.dir ? ` --dir "${worktreeDir}"` : "";
+
 if (existsSync(worktreeDir)) {
   die(
     `worktree path already exists: ${worktreeDir}\n` +
-      `Run \`node before-capture.mjs remove\` first, or pass a different --dir.`,
+      `Run \`node before-capture.mjs remove${dirArg}\` first, or pass a different --dir.`,
   );
 }
 
@@ -130,7 +134,7 @@ console.log(
       next: [
         "Install dependencies inside the worktree using this project's own command.",
         "Start its dev server on a free port, or on the same port as the after-server if the surface needs authentication.",
-        "Capture the before screenshots, then run `before-capture.mjs remove`.",
+        `Capture the before screenshots, then run \`before-capture.mjs remove${dirArg}\`.`,
       ],
     },
     null,

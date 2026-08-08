@@ -98,12 +98,10 @@ point colours rotate so each annotation stays distinguishable. Override per
 annotation with `"color": "#0090ff"` when a specific pairing helps, for example
 matching an inset border to the box it magnifies.
 
-## Checking dependencies
+## Debugging output
 
-```bash
-node scripts/annotate.mjs --check
-```
+Use `--keep-temp` to leave the generated HTML and intermediate crops on disk
+when the output looks wrong. Opening that HTML shows exactly what the renderer
+saw.
 
-Reports whether ImageMagick, `agent-browser`, and the bundled font are all
-present. Use `--keep-temp` to leave the generated HTML on disk when output
-looks wrong.
+Dependencies are checked by `scripts/preflight.mjs`, not by this script.

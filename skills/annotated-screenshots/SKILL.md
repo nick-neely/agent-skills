@@ -16,6 +16,24 @@ Scripts do the work that is identical every run. You do the work that needs
 judgement: which surfaces matter, which changes are worth pointing at, and what
 the caption should say.
 
+## Check dependencies first
+
+```bash
+node "<skill-root>/scripts/preflight.mjs"
+```
+
+Run this before capturing anything. It checks ImageMagick, `agent-browser`, an
+actually-installed Chrome, the `gh` CLI, a live `gh` token, git, and the bundled
+font, and prints the install command for whatever is missing.
+
+Checking up front matters because the dependencies fail at different stages. A
+missing Chrome surfaces at the first screenshot; a missing `gh` token surfaces
+at publish, after capture, worktree, and annotation are already done and wasted.
+
+When something is missing, tell the user what and give them the command. Do not
+install system packages, write global npm modules, or download a browser
+without asking first. `agent-browser install` downloads roughly 200MB.
+
 ## Scope the work
 
 1. When you have just made the change, use what you already know about it. Do

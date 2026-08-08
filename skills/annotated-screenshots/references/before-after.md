@@ -29,6 +29,10 @@ Tear down when you are finished:
 node "<skill-root>/scripts/before-capture.mjs" remove
 ```
 
+If you created the worktree with `--dir <path>`, pass the same `--dir <path>` to
+`remove`. Without it the command looks in the default location and reports that
+there is nothing to remove. The `create` output prints the matching command.
+
 Remove the worktree even when capture failed. A stale worktree makes the next
 run fail with a path collision.
 
