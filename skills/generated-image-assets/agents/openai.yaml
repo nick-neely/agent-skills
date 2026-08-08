@@ -1,0 +1,4 @@
+interface:
+  display_name: "Generated Image Assets"
+  short_description: "Clean and ship generated raster assets"
+  default_prompt: "Use $generated-image-assets to turn generated raster output into a verified project asset."
