@@ -46,6 +46,8 @@ behavior. CI runs it natively on x86_64 Linux and Apple Silicon macOS.
 
 ## Skills
 
+- `annotated-screenshots`: capture, annotate, and publish before/after UI
+  evidence into a GitHub pull request or issue.
 - `visual-verification`: Nick-owned screenshot, browser-runtime, and local-auth
   workflow generalized from the private working copy for portable use.
 - `to-spec`: Nick's MIT-licensed customization of Matt Pocock's spec publishing
