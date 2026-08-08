@@ -1,5 +1,17 @@
 # Third-party notices
 
+## DejaVu Sans
+
+`skills/annotated-screenshots/assets/DejaVuSans.ttf` is part of the
+[DejaVu fonts](https://dejavu-fonts.github.io/). DejaVu's own changes are in the
+public domain; the underlying glyphs are covered by the Bitstream Vera and Arev
+copyrights. The full license is at
+`skills/annotated-screenshots/assets/DejaVuSans-LICENSE.txt`.
+
+The font is bundled and referenced explicitly so annotation text renders
+identically on every machine. Without it, output depends on whatever fonts the
+host happens to have, and a container with none renders empty boxes.
+
 ## Matt Pocock skills
 
 `skills/to-spec` and `skills/to-tickets` are based on

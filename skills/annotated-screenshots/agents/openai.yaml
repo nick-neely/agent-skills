@@ -1,0 +1,4 @@
+interface:
+  display_name: "Annotated Screenshots"
+  short_description: "Publish annotated UI screenshots to a PR or issue"
+  default_prompt: "Use $annotated-screenshots to capture, annotate, and publish before/after UI evidence to a pull request or issue."

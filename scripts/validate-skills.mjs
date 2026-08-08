@@ -59,8 +59,30 @@ function parseFrontmatter(path) {
   return { text, fields };
 }
 
+// Code holds examples, not links. Scanning it reports every documented
+// `![alt](path)` snippet as a broken local link.
+function stripCode(text) {
+  const kept = [];
+  let fence = null;
+  for (const line of text.split("\n")) {
+    const marker = /^ {0,3}(`{3,}|~{3,})/.exec(line);
+    if (fence) {
+      if (marker && marker[1].startsWith(fence)) fence = null;
+      continue;
+    }
+    if (marker) {
+      fence = marker[1];
+      continue;
+    }
+    kept.push(line);
+  }
+  // Inline spans may be delimited by any run of backticks, so a doubled span
+  // like ``![alt](x)`` has to be matched by its own opening run.
+  return kept.join("\n").replace(/(`+)[^\n]*?\1/g, "");
+}
+
 function checkLinks(path, text, skillRoot) {
-  for (const match of text.matchAll(/!?\[[^\]]*]\(([^)]+)\)/g)) {
+  for (const match of stripCode(text).matchAll(/!?\[[^\]]*]\(([^)]+)\)/g)) {
     const raw = match[1].trim().split(/\s+["']/)[0];
     if (/^(https?:|mailto:|#)/.test(raw)) continue;
     const target = resolve(dirname(path), decodeURIComponent(raw.split("#")[0]));
