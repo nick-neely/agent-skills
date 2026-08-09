@@ -14,6 +14,7 @@ import numpy as np
 from PIL import Image, UnidentifiedImageError
 
 TRIM_RELATIVE_MASS = 0.001  # a row or column below this share of peak alpha is empty
+SUPPORTED_FORMATS = ("png", "webp")
 
 
 def load_rgba(input_path: Path) -> Image.Image:
@@ -69,6 +70,17 @@ def scale_suffix(scale: float) -> str:
     return "" if scale == 1 else f"@{scale:g}x"
 
 
+def check_name(name: str) -> str:
+    """Reject anything that is not a bare filename stem.
+
+    `name` is interpolated straight into the output path, so a separator or a
+    leading slash would write outside the directory the caller nominated.
+    """
+    if not name or name in (".", "..") or name != Path(name).name or "\\" in name:
+        raise ValueError(f"--name must be a plain filename stem, got {name!r}")
+    return name
+
+
 def finish(
     input_path: Path,
     out_dir: Path,
@@ -95,7 +107,7 @@ def finish(
         resized = image if dims == image.size else image.resize(dims, Image.Resampling.LANCZOS)
         for fmt in formats:
             out_path = out_dir / f"{name}{scale_suffix(scale)}.{fmt}"
-            save_kwargs = {"optimize": True} if fmt in ("png", "webp") else {}
+            save_kwargs = {"optimize": True}
             resized.save(out_path, **save_kwargs)
             written.append(out_path)
     return written
@@ -115,17 +127,29 @@ def main() -> None:
 
     try:
         scales = parse_scales(args.scales)
+        name = check_name(args.name)
     except ValueError as exc:
         raise SystemExit(f"error: {exc}")
+
+    if args.size is not None and args.size <= 0:
+        raise SystemExit("error: --size must be a positive number of pixels")
+    if args.pad < 0:
+        raise SystemExit("error: --pad must not be negative")
 
     formats = [f.strip().lower() for f in args.format.split(",") if f.strip()]
     if not formats:
         raise SystemExit("error: --format must list at least one format")
+    unsupported = [f for f in formats if f not in SUPPORTED_FORMATS]
+    if unsupported:
+        raise SystemExit(
+            f"error: unsupported --format {', '.join(unsupported)}; choose from "
+            f"{', '.join(sorted(SUPPORTED_FORMATS))}"
+        )
 
     written = finish(
         input_path=args.input,
         out_dir=args.out_dir,
-        name=args.name,
+        name=name,
         size=args.size,
         scales=scales,
         formats=formats,
