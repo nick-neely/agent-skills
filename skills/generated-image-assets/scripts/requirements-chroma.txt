@@ -1,0 +1,4 @@
+# Chroma tier: enough for chroma-matte.py, inspect-alpha.py, and finish.py.
+# Versions pinned against a known-working install; see setup.mjs.
+numpy~=2.4.6
+pillow~=12.2.0
