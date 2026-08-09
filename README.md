@@ -54,6 +54,8 @@ behavior. CI runs it natively on x86_64 Linux and Apple Silicon macOS.
   workflow, using the `documentation` label.
 - `to-tickets`: Nick's MIT-licensed customization of Matt Pocock's tracer-bullet
   ticket workflow, preserving native parent/sub-issue relationships.
+- `ship-spec`: Claude Code-only orchestration for delivering every issue in a
+  GitHub spec, including resumable runs and isolated parallel lanes.
 
 Portable personal skills are curated individually after their provenance and
 private-context boundaries are reviewed.

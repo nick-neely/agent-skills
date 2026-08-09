@@ -1,0 +1,5 @@
+interface:
+  display_name: "Ship Spec"
+  short_description: "Orchestrate every issue in a GitHub spec"
+policy:
+  allow_implicit_invocation: false
