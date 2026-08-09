@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 // discover.mjs <spec #>
-// Deterministic ENUMERATION only — no judgment. Resolves a spec to every issue it
+// Deterministic ENUMERATION only - no judgment. Resolves a spec to every issue it
 // tracks (trying all three linkage mechanisms so none are missed) and dumps each
 // one's raw title, labels, state, and full body. An `assistant` reads this dump
 // and supplies the scope / UI classification / dependency order the script can't.
 // Run from inside the project's git checkout (gh needs the repo context).
-import { run, runJSON, hasCmd, repoSlug, die } from './lib.mjs';
+import { runJSON, hasCmd, repoSlug, die } from './lib.mjs';
 
 const spec = (process.argv[2] || '').replace(/^#/, '');
 if (!/^\d+$/.test(spec)) die('usage: discover.mjs <spec issue number>');
@@ -57,11 +57,11 @@ issues.sort((a, b) => a.number - b.number);
 
 console.log(`# spec #${spec}: ${specIssue.title}  (${specIssue.state})`);
 console.log(`repo: ${slug} · ${issues.length} tracked issue(s)`);
-console.log(`linkage found via — sub-issues: ${counts.sub}, spec-body refs: ${counts.body}, reverse search: ${counts.reverse}`);
+console.log(`linkage found via - sub-issues: ${counts.sub}, spec-body refs: ${counts.body}, reverse search: ${counts.reverse}`);
 
 if (!issues.length) {
   console.log('\nNo tracked issues found automatically. The spec may link its issues in a way none of the');
-  console.log('three mechanisms caught — read the spec body and identify the implementation issues manually.');
+  console.log('three mechanisms caught - read the spec body and identify the implementation issues manually.');
   process.exit(0);
 }
 
@@ -72,9 +72,9 @@ for (const it of issues) {
   console.log(`| ${it.number} | ${it.state} | ${it.labels.join(', ')} | ${it.title.replace(/\|/g, '\\|')} |`);
 }
 
-console.log('\n## Full issues (raw — read these to plan)');
+console.log('\n## Full issues (raw - read these to plan)');
 for (const it of issues) {
-  console.log(`\n### #${it.number} — ${it.title}  [${it.state}${it.labels.length ? ' · ' + it.labels.join(', ') : ''}]  (via ${it.via})`);
+  console.log(`\n### #${it.number} - ${it.title}  [${it.state}${it.labels.length ? ' · ' + it.labels.join(', ') : ''}]  (via ${it.via})`);
   console.log(it.body || '(no body)');
   console.log('\n---');
 }

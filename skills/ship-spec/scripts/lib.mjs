@@ -1,7 +1,7 @@
 import { execSync, spawnSync } from 'node:child_process';
 
 // Run a command and capture its result without throwing on failure. Returns the
-// exit code plus stdout (trimmed and raw) and stderr — for commands whose exit
+// exit code plus stdout (trimmed and raw) and stderr - for commands whose exit
 // code IS the signal (e.g. git merge-tree: 0 clean, 1 conflict).
 export function capture(cmd, { cwd } = {}) {
   const r = spawnSync('/bin/sh', ['-c', cmd], { encoding: 'utf8', cwd });

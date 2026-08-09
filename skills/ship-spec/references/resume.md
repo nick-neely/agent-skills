@@ -1,17 +1,19 @@
 # Continuity across the usage window
 
 A full run can outlast the 5-hour Claude Code usage window and be cut off
-mid-task — a builder implementing, a review running, lanes half-merged. Two pieces
+mid-task - a builder implementing, a review running, lanes half-merged. Two pieces
 make it resumable: a durable **ledger** (survives anything) and a **dead-man
 switch** (a one-shot cron that auto-resumes when the window reopens).
 
+Replace `<skill-root>` with the directory containing the skill's `SKILL.md`.
+
 The ledger is the real guarantee; the switch is best-effort automation on top. The
-cron is session-only and in-memory — it fires only if the Claude Code process
+cron is session-only and in-memory - it fires only if the Claude Code process
 stays alive through the rate-limit block (terminal open, machine awake). If the
-process exits, the switch is lost — but the ledger isn't, so `/ship-spec <N>
+process exits, the switch is lost - but the ledger isn't, so `/ship-spec <N>
 --resume` still recovers by hand. Never let correctness depend on the switch.
 
-## The ledger — source of truth
+## The ledger - source of truth
 
 Keep a compact markdown ledger, updated at **every** state transition, at:
 
@@ -31,13 +33,13 @@ trusted to remember:
 
 ## Arm the dead-man switch
 
-At the start of a run — and again first thing on every resume — arm a one-shot
+At the start of a run - and again first thing on every resume - arm a one-shot
 cron to fire ~10 min after the window resets: enough leeway for timing slop, tight
 enough not to waste the fresh window.
 
 You need the reset time. On a **first** run it comes from `--reset <when>` (this
 harness can't read session usage). On a **resume** the window just opened, so it
-runs ~5h from now — arm for `+5h` and don't ask.
+runs ~5h from now - arm for `+5h` and don't ask.
 
 Compute the cron fields with `date` (fire = reset + 10 min):
 
@@ -51,23 +53,22 @@ Then `CronCreate` with `recurring: false` and the resume prompt below. If the
 ledger already names an armed job ID, `CronDelete` it first so switches don't
 stack. Record the new job ID in the ledger.
 
-Resume prompt (self-contained — it fires in a fresh session with no memory):
+Resume prompt (self-contained - it fires in a fresh session with no memory):
 
 ```
-Resume the ship-spec run for spec #<N>: a fresh usage window just opened. Read the
-ledger at ~/.claude/ship-spec/runs/<owner>__<repo>__spec-<N>.md, reconcile it
-against git/gh, re-arm the dead-man switch for the next window, then continue the
-plan. Follow ~/.claude/skills/ship-spec/SKILL.md and reference/resume.md.
-(Equivalent to running: /ship-spec <N> --resume)
+Resume the ship-spec run for spec #<N>: a fresh usage window just opened. Run
+`/ship-spec <N> --resume`. Its ledger is at
+~/.claude/ship-spec/runs/<owner>__<repo>__spec-<N>.md - reconcile that against
+git/gh, re-arm the dead-man switch for the next window, then continue the plan.
 ```
 
 ## Resume procedure (`--resume`, or when the switch fires)
 
 1. Read the ledger to recover the plan and where it left off.
-2. Reconcile against ground truth — context is gone, so trust artifacts over the
+2. Reconcile against ground truth - context is gone, so trust artifacts over the
    ledger's remembered in-flight line:
    ```
-   node ~/.claude/skills/ship-spec/scripts/status.mjs <issue#...>
+   node "<skill-root>/scripts/status.mjs" <issue#...>
    ```
    Closed = done. Open + lane branch = implemented, check review/merge. An open
    worktree marked DIRTY = a builder was cut off mid-implementation.

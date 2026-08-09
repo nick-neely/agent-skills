@@ -64,7 +64,7 @@ function linkFromMain(dir) {
 
 function detectInstall() {
   const has = f => fs.existsSync(path.join(root, f));
-  if (!has('package.json')) return null; // not a JS project — nothing to install
+  if (!has('package.json')) return null; // not a JS project - nothing to install
   if (has('pnpm-lock.yaml')) return { pm: 'pnpm', cmd: 'pnpm install' };
   if (has('yarn.lock')) return { pm: 'yarn', cmd: 'yarn install' };
   if (has('bun.lockb') || has('bun.lock')) return { pm: 'bun', cmd: 'bun install' };
@@ -81,16 +81,16 @@ function seed(dir) {
       console.log(`   deps: hardlinked ${res.linked} node_modules tree(s) from main (re-install if this lane changes deps)`);
       return;
     }
-    console.log('   deps: no node_modules in main to link — installing instead');
+    console.log('   deps: no node_modules in main to link - installing instead');
   }
   const inst = detectInstall();
-  if (!inst) { console.log('   deps: no package.json — nothing to install'); return; }
+  if (!inst) { console.log('   deps: no package.json - nothing to install'); return; }
   console.log(`   deps: ${inst.cmd} … (may take a while)`);
   const r = capture(inst.cmd, { cwd: dir });
   if (r.code === 0) {
     console.log(`   deps: installed (${inst.pm})`);
   } else {
-    console.log(`   deps: ${inst.pm} install failed (exit ${r.code}) — finish it manually in ${dir}`);
+    console.log(`   deps: ${inst.pm} install failed (exit ${r.code}) - finish it manually in ${dir}`);
     if (r.stderr) console.log(r.stderr.split('\n').slice(-8).map(l => '     ' + l).join('\n'));
   }
 }

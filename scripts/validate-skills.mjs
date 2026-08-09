@@ -16,6 +16,22 @@ const notices = existsSync(noticesPath) ? readFileSync(noticesPath, "utf8") : ""
 const errors = [];
 const fail = (message) => errors.push(message);
 
+const FRONTMATTER_KEYS = [
+  "name",
+  "description",
+  "compatibility",
+  "license",
+  "disable-model-invocation",
+  "argument-hint",
+  "allowed-tools",
+  "model",
+];
+const BOOLEAN_FRONTMATTER_KEYS = ["disable-model-invocation"];
+const SKILL_NAME_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+const ALLOWED_SKILL_SUBDIRS = ["scripts", "references", "assets", "agents"];
+const SKILL_INSTALL_PATH = /~\/\.(claude|codex|cursor|agents)\/skills\//;
+const ROOT_DOCS = ["README.md", "AGENTS.md", "THIRD_PARTY_NOTICES.md", "CONTRIBUTING.md", "SECURITY.md"];
+
 function contained(path, parent) {
   const rel = relative(parent, path);
   return rel === "" || (!rel.startsWith(`..${sep}`) && rel !== "..");
@@ -91,6 +107,87 @@ function checkLinks(path, text, skillRoot) {
   }
 }
 
+function checkFrontmatterSchema(fields, path) {
+  for (const key of Object.keys(fields)) {
+    if (!FRONTMATTER_KEYS.includes(key)) fail(`Unknown frontmatter key ${key}: ${path}`);
+  }
+  if (fields.name !== undefined) {
+    if (!SKILL_NAME_PATTERN.test(fields.name)) fail(`Malformed frontmatter name: ${path}`);
+    if (fields.name.length > 64) fail(`Frontmatter name exceeds 64 characters: ${path}`);
+  }
+  if (fields.description !== undefined && fields.description.length > 1024) {
+    fail(`Frontmatter description exceeds 1024 characters: ${path}`);
+  }
+  for (const key of BOOLEAN_FRONTMATTER_KEYS) {
+    if (fields[key] !== undefined && !["true", "false"].includes(fields[key])) {
+      fail(`Frontmatter ${key} must be true or false: ${path}`);
+    }
+  }
+}
+
+function checkSkillSubdirectories(skillRoot) {
+  for (const entry of readdirSync(skillRoot, { withFileTypes: true })) {
+    if (entry.isDirectory() && !ALLOWED_SKILL_SUBDIRS.includes(entry.name)) {
+      fail(`Unexpected skill subdirectory: ${join(skillRoot, entry.name)}`);
+    }
+  }
+}
+
+// stripCode() removes fenced blocks before link checking, so a script path
+// like `node "<skill-root>/scripts/annotate.mjs"` inside a ```bash``` fence is
+// never verified to exist. Check it separately, on the raw text.
+function checkSkillRootReferences(path, text, skillRoot) {
+  for (const match of text.matchAll(/<skill-root>\/(\S+)/g)) {
+    const raw = match[1].replace(/^[`"']+|[`"']+$/g, "");
+    const target = resolve(skillRoot, raw);
+    if (!existsSync(target)) fail(`Broken <skill-root> reference: ${path} -> ${raw}`);
+  }
+}
+
+function checkNoEmDash(path) {
+  const lines = readFileSync(path, "utf8").split(/\r?\n/);
+  lines.forEach((line, index) => {
+    if (line.includes("\u2014")) fail(`Em dash found: ${path}:${index + 1}`);
+  });
+}
+
+// Runs on raw text: the install-path mistake shows up inside fenced example
+// commands, which stripCode() would otherwise hide from this check.
+function checkNoHardcodedInstallPath(path, text) {
+  text.split(/\r?\n/).forEach((line, index) => {
+    if (SKILL_INSTALL_PATH.test(line)) fail(`Hardcoded skill-install path: ${path}:${index + 1}`);
+  });
+}
+
+function checkReadmeSkillList(root, skillNames) {
+  const readmePath = join(root, "README.md");
+  if (!existsSync(readmePath)) {
+    fail(`Missing README.md: ${readmePath}`);
+    return;
+  }
+  const lines = readFileSync(readmePath, "utf8").split(/\r?\n/);
+  const start = lines.findIndex((line) => /^## Skills\s*$/.test(line));
+  if (start < 0) {
+    fail(`README.md missing "## Skills" section: ${readmePath}`);
+    return;
+  }
+  let end = lines.findIndex((line, index) => index > start && /^## /.test(line));
+  if (end < 0) end = lines.length;
+
+  const listed = new Set();
+  const namePattern = /^-\s*\[`([a-z0-9-]+)`\]\(skills\/([a-z0-9-]+)\/\)/;
+  for (const line of lines.slice(start + 1, end)) {
+    const match = line.match(namePattern);
+    if (match) listed.add(match[2]);
+  }
+  for (const name of skillNames) {
+    if (!listed.has(name)) fail(`README Skills section missing skill ${name}: ${readmePath}`);
+  }
+  for (const name of listed) {
+    if (!skillNames.includes(name)) fail(`README Skills section lists unknown skill ${name}: ${readmePath}`);
+  }
+}
+
 if (!existsSync(skillsRoot)) fail(`Missing skills directory: ${skillsRoot}`);
 const entries = existsSync(skillsRoot)
   ? readdirSync(skillsRoot, { withFileTypes: true })
@@ -101,6 +198,7 @@ for (const entry of entries) {
     fail(`Malformed skill layout, expected directory: ${skillRoot}`);
     continue;
   }
+  checkSkillSubdirectories(skillRoot);
   const skillPath = join(skillRoot, "SKILL.md");
   const skillFiles = walk(skillRoot).filter((path) => path.endsWith(`${sep}SKILL.md`));
   if (skillFiles.length !== 1 || skillFiles[0] !== skillPath) {
@@ -110,6 +208,7 @@ for (const entry of entries) {
   const { text, fields } = parseFrontmatter(skillPath);
   if (fields.name !== entry.name) fail(`Skill name must match directory ${entry.name}: ${skillPath}`);
   if (!fields.description) fail(`Missing frontmatter description: ${skillPath}`);
+  checkFrontmatterSchema(fields, skillPath);
   checkLinks(skillPath, text, skillRoot);
 
   const openai = join(skillRoot, "agents", "openai.yaml");
@@ -131,14 +230,30 @@ for (const entry of entries) {
   }
 
   for (const file of walk(skillRoot)) {
-    if (file.endsWith(".md")) checkLinks(file, readFileSync(file, "utf8"), skillRoot);
+    if (file.endsWith(".md")) {
+      const content = readFileSync(file, "utf8");
+      checkLinks(file, content, skillRoot);
+      checkSkillRootReferences(file, content, skillRoot);
+      checkNoHardcodedInstallPath(file, content);
+    }
     if (file.endsWith(".mjs")) {
       const mode = statSync(file).mode & 0o777;
       if (readFileSync(file, "utf8").startsWith("#!") && (mode & 0o111) === 0) {
         fail(`Executable script lacks executable mode: ${file}`);
       }
     }
+    // The writing convention (see THIRD_PARTY_NOTICES.md) is plain hyphens;
+    // assets (fonts, binaries) are exempt since they are not prose or code.
+    const inAssets = relative(skillRoot, file).split(sep)[0] === "assets";
+    if (!inAssets && /\.(md|mjs|yaml)$/.test(file)) checkNoEmDash(file);
   }
+}
+
+const skillNames = entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name);
+checkReadmeSkillList(root, skillNames);
+for (const name of ROOT_DOCS) {
+  const path = join(root, name);
+  if (existsSync(path)) checkNoEmDash(path);
 }
 
 const absolutePattern = /(?:\/home\/[^/\s]+|\/Users\/[^/\s]+|[A-Za-z]:\\Users\\[^\\\s]+)/;

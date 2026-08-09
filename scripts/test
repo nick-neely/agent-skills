@@ -19,6 +19,12 @@ expect_invalid() {
 expect_invalid malformed-layout 'Malformed skill layout'
 expect_invalid malformed-frontmatter 'Malformed YAML frontmatter line'
 expect_invalid wrong-name 'Skill name must match directory'
+expect_invalid unknown-frontmatter-key 'Unknown frontmatter key'
+expect_invalid unexpected-skill-subdirectory 'Unexpected skill subdirectory'
+expect_invalid broken-skill-root-reference 'Broken <skill-root> reference'
+expect_invalid em-dash-found 'Em dash found'
+expect_invalid hardcoded-skill-install-path 'Hardcoded skill-install path'
+expect_invalid readme-skill-list-mismatch 'README Skills section'
 
 project="$temporary/project"
 mkdir -p "$project/app/admin"

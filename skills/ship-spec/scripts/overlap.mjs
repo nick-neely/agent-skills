@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // overlap.mjs [base] [branch...]
 // Pre-merge conflict forecast for the parallel lanes. Uses `git merge-tree` for a
-// REAL 3-way conflict check between lanes (git >= 2.38) — two lanes touching the
+// REAL 3-way conflict check between lanes (git >= 2.38) - two lanes touching the
 // same file only flag if they actually conflict. Falls back to filename overlap
 // on older git. Reports conflict-free lanes and a fewest-conflicts-first order.
 // Defaults: base = current branch, branches = all refs/heads/ship/*.
@@ -29,7 +29,7 @@ for (const br of branches) {
   console.log(`- ${br}: ${s ? s.size + ' file(s) changed' : 'cannot diff'}`);
 }
 
-if (branches.length < 2) { console.log('\nOne lane only — nothing to compare; merge it directly.'); process.exit(0); }
+if (branches.length < 2) { console.log('\nOne lane only - nothing to compare; merge it directly.'); process.exit(0); }
 
 // Probe merge-tree support: merging a branch with itself is always clean (exit 0);
 // old git without --write-tree errors out (exit 128).
@@ -44,11 +44,11 @@ if (supported) {
       const a = branches[i], b = branches[j];
       const r = capture(`git merge-tree --write-tree --name-only ${a} ${b}`);
       if (r.code === 0) continue;              // clean merge
-      if (r.code === 1) {                      // conflict — files listed after the tree oid
+      if (r.code === 1) {                      // conflict - files listed after the tree oid
         const cf = [];
         for (const line of r.out.split('\n').slice(1)) { if (!line.trim()) break; cf.push(line.trim()); }
         conflicts.push({ a, b, files: cf });
-      } else { realCheck = false; break outer; } // unrelated histories etc. — fall back
+      } else { realCheck = false; break outer; } // unrelated histories etc. - fall back
     }
   }
 }
@@ -56,7 +56,7 @@ if (supported) {
 if (realCheck) {
   const conflictCount = b => conflicts.filter(c => c.a === b || c.b === b).length;
   if (!conflicts.length) {
-    console.log('\nAll lanes merge cleanly against each other (real 3-way check) — merge in any order.');
+    console.log('\nAll lanes merge cleanly against each other (real 3-way check) - merge in any order.');
   } else {
     console.log('\n## Real conflicts (git merge-tree)');
     for (const c of conflicts) console.log(`- ${c.a} ⨯ ${c.b}: ${c.files.join(', ') || '(tree/rename conflict)'}`);
@@ -68,15 +68,15 @@ if (realCheck) {
     console.log('\nRun /resolving-merge-conflicts on the pairs above; you hold the cross-issue context.');
   }
 } else {
-  // Fallback: filename overlap (coarser — flags same-file edits even when disjoint).
-  console.log('\n(merge-tree unavailable — filename-overlap fallback; may over-warn.)');
+  // Fallback: filename overlap (coarser - flags same-file edits even when disjoint).
+  console.log('\n(merge-tree unavailable - filename-overlap fallback; may over-warn.)');
   const owners = new Map();
   for (const [br, set] of files) if (set) for (const f of set) (owners.get(f) || owners.set(f, []).get(f)).push(br);
   const shared = [...owners.entries()].filter(([, b]) => b.length > 1);
-  if (!shared.length) { console.log('No shared files — lanes are disjoint; merge in any order.'); }
+  if (!shared.length) { console.log('No shared files - lanes are disjoint; merge in any order.'); }
   else {
     console.log('## Shared files (possible conflict)');
-    for (const [f, b] of shared.sort((a, b) => b[1].length - a[1].length)) console.log(`- ${f} — ${b.join(', ')}`);
+    for (const [f, b] of shared.sort((a, b) => b[1].length - a[1].length)) console.log(`- ${f} - ${b.join(', ')}`);
     const entangle = br => files.get(br) ? [...files.get(br)].filter(f => (owners.get(f) || []).length > 1).length : 0;
     const order = [...branches].sort((a, b) => entangle(a) - entangle(b));
     console.log('\n## Suggested merge order (least-entangled first)');

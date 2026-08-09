@@ -1,37 +1,63 @@
-# Nick's portable agent skills
+# Agent skills
 
-Public-design source repository for generalized, portable agent skills authored
-or customized by Nick.
+Portable agent skills I use across projects, published as source.
 
-This repository is intentionally public. Every addition must pass the
-portability, provenance, and private-context boundaries below.
+Each skill is plain Markdown plus the scripts it calls, so it works in Claude
+Code, Codex, Cursor, and anything else that reads `SKILL.md`. Nothing here
+depends on one private project or one machine.
 
-## Public boundary
+## Install
 
-Accepted content:
+With the [`skills`](https://www.skills.sh) CLI:
 
-- generalized skills with a complete `SKILL.md`;
-- referenced scripts and documentation committed alongside the skill;
-- portable behavior that does not depend on one private project or machine.
+```sh
+npx skills add nick-neely/agent-skills --list          # see what's here
+npx skills add nick-neely/agent-skills --skill visual-verification --global
+```
 
-Rejected content:
+Or install by hand: clone the repo and symlink the skill directory into your
+agent's skills directory (`~/.claude/skills/`, `~/.codex/skills/`, and so on).
 
-- secrets, credentials, tokens, customer data, or private product context;
-- absolute `/home/...`, `/Users/...`, or Windows user-profile paths;
-- hidden dependencies on untracked local files;
-- copied third-party installed skills without their license and provenance;
-- runtime state from Codex, Claude Code, Cursor, or the skills CLI.
+```sh
+git clone https://github.com/nick-neely/agent-skills.git
+ln -s "$PWD/agent-skills/skills/visual-verification" ~/.claude/skills/
+```
+
+Skills that shell out have their own runtime dependencies, listed in each
+`SKILL.md`. `annotated-screenshots` checks its own up front with
+`scripts/preflight.mjs`.
+
+## Skills
+
+- [`annotated-screenshots`](skills/annotated-screenshots/) - Capture, annotate,
+  and publish before/after UI evidence into a pull request or issue.
+- [`generated-image-assets`](skills/generated-image-assets/) - Turn generated
+  raster output into a project asset with verified alpha edges.
+- [`ship-spec`](skills/ship-spec/) - Claude Code only. Deliver every issue in a
+  GitHub spec as a resumable orchestrated loop.
+- [`to-spec`](skills/to-spec/) - Synthesize the current conversation into a spec
+  and publish it to the issue tracker.
+- [`to-tickets`](skills/to-tickets/) - Break a spec or plan into tracer-bullet
+  tickets that declare their blocking edges.
+- [`visual-verification`](skills/visual-verification/) - Screenshot, inspect,
+  and validate local app UI, including authenticated pages.
+
+`to-spec` and `to-tickets` are customizations of Matt Pocock's skills. See
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for provenance.
 
 ## Layout
 
-Each published skill lives at:
-
 ```text
-skills/<skill-name>/SKILL.md
+skills/<skill-name>/
+  SKILL.md            required
+  agents/openai.yaml  required
+  scripts/            optional
+  references/         optional
+  assets/             optional
 ```
 
-Optional `scripts/`, `references/`, and `assets/` directories stay inside that
-skill directory.
+Everything a skill references lives inside its own directory. No shared
+libraries between skills, no links that escape the skill root.
 
 ## Validate
 
@@ -39,25 +65,19 @@ skill directory.
 ./scripts/validate
 ```
 
-The gate validates layout, YAML frontmatter, directory-name agreement, OpenAI
-metadata, local links, licenses and provenance, executable modes, JavaScript
-syntax, symlink containment, negative fixtures, and focused visual-verification
-behavior. CI runs it natively on x86_64 Linux and Apple Silicon macOS.
+One gate, no dependencies beyond Node and git. It checks layout, frontmatter
+schema, directory-name agreement, OpenAI metadata, local links, script
+references, writing conventions, portability, licenses and provenance,
+executable modes, JavaScript syntax, and symlink containment, then runs the
+negative fixtures and behavior tests. CI runs it on x86_64 Linux and Apple
+Silicon macOS.
 
-## Skills
+## Contributing
 
-- `annotated-screenshots`: capture, annotate, and publish before/after UI
-  evidence into a GitHub pull request or issue.
-- `visual-verification`: Nick-owned screenshot, browser-runtime, and local-auth
-  workflow generalized from the private working copy for portable use.
-- `to-spec`: Nick's MIT-licensed customization of Matt Pocock's spec publishing
-  workflow, using the `documentation` label.
-- `to-tickets`: Nick's MIT-licensed customization of Matt Pocock's tracer-bullet
-  ticket workflow, preserving native parent/sub-issue relationships.
-- `ship-spec`: Claude Code-only orchestration for delivering every issue in a
-  GitHub spec, including resumable runs and isolated parallel lanes.
+Skills are curated, not accepted by default - see
+[CONTRIBUTING.md](CONTRIBUTING.md) for what belongs here and what does not.
 
-Portable personal skills are curated individually after their provenance and
-private-context boundaries are reviewed.
+## License
 
-See `THIRD_PARTY_NOTICES.md` for the provenance of customized upstream skills.
+MIT, except where a skill directory carries its own LICENSE. See
+[LICENSE](LICENSE) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
