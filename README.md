@@ -31,8 +31,8 @@ Skills that shell out have their own runtime dependencies, listed in each
 
 - [`annotated-screenshots`](skills/annotated-screenshots/) - Capture, annotate,
   and publish before/after UI evidence into a pull request or issue.
-- [`generated-image-assets`](skills/generated-image-assets/) - Turn generated
-  raster output into a project asset with verified alpha edges.
+- [`generated-image-assets`](skills/generated-image-assets/) - Remove an image's
+  background, verify the alpha edges, and size it for shipping.
 - [`ship-spec`](skills/ship-spec/) - Claude Code only. Deliver every issue in a
   GitHub spec as a resumable orchestrated loop.
 - [`to-spec`](skills/to-spec/) - Synthesize the current conversation into a spec

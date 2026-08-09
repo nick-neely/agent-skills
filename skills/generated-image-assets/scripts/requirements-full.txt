@@ -1,0 +1,9 @@
+# Full tier: adds segment.py's model-based background removal.
+# rembg[cpu] pulls its own onnxruntime and pymatting; both are pinned here too
+# so the exact tested combination is reproducible rather than "whatever rembg
+# happens to allow today". Do not use rembg[cli]: that extra drags in gradio,
+# fastapi, and uvicorn, none of which segment.py needs.
+-r requirements-chroma.txt
+rembg[cpu]~=2.0.76
+onnxruntime~=1.26.0
+pymatting~=1.1.15

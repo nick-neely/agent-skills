@@ -10,6 +10,19 @@ while IFS= read -r -d '' script; do
   node --check "$script"
 done < <(find skills -type f -name '*.mjs' -print0)
 
+# Compile rather than py_compile, which would litter __pycache__ beside sources.
+if find skills -type f -name '*.py' -print -quit | grep -q .; then
+  if ! command -v python3 >/dev/null 2>&1; then
+    printf 'python3 is required to validate the Python scripts under skills/.\n' >&2
+    exit 1
+  fi
+  find skills -type f -name '*.py' -exec python3 -c 'import sys
+
+for path in sys.argv[1:]:
+    with open(path, "rb") as handle:
+        compile(handle.read(), path, "exec")' {} +
+fi
+
 "$repo/scripts/test"
 
 git diff --check
