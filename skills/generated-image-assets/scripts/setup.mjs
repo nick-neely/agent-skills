@@ -29,7 +29,7 @@
 // Pass --python to skip that search and use exactly the interpreter given.
 
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, realpathSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, realpathSync, renameSync, rmSync } from "node:fs";
 import { homedir, platform } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -248,6 +248,30 @@ if (explicitPython) {
 
 const attemptCandidates = explicitPython ? candidates : candidates.slice(0, MAX_ATTEMPTS);
 
+// Hold any existing venv aside rather than destroying it up front, so a
+// failed rebuild (a full-tier upgrade that cannot resolve, say) leaves the
+// working environment intact instead of no environment at all. Moving it back
+// restores it to the path it was created for, which matters because a venv
+// bakes its own absolute path into the scripts in bin/.
+const BACKUP_DIR = `${VENV_DIR}.previous-${process.pid}`;
+let backedUp = false;
+if (existsSync(VENV_DIR)) {
+  rmSync(BACKUP_DIR, { recursive: true, force: true });
+  renameSync(VENV_DIR, BACKUP_DIR);
+  backedUp = true;
+}
+const discardBackup = () => {
+  if (backedUp) rmSync(BACKUP_DIR, { recursive: true, force: true });
+  backedUp = false;
+};
+const restoreBackup = () => {
+  if (!backedUp) return;
+  rmSync(VENV_DIR, { recursive: true, force: true });
+  renameSync(BACKUP_DIR, VENV_DIR);
+  backedUp = false;
+  console.error(`kept the previous venv at ${VENV_DIR}.`);
+};
+
 const failures = [];
 let chosen = null;
 
@@ -263,9 +287,8 @@ for (const candidate of attemptCandidates) {
 }
 
 if (!chosen) {
-  if (existsSync(VENV_DIR)) {
-    rmSync(VENV_DIR, { recursive: true, force: true });
-  }
+  rmSync(VENV_DIR, { recursive: true, force: true });
+  restoreBackup();
 
   let message;
   if (explicitPython) {
@@ -288,6 +311,8 @@ if (!chosen) {
   }
   fail(message);
 }
+
+discardBackup();
 
 if (failures.length > 0) {
   console.log("");

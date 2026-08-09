@@ -123,17 +123,22 @@ const add = (name, ok, detail, fix = null, required = true) => {
   return check;
 };
 
+// Informational, not required. It matters only for BUILDING a venv, so an
+// unusable python3 on PATH must not fail preflight when the venv already
+// works. setup.mjs falls back to other interpreters anyway. The venv import
+// check below is what decides whether the chroma tier is usable.
 const python = findPython();
 if (python) {
   const ok = versionOk(python.version);
   add(
     "python3",
     ok,
-    `${python.binary} ${python.version.join(".")}${ok ? "" : ` (need ${MIN_PYTHON.join(".")}+)`}`,
-    ok ? null : `install Python ${MIN_PYTHON.join(".")}+ and re-run preflight`,
+    `${python.binary} ${python.version.join(".")}${ok ? "" : ` (need ${MIN_PYTHON.join(".")}+ to build a venv)`}`,
+    ok ? null : `install Python ${MIN_PYTHON.join(".")}+ if you need to rebuild the venv`,
+    false,
   );
 } else {
-  add("python3", false, "not found", `install Python ${MIN_PYTHON.join(".")}+`);
+  add("python3", false, "not found", `install Python ${MIN_PYTHON.join(".")}+`, false);
 }
 
 const venvPy = venvPython(VENV_DIR);
