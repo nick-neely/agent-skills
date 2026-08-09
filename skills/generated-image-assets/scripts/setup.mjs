@@ -37,7 +37,7 @@ import { fileURLToPath } from "node:url";
 const SCRIPTS_DIR = resolve(dirname(fileURLToPath(import.meta.url)));
 const CACHE_ROOT = process.env.XDG_CACHE_HOME || join(homedir(), ".cache");
 const VENV_DIR = join(CACHE_ROOT, "generated-image-assets", "venv");
-const MIN_PYTHON = [3, 9];
+const MIN_PYTHON = [3, 11];
 const MAX_ATTEMPTS = 3;
 
 // Tried in order when --python is not given. `python3` on PATH goes first so

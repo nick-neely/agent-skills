@@ -21,7 +21,7 @@ const SCRIPTS_DIR = resolve(dirname(fileURLToPath(import.meta.url)));
 const SETUP_SCRIPT = join(SCRIPTS_DIR, "setup.mjs");
 const CACHE_ROOT = process.env.XDG_CACHE_HOME || join(homedir(), ".cache");
 const VENV_DIR = join(CACHE_ROOT, "generated-image-assets", "venv");
-const MIN_PYTHON = [3, 9];
+const MIN_PYTHON = [3, 11];
 
 // Matches rembg's own default: $U2NET_HOME, else $XDG_DATA_HOME/.u2net, else
 // ~/.u2net. Left at this default on purpose (see setup.mjs) rather than

@@ -1,7 +1,7 @@
 ---
 name: generated-image-assets
 description: Turn a generated or existing raster image into a clean project asset with real transparency. Use when an image needs its background removed, when a generated icon or illustration arrives on a flat green or magenta background, when alpha edges show colored fringing or halos, or when an asset needs trimming, high-DPI sizing, and optimization before it ships. Triggers include "remove the background", "make this transparent", "clean up this icon", "this has a green fringe", and "turn this into an app asset".
-compatibility: Requires Python 3.9 or newer. Creates an on-demand virtualenv outside the repo on first use. The segmentation path additionally downloads an ONNX model of roughly 200MB.
+compatibility: Requires Python 3.11 or newer, which the pinned NumPy and rembg releases both need. Creates an on-demand virtualenv outside the repo on first use. The segmentation path additionally downloads an ONNX model of roughly 200MB.
 ---
 
 # Generated image assets
