@@ -155,6 +155,15 @@ def component_sizes(mask: np.ndarray) -> list[int]:
     return sizes
 
 
+def longest_run(flags: np.ndarray) -> int:
+    """Length of the longest consecutive True stretch in a 1-D boolean array."""
+    best = current = 0
+    for flag in flags.tolist():
+        current = current + 1 if flag else 0
+        best = max(best, current)
+    return best
+
+
 def content_bbox(alpha: np.ndarray) -> tuple[int, int, int, int] | None:
     # Weigh rows and columns by total alpha rather than testing for any nonzero
     # pixel. A handful of near-invisible strays would otherwise stretch the box
@@ -290,10 +299,12 @@ def inspect(input_path: Path, out_path: Path, key: np.ndarray | None) -> dict:
         clipped = False
     else:
         bbox_x0, bbox_y0, bbox_x1, bbox_y1 = bbox
-        # Real clipping presents a run of solid pixels along a border line.
+        # Real clipping presents a contiguous run of solid pixels along a
+        # border. Counting scattered ones instead would let a few specks read
+        # as clipped and send the caller back to redo a fine matte.
         solid = alpha_f >= 128
         clipped = any(
-            int(edge.sum()) >= EDGE_TOUCH_MIN
+            longest_run(edge) >= EDGE_TOUCH_MIN
             for edge in (solid[0, :], solid[-1, :], solid[:, 0], solid[:, -1])
         )
 
