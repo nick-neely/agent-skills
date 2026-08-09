@@ -236,7 +236,7 @@ for (const entry of entries) {
       checkSkillRootReferences(file, content, skillRoot);
       checkNoHardcodedInstallPath(file, content);
     }
-    if (file.endsWith(".mjs")) {
+    if (/\.(mjs|py)$/.test(file)) {
       const mode = statSync(file).mode & 0o777;
       if (readFileSync(file, "utf8").startsWith("#!") && (mode & 0o111) === 0) {
         fail(`Executable script lacks executable mode: ${file}`);
@@ -245,7 +245,7 @@ for (const entry of entries) {
     // The writing convention (see THIRD_PARTY_NOTICES.md) is plain hyphens;
     // assets (fonts, binaries) are exempt since they are not prose or code.
     const inAssets = relative(skillRoot, file).split(sep)[0] === "assets";
-    if (!inAssets && /\.(md|mjs|yaml)$/.test(file)) checkNoEmDash(file);
+    if (!inAssets && /\.(md|mjs|yaml|py)$/.test(file)) checkNoEmDash(file);
   }
 }
 

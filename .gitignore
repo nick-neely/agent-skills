@@ -2,3 +2,5 @@
 node_modules/
 .agents/
 .codex/
+__pycache__/
+*.pyc
