@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { execFileSync } from "node:child_process";
 import {
   existsSync,
   lstatSync,
@@ -48,6 +49,23 @@ function walk(path) {
     if (entry.isDirectory()) return walk(target);
     return [target];
   });
+}
+
+function trackedExecutable(path) {
+  const repositoryPath = relative(root, path).split(sep).join("/");
+  try {
+    const entry = execFileSync(
+      "git",
+      ["-C", root, "ls-files", "--stage", "--", repositoryPath],
+      { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
+    ).trim();
+    const mode = entry.match(/^(\d{6})\s/);
+    if (mode) return mode[1] === "100755";
+  } catch {
+    // A temporary validation fixture may not be a repository. Fall back to
+    // the filesystem there; published repository files use the Git index.
+  }
+  return (statSync(path).mode & 0o111) !== 0;
 }
 
 function parseFrontmatter(path) {
@@ -237,8 +255,7 @@ for (const entry of entries) {
       checkNoHardcodedInstallPath(file, content);
     }
     if (/\.(mjs|py)$/.test(file)) {
-      const mode = statSync(file).mode & 0o777;
-      if (readFileSync(file, "utf8").startsWith("#!") && (mode & 0o111) === 0) {
+      if (readFileSync(file, "utf8").startsWith("#!") && !trackedExecutable(file)) {
         fail(`Executable script lacks executable mode: ${file}`);
       }
     }

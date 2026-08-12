@@ -26,6 +26,23 @@ expect_invalid em-dash-found 'Em dash found'
 expect_invalid hardcoded-skill-install-path 'Hardcoded skill-install path'
 expect_invalid readme-skill-list-mismatch 'README Skills section'
 
+# Windows does not expose POSIX executable bits through stat. The validator
+# must honor the portable mode recorded by Git instead of the working tree.
+mode_fixture="$temporary/executable-mode"
+mkdir -p "$mode_fixture/skills/sample/agents" "$mode_fixture/skills/sample/scripts"
+printf '%s\n' '# Skills' '' '## Skills' '' '- [`sample`](skills/sample/) - Sample.' \
+  >"$mode_fixture/README.md"
+printf '%s\n' '---' 'name: sample' 'description: Sample skill.' '---' '' '# Sample' \
+  >"$mode_fixture/skills/sample/SKILL.md"
+printf '%s\n' 'interface:' '  display_name: "Sample"' '  short_description: "Sample skill"' \
+  >"$mode_fixture/skills/sample/agents/openai.yaml"
+printf '%s\n' '#!/usr/bin/env node' >"$mode_fixture/skills/sample/scripts/run.mjs"
+git -C "$mode_fixture" init -q
+git -C "$mode_fixture" add .
+git -C "$mode_fixture" update-index --chmod=+x skills/sample/scripts/run.mjs
+chmod 0644 "$mode_fixture/skills/sample/scripts/run.mjs"
+node "$repo/scripts/validate-skills.mjs" "$mode_fixture" >/dev/null
+
 project="$temporary/project"
 mkdir -p "$project/app/admin"
 printf '{"scripts":{"dev":"next dev --port 3456"},"dependencies":{"next":"1","better-auth":"1"}}\n' \
