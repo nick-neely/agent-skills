@@ -2,7 +2,7 @@
 // Check every dependency this skill needs, before any work begins.
 //
 // Usage:
-//   node preflight.mjs [--json]
+//   node preflight.mjs [--motion] [--json]
 //
 // Exits non-zero when a required dependency is missing. Reports what to run,
 // but installs nothing: system packages, global npm writes, and browser
@@ -18,9 +18,10 @@ const FONT_PATH = join(SKILL_ROOT, "assets", "DejaVuSans.ttf");
 
 const HELP = `preflight.mjs - verify this skill's dependencies
 
-  node preflight.mjs [--json]
+  node preflight.mjs [--motion] [--json]
 
-Exits 0 when everything needed is present, 1 otherwise.
+Without --motion, FFmpeg is reported but optional. With --motion, FFmpeg,
+ffprobe, and ImageMagick montage are required for GIF preparation and review.
 `;
 
 // Install hints differ enough per platform that a single generic line is
@@ -47,6 +48,11 @@ const INSTALL = {
     linux: "sudo apt install git",
     win32: "winget install Git.Git",
   },
+  ffmpeg: {
+    darwin: "brew install ffmpeg",
+    linux: "sudo apt install ffmpeg   (or: dnf install ffmpeg)",
+    win32: "winget install Gyan.FFmpeg",
+  },
 };
 
 function hint(tool) {
@@ -68,8 +74,12 @@ const checks = [];
 const add = (name, ok, detail, fix = null, required = true) =>
   checks.push({ name, ok, detail, fix, required });
 
-// ImageMagick 7 ships `magick`; ImageMagick 6 ships `convert`.
-const magick = ["magick", "convert"].find((binary) => has(binary));
+const motion = process.argv.includes("--motion");
+
+// Windows ships an unrelated convert.exe, so only use the ImageMagick 6
+// fallback on Unix hosts.
+const magickCandidates = process.platform === "win32" ? ["magick"] : ["magick", "convert"];
+const magick = magickCandidates.find((binary) => has(binary));
 add(
   "ImageMagick",
   Boolean(magick),
@@ -137,6 +147,31 @@ add(
   "reinstall the skill; the font ships with it",
 );
 
+const hasFfmpeg = has("ffmpeg", ["-version"]);
+add(
+  "ffmpeg",
+  hasFfmpeg,
+  hasFfmpeg ? "installed" : "not found; only required for motion evidence",
+  hint("ffmpeg"),
+  motion,
+);
+const hasFfprobe = has("ffprobe", ["-version"]);
+add(
+  "ffprobe",
+  hasFfprobe,
+  hasFfprobe ? "installed" : "not found; only required for motion evidence",
+  hint("ffmpeg"),
+  motion,
+);
+const hasMontage = has("magick", ["montage", "-version"]) || has("montage", ["-version"]);
+add(
+  "ImageMagick montage",
+  hasMontage,
+  hasMontage ? "installed" : "not found; only required for motion review sheets",
+  hint("imagemagick"),
+  motion,
+);
+
 if (process.argv.includes("--help") || process.argv.includes("-h")) {
   console.log(HELP);
   process.exit(0);
@@ -148,7 +183,8 @@ if (process.argv.includes("--json")) {
   console.log(JSON.stringify({ ok: failed.length === 0, checks }, null, 2));
 } else {
   for (const check of checks) {
-    console.log(`${check.ok ? "  ok " : "MISS "} ${check.name.padEnd(18)} ${check.detail}`);
+    const mark = check.ok ? "  ok " : check.required ? "MISS " : " opt ";
+    console.log(`${mark} ${check.name.padEnd(18)} ${check.detail}`);
   }
   if (failed.length > 0) {
     console.log("\nMissing dependencies. Run these, or ask the user to:\n");

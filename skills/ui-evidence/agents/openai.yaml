@@ -1,0 +1,4 @@
+interface:
+  display_name: "UI Evidence"
+  short_description: "Publish screenshots and GIFs as UI evidence"
+  default_prompt: "Use $ui-evidence to capture and publish the screenshots or GIFs that best prove this UI change."

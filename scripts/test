@@ -46,4 +46,6 @@ node -e '
   if (!config.devServer?.startCommand || config.auth?.adapter !== "better-auth") process.exit(1);
 ' "$project/.agents/visual-verification.json"
 
+node "$repo/tests/ui-evidence.test.mjs"
+
 printf 'Behavior tests passed.\n'

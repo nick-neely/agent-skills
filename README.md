@@ -24,13 +24,11 @@ ln -s "$PWD/agent-skills/skills/visual-verification" ~/.claude/skills/
 ```
 
 Skills that shell out have their own runtime dependencies, listed in each
-`SKILL.md`. `annotated-screenshots` checks its own up front with
+`SKILL.md`. `ui-evidence` checks its own up front with
 `scripts/preflight.mjs`.
 
 ## Skills
 
-- [`annotated-screenshots`](skills/annotated-screenshots/) - Capture, annotate,
-  and publish before/after UI evidence into a pull request or issue.
 - [`generated-image-assets`](skills/generated-image-assets/) - Remove an image's
   background, verify the alpha edges, and size it for shipping.
 - [`ship-spec`](skills/ship-spec/) - Claude Code only. Deliver every issue in a
@@ -39,6 +37,8 @@ Skills that shell out have their own runtime dependencies, listed in each
   and publish it to the issue tracker.
 - [`to-tickets`](skills/to-tickets/) - Break a spec or plan into tracer-bullet
   tickets that declare their blocking edges.
+- [`ui-evidence`](skills/ui-evidence/) - Capture, prepare, annotate, and publish
+  UI screenshots and GIFs into a pull request or issue.
 - [`visual-verification`](skills/visual-verification/) - Screenshot, inspect,
   and validate local app UI, including authenticated pages.
 
@@ -69,8 +69,8 @@ One gate, no dependencies beyond Node and git. It checks layout, frontmatter
 schema, directory-name agreement, OpenAI metadata, local links, script
 references, writing conventions, portability, licenses and provenance,
 executable modes, JavaScript syntax, and symlink containment, then runs the
-negative fixtures and behavior tests. CI runs it on x86_64 Linux and Apple
-Silicon macOS.
+negative fixtures and behavior tests. CI runs it on x86_64 Linux, Apple Silicon
+macOS, and Windows.
 
 ## Contributing
 

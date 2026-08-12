@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Upload local images referenced by a markdown section, then splice that
+// Upload local visual assets referenced by a markdown section, then splice that
 // section into a pull request or issue.
 //
 // Usage:
@@ -9,13 +9,14 @@
 // Re-running replaces the managed section instead of appending a second copy.
 
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { basename, dirname, extname, isAbsolute, resolve, sep } from "node:path";
 import { createHash } from "node:crypto";
 
-const START = "<!-- annotated-screenshots:start -->";
-const END = "<!-- annotated-screenshots:end -->";
-const FALLBACK_TAG = "annotated-screenshots-assets";
+const START = "<!-- ui-evidence:start -->";
+const END = "<!-- ui-evidence:end -->";
+const FALLBACK_TAG = "ui-evidence-assets";
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 
 const CONTENT_TYPES = {
   ".png": "image/png",
@@ -25,7 +26,7 @@ const CONTENT_TYPES = {
   ".webp": "image/webp",
 };
 
-const HELP = `publish.mjs - upload images and splice a section into a PR or issue
+const HELP = `publish.mjs - upload visual evidence and splice a section into a PR or issue
 
   node publish.mjs --target <pr:N|issue:N> --section <file.md> [options]
 
@@ -33,7 +34,7 @@ const HELP = `publish.mjs - upload images and splice a section into a PR or issu
   --section <path>         Markdown containing local image references
   --repo <owner/name>      Defaults to the current repository
   --mode <body|comment>    Edit the description, or manage a single comment (default body)
-  --image-root <path>      Directory images must live under (default: the section's directory)
+  --image-root <path>      Directory assets must live under (default: the section's directory)
   --dry-run                Upload nothing, print the resolved plan
 `;
 
@@ -165,8 +166,8 @@ function uploadReleaseAsset(file, repo) {
       "release", "create", FALLBACK_TAG,
       "--repo", repo,
       "--prerelease",
-      "--title", "Annotated screenshot assets",
-      "--notes", "Image assets referenced by pull request and issue descriptions.",
+      "--title", "UI evidence assets",
+      "--notes", "Visual evidence referenced by pull request and issue descriptions.",
     ]);
   }
   const bytes = readFileSync(file);
@@ -200,6 +201,9 @@ const imageRoot = resolve(options.imageRoot ?? dirname(sectionPath));
 const images = localImagePaths(markdown, imageRoot);
 for (const [ref, absolute] of images) {
   if (!existsSync(absolute)) die(`section references a missing image: ${ref} (${absolute})`);
+  if (statSync(absolute).size > MAX_IMAGE_BYTES) {
+    die(`image exceeds GitHub's 10 MiB limit: ${ref}`);
+  }
 }
 
 if (options.dryRun) {

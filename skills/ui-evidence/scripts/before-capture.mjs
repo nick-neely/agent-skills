@@ -91,7 +91,7 @@ try {
 
 const repoRoot = gitOrDie(["rev-parse", "--show-toplevel"]);
 const slug = repoRoot.split(/[/\\]/).filter(Boolean).pop() ?? "repo";
-const worktreeDir = resolve(options.dir ?? join(tmpdir(), `annotated-screenshots-before-${slug}`));
+const worktreeDir = resolve(options.dir ?? join(tmpdir(), `ui-evidence-before-${slug}`));
 
 if (command === "remove") {
   if (!existsSync(worktreeDir)) {

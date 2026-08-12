@@ -32,7 +32,7 @@ anything that widens that blast radius as a vulnerability:
 ## Running these safely
 
 - Read a skill before you install it. Every one is plain Markdown and Node.
-- `annotated-screenshots` and `to-spec`/`to-tickets` publish to GitHub with your
+- `ui-evidence` and `to-spec`/`to-tickets` publish to GitHub with your
   token. Both stop for confirmation first. Keep it that way.
-- Screenshots and specs are permanent once published. Redact before upload, not
-  after.
+- Screenshots, GIFs, and specs are permanent once published. Redact before
+  upload, not after.

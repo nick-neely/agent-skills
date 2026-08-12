@@ -17,7 +17,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const SKILL_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const FONT_PATH = join(SKILL_ROOT, "assets", "DejaVuSans.ttf");
-const SESSION = "annotated-screenshots";
+const SESSION = "ui-evidence-annotation";
 
 // One accent reads as deliberate. Rotating only kicks in when a single image
 // carries enough annotations that one colour stops disambiguating them.
@@ -277,7 +277,7 @@ const magick = resolveMagick();
 requireAgentBrowser();
 if (!existsSync(FONT_PATH)) die(`bundled font missing: ${FONT_PATH}`);
 
-const temp = mkdtempSync(join(tmpdir(), "annotated-screenshots-"));
+const temp = mkdtempSync(join(tmpdir(), "ui-evidence-annotation-"));
 const cleanup = () => {
   if (!options.keepTemp) rmSync(temp, { recursive: true, force: true });
 };

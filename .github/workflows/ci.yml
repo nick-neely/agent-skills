@@ -17,7 +17,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runner: [ubuntu-24.04, macos-14]
+        runner: [ubuntu-24.04, macos-14, windows-2025]
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -32,4 +32,5 @@ jobs:
         with:
           python-version: '3.12'
       - name: Validate skills and behavior
+        shell: bash
         run: ./scripts/validate

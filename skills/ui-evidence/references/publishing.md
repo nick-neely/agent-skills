@@ -33,8 +33,8 @@ referenced image exists, before anything is uploaded.
 Content is written between these markers:
 
 ```html
-<!-- annotated-screenshots:start -->
-<!-- annotated-screenshots:end -->
+<!-- ui-evidence:start -->
+<!-- ui-evidence:end -->
 ```
 
 Re-running replaces what is between them. Anything the user wrote outside them
@@ -60,13 +60,13 @@ GitHub markdown has no native side-by-side, so pairs need an HTML table.
 </table>
 ```
 
-A single image needs no table:
+A single screenshot or GIF needs no table:
 
 ```markdown
 ![Empty state replaces the spinner](annotated.png)
 ```
 
-Past three images, collapse the rest so the description stays readable:
+Past three primary assets, collapse secondary evidence so the description stays readable:
 
 ```html
 <details><summary>More states (3)</summary>
@@ -76,8 +76,17 @@ Past three images, collapse the rest so the description stays readable:
 </details>
 ```
 
-Cap the section at six images. When you leave something out, say so in the
-section. Silent truncation reads as complete coverage.
+Start with a soft budget of six visual assets and two GIFs. Exceed it only when
+each additional asset proves a named claim. When you leave a scoped state out,
+say so in the section. Silent truncation reads as complete coverage.
+
+Use after-only motion by default. Put synchronized before/after GIFs with
+matching dimensions in a table. Stack clips with different timing or geometry
+so two unrelated loops do not compete side by side.
+
+Give every GIF alt text that names the action and result. Nearby prose must
+carry the same meaning for reviewers who disable animated-image autoplay. Add
+a companion screenshot only when its static state is independently useful.
 
 ## Upload tiers
 
@@ -85,8 +94,8 @@ section. Silent truncation reads as complete coverage.
 token. Clean URLs, no repository pollution, works for private repositories.
 This endpoint is undocumented and could change without notice.
 
-**Release assets.** Used automatically when the attachment upload fails. Images
-are attached to a prerelease tagged `annotated-screenshots-assets`, created on
+**Release assets.** Used automatically when the attachment upload fails. Assets
+are attached to a prerelease tagged `ui-evidence-assets`, created on
 first use. Documented and stable, at the cost of a visible release in the
 repository.
 
@@ -120,4 +129,3 @@ space per repository, and the script picks a different endpoint for each.
 fallback took over. The release is a prerelease and can be deleted once the
 attachment path works again, but deleting it breaks images already published
 through it.
-
