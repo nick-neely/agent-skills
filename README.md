@@ -31,6 +31,8 @@ Skills that shell out have their own runtime dependencies, listed in each
 
 - [`generated-image-assets`](skills/generated-image-assets/) - Remove an image's
   background, verify the alpha edges, and size it for shipping.
+- [`implement-stack`](skills/implement-stack/) - Implement a spec, issue set, or
+  free-form request as a reviewable stack of pull requests.
 - [`ship-spec`](skills/ship-spec/) - Claude Code only. Deliver every issue in a
   GitHub spec as a resumable orchestrated loop.
 - [`to-spec`](skills/to-spec/) - Synthesize the current conversation into a spec

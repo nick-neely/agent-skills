@@ -1,0 +1,6 @@
+interface:
+  display_name: "Implement Stack"
+  short_description: "Implement work as stacked pull requests"
+  default_prompt: "Use $implement-stack to implement this work as a reviewable stack of pull requests."
+policy:
+  allow_implicit_invocation: false

@@ -64,5 +64,6 @@ node -e '
 ' "$project/.agents/visual-verification.json"
 
 node "$repo/tests/ui-evidence.test.mjs"
+node "$repo/tests/implement-stack.test.mjs"
 
 printf 'Behavior tests passed.\n'
