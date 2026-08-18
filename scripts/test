@@ -65,5 +65,6 @@ node -e '
 
 node "$repo/tests/ui-evidence.test.mjs"
 node "$repo/tests/implement-stack.test.mjs"
+node "$repo/tests/implement-program.test.mjs"
 
 printf 'Behavior tests passed.\n'

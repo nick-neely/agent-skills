@@ -1,16 +1,16 @@
 ---
 name: implement-stack
 description: Implement a spec, issue, issue set, or free-form request as a dependency-ordered stack of reviewable pull requests.
-compatibility: Requires Node.js, git, GitHub CLI with gh stack, and the implement, gh-stack, tdd, and code-review skills.
+compatibility: Requires Node.js, git, GitHub CLI with gh stack, and the gh-stack, tdd, and code-review skills.
 disable-model-invocation: true
 argument-hint: "<issue, spec, or direction>..."
 ---
 
 # Implement Stack
 
-Implement `$ARGUMENTS` as one or more stacked pull request stories. Run
-$implement's lifecycle for every layer while this skill controls the branch and
-stack boundaries. Load the supporting skills at their named steps:
+Implement `$ARGUMENTS` as one or more stacked pull request stories. Apply the
+per-layer lifecycle below while this skill controls the branch and stack
+boundaries. Load the supporting model-invoked skills at their named steps:
 
 - Run $gh-stack before choosing layers, then follow it for stack design,
   commands, recovery, synchronization, and submission.

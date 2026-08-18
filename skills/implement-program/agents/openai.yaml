@@ -1,0 +1,6 @@
+interface:
+  display_name: "Implement Program"
+  short_description: "Ship ticket graphs behind one human gate"
+  default_prompt: "Use $implement-program to deliver this specification through child pull requests and one qualified integration pull request."
+policy:
+  allow_implicit_invocation: false
