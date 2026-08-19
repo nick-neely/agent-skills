@@ -40,6 +40,7 @@ function run(command, args) {
     cwd: process.cwd(),
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
+    shell: process.platform === "win32",
   });
   return {
     found: result.error?.code !== "ENOENT",
