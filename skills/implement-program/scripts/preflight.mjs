@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { activeGitOperation, gitRoot, hasCommand, output, runResult, runText } from "./lib.mjs";
+import { activeGitOperation, gitRoot, hasCommand, output, runGhResult, runResult, runText } from "./lib.mjs";
 
 const args = process.argv.slice(2);
 const live = args.includes("--live");
@@ -23,12 +23,12 @@ if (root) {
   add("ledger ignore", ignored, true, ignored ? ".scratch/implement-program is ignored" : "add an ignore rule before initializing a ledger");
 }
 
-const gh = hasCommand("gh");
+const gh = runGhResult(["--version"]).code === 0;
 add("GitHub CLI", gh, true, gh ? "available" : "gh is not available");
 if (live && gh) {
-  const auth = runResult("gh", ["auth", "status"]);
+  const auth = runGhResult(["auth", "status"]);
   add("live GitHub authentication", auth.code === 0, true, auth.code === 0 ? "authenticated" : auth.stderr.trim() || "authentication failed");
-  const repo = runResult("gh", ["repo", "view", "--json", "nameWithOwner,defaultBranchRef"]);
+  const repo = runGhResult(["repo", "view", "--json", "nameWithOwner,defaultBranchRef"]);
   add("live repository", repo.code === 0, true, repo.code === 0 ? repo.stdout.trim() : repo.stderr.trim() || "repository lookup failed");
 }
 

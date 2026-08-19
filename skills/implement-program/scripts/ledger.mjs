@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
-import { argValue, die, output, readJSON, runResult, runText, writeJSONAtomic } from "./lib.mjs";
+import { argValue, die, output, readJSON, runGhResult, runResult, runText, writeJSONAtomic } from "./lib.mjs";
 
 const states = ["planned", "active", "review", "merge-eligible", "integrated", "qualified", "shipped", "blocked", "failed"];
 const transitions = {
@@ -180,7 +180,7 @@ function collectLiveState(ledger) {
       : null;
     const worktree = ticket.worktree ? worktrees.find((candidate) => resolve(candidate.path) === resolve(ticket.worktree)) : null;
     const dirty = worktree ? Boolean(runText("git", ["status", "--porcelain"], { cwd: worktree.path, allowFail: true })) : null;
-    const issueResult = runResult("gh", ["issue", "view", String(ticket.id), "--json", "state"]);
+    const issueResult = runGhResult(["issue", "view", String(ticket.id), "--json", "state"]);
     const pr = ticket.pr ? inspectPr(ticket.pr) : null;
     const integrationCommitExists = root && ticket.integrationCommit
       ? runResult("git", ["cat-file", "-e", `${ticket.integrationCommit}^{commit}`], { cwd: root }).code === 0
@@ -319,7 +319,7 @@ function parseWorktrees(text) {
 }
 
 function inspectPr(number) {
-  const result = runResult("gh", ["pr", "view", String(number), "--json", "number,state,isDraft,headRefName,baseRefName,headRefOid,baseRefOid,statusCheckRollup,reviews"]);
+  const result = runGhResult(["pr", "view", String(number), "--json", "number,state,isDraft,headRefName,baseRefName,headRefOid,baseRefOid,statusCheckRollup,reviews"]);
   return result.code === 0 ? { queryComplete: true, ...parseJSON(result.stdout) } : { queryComplete: false, error: result.stderr.trim() || "pull request lookup failed" };
 }
 

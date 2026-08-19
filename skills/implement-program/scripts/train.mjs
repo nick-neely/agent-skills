@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { argValue, die, gitRoot, output, runResult, runText } from "./lib.mjs";
+import { argValue, die, gitRoot, output, runGhResult, runResult, runText } from "./lib.mjs";
 
 const args = process.argv.slice(2);
 const command = args[0];
@@ -39,7 +39,7 @@ if (command === "init") {
     output({ baselineSha, branch, base, remote, pullRequest: existing, state: "existing" }, true);
     process.exit(0);
   }
-  const created = runResult("gh", ["pr", "create", "--draft", "--base", base, "--head", branch, "--title", title, "--body-file", resolve(bodyFile)]);
+  const created = runGhResult(["pr", "create", "--draft", "--base", base, "--head", branch, "--title", title, "--body-file", resolve(bodyFile)]);
   if (created.code !== 0) die(created.stderr.trim() || "could not create draft umbrella pull request");
   output({ baselineSha, branch, base, remote, pullRequest: { url: created.stdout.trim() }, state: "created" }, true);
 } else if (command === "inspect") {
@@ -49,7 +49,7 @@ if (command === "init") {
 } else usage();
 
 function inspect(head) {
-  const result = runResult("gh", ["pr", "view", head, "--json", "number,url,state,isDraft,baseRefName,headRefName,body"]);
+  const result = runGhResult(["pr", "view", head, "--json", "number,url,state,isDraft,baseRefName,headRefName,body"]);
   if (result.code !== 0) return null;
   try { return JSON.parse(result.stdout); } catch { die("GitHub returned malformed pull request JSON"); }
 }

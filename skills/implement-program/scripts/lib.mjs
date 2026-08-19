@@ -59,6 +59,23 @@ export function hasCommand(name) {
   return runResult(name, ["--version"]).code === 0;
 }
 
+export function runGhResult(args = [], options = {}) {
+  const environment = options.env || process.env;
+  const command = environment.GH_BIN || "gh";
+  let prefix = [];
+  if (environment.GH_BIN_ARGS) {
+    try {
+      prefix = JSON.parse(environment.GH_BIN_ARGS);
+    } catch {
+      die("GH_BIN_ARGS must be a JSON array");
+    }
+    if (!Array.isArray(prefix) || prefix.some((value) => typeof value !== "string")) {
+      die("GH_BIN_ARGS must be a JSON array of strings");
+    }
+  }
+  return runResult(command, [...prefix, ...args], options);
+}
+
 export function gitRoot(cwd = process.cwd()) {
   return runText("git", ["rev-parse", "--show-toplevel"], { cwd, allowFail: true });
 }

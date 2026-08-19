@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { argValue, die, output, readJSON, runResult } from "./lib.mjs";
+import { argValue, die, output, readJSON, runGhResult } from "./lib.mjs";
 
 const args = process.argv.slice(2);
 const snapshotPath = argValue(args, "--snapshot");
@@ -70,16 +70,16 @@ function isGreen(check) {
 }
 
 function liveSnapshot(number) {
-  const view = runResult("gh", ["pr", "view", String(number), "--json", "number,state,isDraft,baseRefName,baseRefOid,headRefName,headRefOid,commits,reviews,comments,statusCheckRollup"]);
+  const view = runGhResult(["pr", "view", String(number), "--json", "number,state,isDraft,baseRefName,baseRefOid,headRefName,headRefOid,commits,reviews,comments,statusCheckRollup"]);
   if (view.code !== 0) die(view.stderr.trim() || `could not read pull request ${number}`);
   const data = JSON.parse(view.stdout);
-  const slug = runResult("gh", ["repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"]);
+  const slug = runGhResult(["repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"]);
   let unresolvedThreads = 0;
   let threadsQueryComplete = false;
   if (slug.code === 0) {
     const [owner, name] = slug.stdout.trim().split("/");
     const query = "query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100){nodes{isResolved}}}}}";
-    const threads = runResult("gh", ["api", "graphql", "-f", `query=${query}`, "-F", `owner=${owner}`, "-F", `name=${name}`, "-F", `number=${number}`]);
+    const threads = runGhResult(["api", "graphql", "-f", `query=${query}`, "-F", `owner=${owner}`, "-F", `name=${name}`, "-F", `number=${number}`]);
     if (threads.code === 0) {
       const parsed = JSON.parse(threads.stdout);
       unresolvedThreads = parsed.data.repository.pullRequest.reviewThreads.nodes.filter((thread) => !thread.isResolved).length;

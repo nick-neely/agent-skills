@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { delimiter, dirname, join, resolve } from "node:path";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 
@@ -233,7 +233,7 @@ function testTrainInitialization() {
   ].join("\n"));
   const fakeBin = join(temporary, "train-bin");
   mkdirSync(fakeBin, { recursive: true });
-  writeFakeGh(fakeBin, `const command = process.argv.slice(2, 4).join(" ");
+  const fakeGhEnvironment = writeFakeGh(fakeBin, `const command = process.argv.slice(2, 4).join(" ");
 if (command === "pr view") process.exit(1);
 if (command === "pr create") {
   console.log("https://github.com/example/project/pull/1");
@@ -244,7 +244,7 @@ process.exit(2);
   const initialized = runJSON("train.mjs", [
     "init", "--branch", "program/spec-1", "--base", base,
     "--title", "Program spec 1", "--body-file", body,
-  ], repo, { PATH: `${fakeBin}${delimiter}${process.env.PATH}` });
+  ], repo, fakeGhEnvironment);
   assert.equal(initialized.status, 0, initialized.stderr);
   assert.equal(initialized.json.state, "created");
   assert.equal(initialized.json.pullRequest.url, "https://github.com/example/project/pull/1");
@@ -256,13 +256,13 @@ function testPreflight() {
   writeFileSync(join(repo, ".gitignore"), ".scratch/\n");
   const fakeBin = join(temporary, "bin");
   mkdirSync(fakeBin, { recursive: true });
-  writeFakeGh(fakeBin, `if (process.argv[2] === "--version") {
+  const fakeGhEnvironment = writeFakeGh(fakeBin, `if (process.argv[2] === "--version") {
   console.log("gh test");
   process.exit(0);
 }
 process.exit(1);
 `);
-  const result = runJSON("preflight.mjs", ["--json"], repo, { PATH: `${fakeBin}${delimiter}${process.env.PATH}` });
+  const result = runJSON("preflight.mjs", ["--json"], repo, fakeGhEnvironment);
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.json.ok, true);
   assert.equal(result.json.checks.find((check) => check.name === "ledger ignore").ok, true);
@@ -288,13 +288,10 @@ function git(cwd, args) {
 function writeFakeGh(directory, source) {
   const script = join(directory, "fake-gh.mjs");
   writeFileSync(script, source);
-  if (process.platform === "win32") {
-    writeFileSync(join(directory, "gh.cmd"), `@echo off\r\n"${process.execPath}" "%~dp0\\fake-gh.mjs" %*\r\n`);
-    return;
-  }
-  const executable = join(directory, "gh");
-  writeFileSync(executable, `#!/usr/bin/env sh\nexec "${process.execPath}" "${script}" "$@"\n`);
-  chmodSync(executable, 0o755);
+  return {
+    GH_BIN: process.execPath,
+    GH_BIN_ARGS: JSON.stringify([script]),
+  };
 }
 
 function runJSON(script, args, cwd, environment = {}) {
