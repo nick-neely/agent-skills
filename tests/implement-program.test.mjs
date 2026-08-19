@@ -233,15 +233,14 @@ function testTrainInitialization() {
   ].join("\n"));
   const fakeBin = join(temporary, "train-bin");
   mkdirSync(fakeBin, { recursive: true });
-  const fakeGh = join(fakeBin, "gh");
-  writeFileSync(fakeGh, [
-    "#!/usr/bin/env sh",
-    "if [ \"$1 $2\" = \"pr view\" ]; then exit 1; fi",
-    "if [ \"$1 $2\" = \"pr create\" ]; then echo 'https://github.com/example/project/pull/1'; exit 0; fi",
-    "exit 2",
-    "",
-  ].join("\n"));
-  chmodSync(fakeGh, 0o755);
+  writeFakeGh(fakeBin, `const command = process.argv.slice(2, 4).join(" ");
+if (command === "pr view") process.exit(1);
+if (command === "pr create") {
+  console.log("https://github.com/example/project/pull/1");
+  process.exit(0);
+}
+process.exit(2);
+`);
   const initialized = runJSON("train.mjs", [
     "init", "--branch", "program/spec-1", "--base", base,
     "--title", "Program spec 1", "--body-file", body,
@@ -257,9 +256,12 @@ function testPreflight() {
   writeFileSync(join(repo, ".gitignore"), ".scratch/\n");
   const fakeBin = join(temporary, "bin");
   mkdirSync(fakeBin, { recursive: true });
-  const fakeGh = join(fakeBin, "gh");
-  writeFileSync(fakeGh, "#!/usr/bin/env sh\nif [ \"$1\" = \"--version\" ]; then echo 'gh test'; exit 0; fi\nexit 1\n");
-  chmodSync(fakeGh, 0o755);
+  writeFakeGh(fakeBin, `if (process.argv[2] === "--version") {
+  console.log("gh test");
+  process.exit(0);
+}
+process.exit(1);
+`);
   const result = runJSON("preflight.mjs", ["--json"], repo, { PATH: `${fakeBin}${delimiter}${process.env.PATH}` });
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.json.ok, true);
@@ -281,6 +283,18 @@ function createRepository(name) {
 
 function git(cwd, args) {
   return execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
+}
+
+function writeFakeGh(directory, source) {
+  const script = join(directory, "fake-gh.mjs");
+  writeFileSync(script, source);
+  if (process.platform === "win32") {
+    writeFileSync(join(directory, "gh.cmd"), `@echo off\r\n"${process.execPath}" "%~dp0\\fake-gh.mjs" %*\r\n`);
+    return;
+  }
+  const executable = join(directory, "gh");
+  writeFileSync(executable, `#!/usr/bin/env sh\nexec "${process.execPath}" "${script}" "$@"\n`);
+  chmodSync(executable, 0o755);
 }
 
 function runJSON(script, args, cwd, environment = {}) {
