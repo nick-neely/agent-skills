@@ -24,13 +24,17 @@ Repository values override these defaults. Explicit run overrides take
 precedence over repository values. Reject unknown keys and malformed role
 profiles before dispatch.
 
-`availability: prefer` records an unavailable preference and falls back to the
-inherited model. A repository may use `require` to block dispatch instead.
+`availability: prefer` uses the configured profile when the harness supports it.
+Otherwise it uses the user- or harness-selected inherited profile and records
+the fallback without rewriting repository configuration. A repository may use
+`require` to block dispatch instead.
 
-The configured profile is a floor. The orchestrator may escalate a difficult or
-high-risk assignment to another supported model or reasoning level. Record the
-configured profile, resolved profile, and concise reason in the ledger. Do not
-downgrade below Luna at maximum reasoning merely to reduce usage.
+The configured profile is a floor when available. The orchestrator may escalate
+a difficult or high-risk assignment to another supported model or reasoning
+level. Record the configured profile, resolved profile, and concise reason in
+the ledger. Do not downgrade below Luna at maximum reasoning merely to reduce
+usage. An unavailable preferred profile is a portability fallback, not a
+quality-policy change.
 
 The built-in floor is Luna at `max`. A repository may name any model supported
 by its harness when it marks that profile as `quality: escalation`. The
@@ -45,8 +49,10 @@ node "<skill-root>/scripts/ledger.mjs" profile --run-dir <run-dir> --ticket <id>
 ```
 
 Concurrency values are operating ceilings, distinct from the harness session
-cap. Cap them to the harness's available sub-agent slots and reduce them when
-ownership or runtime isolation is uncertain. A higher harness cap supplies
-headroom; it does not compel dispatch. The scheduler does not reserve role
-slots: a completed implementation frees a slot for review before another
+cap. Resolve the total worker capacity from current session or delegation-tool
+metadata on every run, then cap configured concurrency to it. If the runtime
+does not disclose a total, use one until it reports a stronger bound. Reduce
+further when ownership or runtime isolation is uncertain. A higher harness cap
+supplies headroom; it does not compel dispatch. The scheduler does not reserve
+role slots: a completed implementation frees a slot for review before another
 implementation starts.

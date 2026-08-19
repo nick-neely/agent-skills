@@ -75,8 +75,19 @@ function testLedgerFrontierAndConcurrency() {
   const frontier = runJSON("frontier.mjs", ["--ledger", ledgerPath, "--json"], repo);
   assert.deepEqual(frontier.json.frontier, ["1", "3", "4"]);
   const concurrent = runJSON("concurrency.mjs", ["--ledger", ledgerPath, "--capacity", "3", "--json"], repo);
+  assert.equal(concurrent.json.configuredMaximum, 3);
+  assert.equal(concurrent.json.harnessCapacity, 3);
+  assert.equal(concurrent.json.maximum, 3);
   assert.deepEqual(concurrent.json.selected, ["1", "3"]);
   assert.match(concurrent.json.deferred.find((ticket) => ticket.id === "4").reason, /path ownership/);
+
+  const ledger = JSON.parse(readFileSync(ledgerPath, "utf8"));
+  ledger.config.concurrency.maxActiveSubagents = 5;
+  writeFileSync(ledgerPath, JSON.stringify(ledger));
+  const roomy = runJSON("concurrency.mjs", ["--ledger", ledgerPath, "--capacity", "8", "--json"], repo);
+  assert.equal(roomy.json.configuredMaximum, 5);
+  assert.equal(roomy.json.harnessCapacity, 8);
+  assert.equal(roomy.json.maximum, 5);
 
   for (const state of ["active", "review", "merge-eligible", "integrated"]) {
     const changed = runJSON("ledger.mjs", ["set", "--run-dir", runDir, "--ticket", "1", "--state", state], repo);

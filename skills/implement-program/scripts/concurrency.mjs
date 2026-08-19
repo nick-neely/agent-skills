@@ -3,12 +3,12 @@ import { argValue, die, loadTicketGraph, output } from "./lib.mjs";
 
 const args = process.argv.slice(2);
 const path = argValue(args, "--ledger");
-if (!path) die("usage: concurrency.mjs --ledger <run.json> [--json]");
+if (!path) die("usage: concurrency.mjs --ledger <run.json> --capacity <total-subagent-capacity> [--json]");
 const capacityArg = Number(argValue(args, "--capacity"));
-if (!Number.isInteger(capacityArg) || capacityArg < 0) die("usage: concurrency.mjs --ledger <run.json> --capacity <available-subagent-slots> [--json]");
+if (!Number.isInteger(capacityArg) || capacityArg < 0) die("usage: concurrency.mjs --ledger <run.json> --capacity <total-subagent-capacity> [--json]");
 const { ledger, tickets, byId, satisfied } = loadTicketGraph(path);
 const active = tickets.filter((ticket) => ticket.assignment?.active);
-const maximum = Math.min(ledger.config?.concurrency?.maxActiveSubagents ?? 3, capacityArg);
+const maximum = Math.min(ledger.config?.concurrency?.maxActiveSubagents ?? 5, capacityArg);
 const capacity = Math.max(0, maximum - active.length);
 const candidates = tickets
   .filter((ticket) => ticket.state === "planned")
@@ -29,6 +29,8 @@ for (const ticket of candidates) {
 }
 
 output({
+  configuredMaximum: ledger.config?.concurrency?.maxActiveSubagents ?? 5,
+  harnessCapacity: capacityArg,
   maximum,
   active: active.map((ticket) => String(ticket.id)),
   selected: selected.map((ticket) => String(ticket.id)),

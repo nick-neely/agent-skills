@@ -70,8 +70,13 @@ Compute tickets whose blockers are integrated:
 
 ```sh
 node "<skill-root>/scripts/frontier.mjs" --ledger <run-dir>/run.json --json
-node "<skill-root>/scripts/concurrency.mjs" --ledger <run-dir>/run.json --capacity <available-subagent-slots> --json
+node "<skill-root>/scripts/concurrency.mjs" --ledger <run-dir>/run.json --capacity <total-subagent-capacity> --json
 ```
+
+Discover total sub-agent capacity from the current session or delegation tool
+metadata on every run; do not assume the machine that authored the skill. When
+the runtime does not disclose a total, use one until it reports a stronger
+bound. The scheduler subtracts workers already active in the ledger.
 
 Before parallel dispatch, obtain read-only reconnaissance for anticipated file
 ownership, migrations, generated artifacts, mutable services, ports, database
