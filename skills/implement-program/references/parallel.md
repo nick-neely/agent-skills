@@ -23,9 +23,11 @@ the lane. `leases.mjs` rejects a resource already held by another owner. Release
 leases only after integration verification passes; close a worktree only when it
 is clean.
 
-The default ceiling is three active sub-agents, excluding the orchestrator.
-When three builds are active, allow one to finish before dispatching its reviewer.
-Prioritize the review over filling the released slot with another build.
+The default operating ceiling is five active sub-agents, excluding the
+orchestrator: at most four implementation workers and two workers of either
+review or research role, still bounded by five overall. When four builds are
+active, retain headroom for the first completed build's reviewer instead of
+filling every harness slot. Prioritize that review over another build.
 
 After one sibling integrates, update another sibling only when ownership
 overlaps or before it enters final verification. Every child must incorporate

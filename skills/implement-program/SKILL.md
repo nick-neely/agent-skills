@@ -76,7 +76,7 @@ node "<skill-root>/scripts/concurrency.mjs" --ledger <run-dir>/run.json --capaci
 Before parallel dispatch, obtain read-only reconnaissance for anticipated file
 ownership, migrations, generated artifacts, mutable services, ports, database
 namespaces, and browser profiles. Run at most the configured number of workers;
-the default is three active sub-agents, subject to harness capacity. Serialize
+the default is five active sub-agents, subject to harness capacity. Serialize
 unknown overlap, migrations without proven isolation, and shared mutable
 resources. Read [references/parallel.md](references/parallel.md).
 

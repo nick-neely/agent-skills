@@ -10,7 +10,7 @@ export const defaults = {
     review: { model: "gpt-5.6-luna", reasoning: "max", quality: "floor", availability: "prefer" },
     research: { model: "gpt-5.6-luna", reasoning: "max", quality: "floor", availability: "prefer" },
   },
-  concurrency: { maxActiveSubagents: 3, implementation: 3, review: 1, research: 1 },
+  concurrency: { maxActiveSubagents: 5, implementation: 4, review: 2, research: 2 },
   review: { observationSeconds: 120, botResponsesRequired: false, bots: [] },
   scheduling: { policy: "adaptive-frontier", requireIsolationPreflight: true },
 };

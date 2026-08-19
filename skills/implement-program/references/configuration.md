@@ -14,7 +14,7 @@ adapters. Put optional project policy at `.agents/implement-program.json`.
     "review": { "model": "gpt-5.6-luna", "reasoning": "max", "quality": "floor", "availability": "prefer" },
     "research": { "model": "gpt-5.6-luna", "reasoning": "max", "quality": "floor", "availability": "prefer" }
   },
-  "concurrency": { "maxActiveSubagents": 3, "implementation": 3, "review": 1, "research": 1 },
+  "concurrency": { "maxActiveSubagents": 5, "implementation": 4, "review": 2, "research": 2 },
   "review": { "observationSeconds": 120, "botResponsesRequired": false, "bots": [] },
   "scheduling": { "policy": "adaptive-frontier", "requireIsolationPreflight": true }
 }
@@ -44,7 +44,9 @@ Record the configured and resolved profile before dispatch:
 node "<skill-root>/scripts/ledger.mjs" profile --run-dir <run-dir> --ticket <id> --role <role> --model <model> --reasoning <level> --quality <floor-or-escalation> --reason <why>
 ```
 
-Concurrency values are ceilings. Cap them to the harness's available sub-agent
-slots and reduce them when ownership or runtime isolation is uncertain. The
-scheduler does not reserve role slots: a completed implementation frees a slot
-for review before another implementation starts.
+Concurrency values are operating ceilings, distinct from the harness session
+cap. Cap them to the harness's available sub-agent slots and reduce them when
+ownership or runtime isolation is uncertain. A higher harness cap supplies
+headroom; it does not compel dispatch. The scheduler does not reserve role
+slots: a completed implementation frees a slot for review before another
+implementation starts.

@@ -27,7 +27,12 @@ function testConfiguration() {
   assert.equal(resolved.status, 0, resolved.stderr);
   assert.equal(resolved.json.config.agents.implementation.model, "gpt-5.6-luna");
   assert.equal(resolved.json.config.agents.implementation.reasoning, "max");
-  assert.equal(resolved.json.config.concurrency.maxActiveSubagents, 3);
+  assert.deepEqual(resolved.json.config.concurrency, {
+    maxActiveSubagents: 5,
+    implementation: 4,
+    review: 2,
+    research: 2,
+  });
 
   mkdirSync(join(repo, ".agents"));
   writeFileSync(join(repo, ".agents", "implement-program.json"), JSON.stringify({
