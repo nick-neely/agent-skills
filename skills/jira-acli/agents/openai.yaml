@@ -1,0 +1,3 @@
+interface:
+  display_name: "Jira ACLI"
+  short_description: "Read and update Jira work items with ACLI"

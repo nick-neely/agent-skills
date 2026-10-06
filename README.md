@@ -35,6 +35,8 @@ Skills that shell out have their own runtime dependencies, listed in each
   free-form request as a reviewable stack of pull requests.
 - [`implement-program`](skills/implement-program/) - Deliver dependency-linked
   tickets through child pull requests into one human-gated integration pull request.
+- [`jira-acli`](skills/jira-acli/) - Read, plan, and update Jira work items through
+  Atlassian ACLI. Requires local Jira authentication; writes need explicit intent.
 - [`ship-spec`](skills/ship-spec/) - Claude Code only. Deliver every issue in a
   GitHub spec as a resumable orchestrated loop.
 - [`to-spec`](skills/to-spec/) - Synthesize the current conversation into a spec
