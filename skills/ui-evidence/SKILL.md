@@ -8,7 +8,7 @@ compatibility: Requires git, an authenticated gh CLI, agent-browser with Chrome,
 
 Turn a UI change into evidence a reviewer can understand in ten seconds.
 
-This skill owns evidence selection, preparation, composition, confirmation, and
+This skill owns evidence selection, preparation, composition, review, and
 publishing. `agent-browser` owns browser state and raw capture. Replace
 `<skill-root>` below with the directory containing this file.
 
@@ -126,11 +126,20 @@ evidence.
 Read [publishing.md](references/publishing.md) for layouts, managed blocks, and
 upload behavior.
 
-## Confirm
+## Review and authorization
 
-Show the composed Markdown, every publishable screenshot and GIF, and every GIF
-review sheet. Review the complete GIF and the sampled frames. Flag possible
-personal or customer data. Wait for an explicit yes before uploading anything.
+An explicit invocation to attach or publish UI evidence to a specified pull
+request or issue authorizes capture, preparation, uploads, and the scoped target
+update. Use a target already established in the conversation; do not ask for a
+second approval of the same publication. A request for local captures or a
+preview authorizes preparation only. Ask when the publication destination is
+missing or ambiguous.
+
+Inspect every publishable screenshot and the complete GIF plus sampled frames.
+Redact unrelated personal or customer data before upload. If sensitive content
+is essential to the claim or cannot be safely redacted, show the prepared result
+and ask for that specific disclosure decision. Otherwise publish the reviewed
+section and show the result without an additional confirmation round.
 
 Review sheets are local privacy aids. Never reference them in the published
 section unless the user explicitly asks to publish one.
@@ -143,5 +152,5 @@ node "<skill-root>/scripts/publish.mjs" --target issue:45 --section section.md -
 ```
 
 Open the published pull request or issue and confirm every asset renders. The
-work is complete when every scoped claim has evidence, the user approved the
-exact section, and the published page displays it.
+work is complete when every scoped claim has reviewed evidence and the
+authorized target displays every asset.
