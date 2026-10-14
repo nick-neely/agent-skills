@@ -151,6 +151,12 @@ node "<skill-root>/scripts/publish.mjs" --target pr:123 --section section.md
 node "<skill-root>/scripts/publish.mjs" --target issue:45 --section section.md --mode comment
 ```
 
-Open the published pull request or issue and confirm every asset renders. The
-work is complete when every scoped claim has reviewed evidence and the
-authorized target displays every asset.
+Verify publication through authenticated `gh` or the GitHub API: read back the
+target body or managed comment and confirm the evidence block contains every
+expected hosted asset reference. See [publishing.md](references/publishing.md)
+for readback commands. Completion requires reviewed local evidence, successful
+uploads, and the expected references saved on the authorized target.
+
+Browser inspection of the published page is optional unless the user explicitly
+requests it. A signed-out GitHub browser is not a blocker; use the existing CLI
+authentication instead of asking the user to sign in for this check.

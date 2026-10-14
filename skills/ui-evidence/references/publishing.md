@@ -46,6 +46,30 @@ pull request and updates it, so repeated runs do not stack duplicates. Use
 Use `body` mode, the default, when the point is "here is what this change looks
 like".
 
+## Verify publication
+
+Read back the saved body using authenticated CLI access:
+
+```bash
+gh pr view <number> --repo <owner/name> --json body --jq .body
+gh issue view <number> --repo <owner/name> --json body --jq .body
+```
+
+For comment mode, read the comment identified by the publisher's `commentId`.
+When a new comment was created, list comments and locate the publishing user's
+comment containing the managed block:
+
+```bash
+gh api repos/<owner/name>/issues/comments/<comment-id> --jq .body
+gh api repos/<owner/name>/issues/<number>/comments --paginate
+```
+
+Confirm the managed block contains the intended section and every hosted URL
+reported by the publisher. Check that image markup is outside code fences.
+Successful uploads and this readback complete publication verification; they
+confirm saved references, not browser rendering. Report that distinction when
+summarizing verification.
+
 ## Layout
 
 GitHub markdown has no native side-by-side, so pairs need an HTML table.
@@ -117,9 +141,9 @@ repository.
 **`HTTP 401` or `HTTP 403` on upload.** The token lacks repository access. Check
 `gh auth status`, and confirm the token's scopes cover the target repository.
 
-**Images upload but do not render.** Confirm the section actually reached the
-target by opening the page. Check that HTML `<img>` tags are not nested inside
-a markdown code fence.
+**Images reported as missing.** Use the authenticated readback above to check
+the saved section and hosted URLs. Check that HTML `<img>` tags are not nested
+inside a markdown code fence.
 
 **`gh api` fails with `Not Found`.** Usually the wrong repository, or a pull
 request number used with `issue:` or the reverse. Both live in the same number
