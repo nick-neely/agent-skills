@@ -1,6 +1,6 @@
 ---
 name: babysit-pr
-description: Monitor an existing pull request's CI and review-bot feedback, address findings, and complete a bounded handoff.
+description: "Use when asked to babysit a PR or pull request, or to 'babysit this work' through PR checks and review feedback. Monitor CI, address review-bot findings, and complete a bounded handoff."
 ---
 
 Apply this workflow to an existing PR. Carry it to passing CI and an accounted-for review-bot state. Keep fixes within its scope; merge or deploy only when explicitly authorized.
