@@ -29,6 +29,8 @@ Skills that shell out have their own runtime dependencies, listed in each
 
 ## Skills
 
+- [`babysit-pr`](skills/babysit-pr/) - Monitor CI and review bots, address
+  findings, and stop within a bounded review budget.
 - [`generated-image-assets`](skills/generated-image-assets/) - Remove an image's
   background, verify the alpha edges, and size it for shipping.
 - [`implement-stack`](skills/implement-stack/) - Implement a spec, issue set, or

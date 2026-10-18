@@ -1,0 +1,3 @@
+interface:
+  display_name: "Babysit PR"
+  short_description: "Monitor CI and bot reviews within a bounded review budget"
