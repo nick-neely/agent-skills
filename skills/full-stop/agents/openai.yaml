@@ -1,0 +1,3 @@
+interface:
+  display_name: "Full Stop"
+  short_description: "Complete explicitly requested work through a human merge handoff"

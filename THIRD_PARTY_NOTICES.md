@@ -1,5 +1,20 @@
 # Third-party notices
 
+## Tstack workflows
+
+`skills/babysit-pr`, `skills/file-pr`, `skills/full-send`, `skills/full-stop`,
+`skills/sol-loop` and `skills/leaving-pr-comments` incorporate ideas and adapted
+instructions from [t3dotgg/tstack](https://github.com/t3dotgg/tstack), MIT licensed,
+at commit `7de017b3fc9d50c03cf3ecb98fb71e0ca65a78bd`. Each directory includes the
+upstream license.
+
+The adaptations retain the existing babysit PR-bot budget, separate event
+notification from repository readiness policy, and use a portable REST event
+waiter instead of the upstream bot-specific readiness watcher. `file-pr` calls
+the separately installed `pr` skill for its body format. Reviewer selection
+and public attribution belong to project instructions. The delivery workflows
+keep merge authority distinct from preparation and human handoff.
+
 ## Matt Pocock skills
 
 `skills/to-spec` and `skills/to-tickets` are based on

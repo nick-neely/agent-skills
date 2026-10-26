@@ -1,0 +1,3 @@
+interface:
+  display_name: "Sol Loop"
+  short_description: "Run bounded independent review using project reviewer policy"

@@ -1,0 +1,3 @@
+interface:
+  display_name: "Full Send"
+  short_description: "Complete explicitly requested work through a verified merge"

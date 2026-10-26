@@ -1,0 +1,3 @@
+interface:
+  display_name: "File PR"
+  short_description: "Review the diff and file a PR using the pr body format"
