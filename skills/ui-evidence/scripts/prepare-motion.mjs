@@ -100,24 +100,33 @@ function ensureDistinct(paths) {
   }
 }
 
-function commandExists(binary, args = ["-version"]) {
+function probeCommand(binary, args = ["-version"]) {
   try {
     execFileSync(binary, args, { stdio: "ignore" });
-    return true;
+    return { available: true };
   } catch (error) {
-    if (error.code === "ENOENT") return false;
-    const detail = error.code ?? (Number.isInteger(error.status) ? `exit ${error.status}` : error.signal ?? error.message);
-    die(`could not run ${binary} (${detail}); check the executable and its permissions`);
+    return error.code === "ENOENT" ? { available: false } : { available: false, error };
   }
 }
 
+function failProbe(binary, error) {
+  const detail = error.code ?? (Number.isInteger(error.status) ? `exit ${error.status}` : error.signal ?? error.message);
+  die(`could not run ${binary} (${detail}); check the executable and its permissions`);
+}
+
 function requireBinary(binary) {
-  if (!commandExists(binary)) die(`${binary} not found. Run scripts/preflight.mjs --prepare.`);
+  const probe = probeCommand(binary);
+  if (probe.error) failProbe(binary, probe.error);
+  if (!probe.available) die(`${binary} not found. Run scripts/preflight.mjs --prepare.`);
 }
 
 function resolveMontage() {
-  if (commandExists("magick")) return { binary: "magick", prefix: ["montage"] };
-  if (commandExists("montage")) return { binary: "montage", prefix: [] };
+  const magick = probeCommand("magick", ["montage", "-version"]);
+  if (magick.available) return { binary: "magick", prefix: ["montage"] };
+  const montage = probeCommand("montage");
+  if (montage.available) return { binary: "montage", prefix: [] };
+  if (magick.error) failProbe("magick", magick.error);
+  if (montage.error) failProbe("montage", montage.error);
   die("ImageMagick montage not found. Run scripts/preflight.mjs --prepare.");
 }
 

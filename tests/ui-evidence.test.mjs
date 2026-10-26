@@ -102,6 +102,52 @@ try {
     assert.match(dependency.stderr, expected);
     if (condition !== "ENOENT") assert.doesNotMatch(dependency.stderr, /not found|install|preflight/i);
   }
+  const montagePreload = join(temporary, "montage-preload.mjs");
+  writeFileSync(montagePreload, `
+    import childProcess from "node:child_process";
+    import { syncBuiltinESMExports } from "node:module";
+    const realExecFileSync = childProcess.execFileSync;
+    function rejectProbe(condition) {
+      const error = new Error("simulated montage probe failure");
+      if (condition === "NONZERO") error.status = 73;
+      else error.code = condition;
+      throw error;
+    }
+    childProcess.execFileSync = (binary, args, options) => {
+      if (binary === "magick" && args[0] === "-version") return "";
+      if (binary === "magick" && args[0] === "montage") rejectProbe(process.env.UI_EVIDENCE_FAKE_MAGICK);
+      if (binary === "montage" && args[0] === "-version" && process.env.UI_EVIDENCE_FAKE_MONTAGE) {
+        rejectProbe(process.env.UI_EVIDENCE_FAKE_MONTAGE);
+      }
+      if (process.env.UI_EVIDENCE_STUB_MEDIA === "1") {
+        if ((binary === "ffmpeg" || binary === "ffprobe") && args[0] === "-version") return "";
+        if (binary === "ffprobe" && args.includes("-count_frames")) {
+          return JSON.stringify({ streams: [{ width: 2, height: 2, nb_read_frames: "1" }],
+            format: { duration: "1", size: "1", start_time: "0" } });
+        }
+        if (binary === "ffprobe") {
+          return JSON.stringify({ frames: [{ best_effort_timestamp_time: "0", duration_time: "1" }] });
+        }
+      }
+      return realExecFileSync(binary, args, options);
+    };
+    syncBuiltinESMExports();
+  `);
+  const fakeRaw = join(temporary, "fake-source.webm");
+  writeFileSync(fakeRaw, "x");
+  for (const [magick, montage, expected] of [["NONZERO", "ENOENT", /could not run magick.*exit 73/],
+    ["EACCES", "EPERM", /could not run magick.*EACCES/], ["ENOENT", "EACCES", /could not run montage.*EACCES/],
+    ["ENOENT", "ENOENT", /ImageMagick montage not found/]]) {
+    const noMontage = spawnSync(process.execPath, [prepare, "--inspect", fakeRaw,
+      "--review-out", join(temporary, "fake-review.png")], {
+      cwd: repo, encoding: "utf8", env: { ...process.env,
+        NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ""} --import=${pathToFileURL(montagePreload).href}`.trim(),
+        UI_EVIDENCE_FAKE_MAGICK: magick, UI_EVIDENCE_FAKE_MONTAGE: montage, UI_EVIDENCE_STUB_MEDIA: "1" },
+    });
+    assert.notEqual(noMontage.status, 0);
+    assert.match(noMontage.stderr, expected);
+    if (magick !== "ENOENT" || montage !== "ENOENT") assert.doesNotMatch(noMontage.stderr, /not found|install|preflight/i);
+  }
   failure(["--unknown"], /unknown option/);
   failure(["--spec", "--out", "x.mp4", "--review-out", "x.png"], /--spec requires a value/);
   failure(["--inspect", "raw.webm", "--spec", "spec.json", "--review-out", "x.png"], /cannot.*--inspect|--inspect.*cannot/);
@@ -126,6 +172,17 @@ try {
       "file 'red.ppm'\nduration 0.3\nfile 'green.ppm'\nduration 2.5\nfile 'blue.ppm'\nduration 0.2\nfile 'blue.ppm'\n");
     run("ffmpeg", ["-y", "-v", "error", "-f", "concat", "-safe", "0", "-i", "list.txt",
       "-vsync", "vfr", "-c:v", "libvpx", "-pix_fmt", "yuv420p", "sparse.webm"], { cwd: temporary });
+    if (has("montage")) {
+      for (const condition of ["NONZERO", "EACCES"]) {
+        const fallbackReview = join(temporary, `fallback-${condition}.png`);
+        const fallback = spawnSync(process.execPath, [prepare, "--inspect", join(temporary, "sparse.webm"),
+          "--review-out", fallbackReview], { cwd: repo, encoding: "utf8", env: { ...process.env,
+          NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ""} --import=${pathToFileURL(montagePreload).href}`.trim(),
+          UI_EVIDENCE_FAKE_MAGICK: condition } });
+        assert.equal(fallback.status, 0, fallback.stderr);
+        assert.ok(existsSync(fallbackReview), "working standalone montage must produce a review sheet");
+      }
+    }
     const spec = join(temporary, "motion.json");
     writeFileSync(spec, JSON.stringify({
       input: "sparse.webm", trim: { start: 0.1, end: 2.9 },
