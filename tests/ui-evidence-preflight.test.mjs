@@ -21,8 +21,12 @@ function fixture(settings = {}) {
     const settings = JSON.parse(process.env.FAKE_SETTINGS);
     const ok = (stdout = "") => ({ status: 0, stdout, stderr: "" });
     const fail = () => ({ status: 1, stdout: "", stderr: "" });
+    const missing = () => ({ status: null, stdout: null, stderr: null, error: { code: "ENOENT" } });
     cp.spawnSync = (name, args) => {
       appendFileSync(process.env.FAKE_TOOL_LOG, name + "\n");
+      const override = settings.failures?.[name + " " + args.join(" ")] ?? settings.failures?.[name];
+      if (override) return { status: override.status ?? null, stdout: override.stdout ?? "", stderr: "",
+        ...(override.code ? { error: { code: override.code } } : {}) };
       if (name === "agent-browser" && !settings.browserMissing) {
         if (args[0] === "--version") return ok(settings.version ?? "agent-browser 0.38.1");
         if (args[0] === "doctor") return {
@@ -43,7 +47,7 @@ function fixture(settings = {}) {
         if (args[0] === "auth" && args[1] === "token") return settings.ghUnauthenticated ? fail() : ok("secret-token-never-report");
         if (args[0] === "pr" && args[1] === "edit" && args[2] === "--help") return ok("Usage: gh pr edit");
       }
-      return fail();
+      return missing();
     };
     syncBuiltinESMExports();
   `);
@@ -70,6 +74,130 @@ test("help returns before running dependency checks", () => {
     assert.equal(result.status, 0);
     assert.match(result.stdout, /--prepare/);
     assert.equal(tools.noCalls(), true);
+  } finally {
+    tools.cleanup();
+  }
+});
+
+test("a blocked browser launch reports EPERM without suggesting a reinstall", () => {
+  const tools = fixture({ failures: { "agent-browser --version": { code: "EPERM", status: 0 } } });
+  try {
+    const result = tools.run("--json");
+    assert.equal(result.status, 1);
+    const browser = JSON.parse(result.stdout).checks.find((check) => check.name === "agent-browser");
+    assert.equal(browser.ok, false);
+    assert.match(browser.detail, /EPERM/);
+    assert.equal(browser.fix, null);
+  } finally {
+    tools.cleanup();
+  }
+});
+
+test("media preflight reports an EACCES launch failure without suggesting installation", () => {
+  const tools = fixture({ media: true, failures: { "ffmpeg -version": { code: "EACCES" } } });
+  try {
+    const result = tools.run("--prepare", "--json");
+    assert.equal(result.status, 1);
+    const ffmpeg = JSON.parse(result.stdout).checks.find((check) => check.name === "ffmpeg");
+    assert.match(ffmpeg.detail, /EACCES/);
+    assert.equal(ffmpeg.fix, null);
+  } finally {
+    tools.cleanup();
+  }
+});
+
+test("a blocked ImageMagick binary is not reported as missing when the fallback is absent", () => {
+  const tools = fixture({ media: true, failures: { "magick -version": { code: "EPERM" } } });
+  try {
+    const result = tools.run("--annotate", "--json");
+    assert.equal(result.status, 1);
+    const magick = JSON.parse(result.stdout).checks.find((check) => check.name === "ImageMagick");
+    assert.match(magick.detail, /EPERM/);
+    assert.equal(magick.fix, null);
+  } finally {
+    tools.cleanup();
+  }
+});
+
+test("a blocked montage probe is reported without suggesting ImageMagick installation", () => {
+  const tools = fixture({ media: true, failures: { "magick montage -version": { code: "EACCES" } } });
+  try {
+    const result = tools.run("--prepare", "--json");
+    assert.equal(result.status, 1);
+    const montage = JSON.parse(result.stdout).checks.find((check) => check.name === "ImageMagick montage");
+    assert.match(montage.detail, /EACCES/);
+    assert.equal(montage.fix, null);
+  } finally {
+    tools.cleanup();
+  }
+});
+
+test("an installed GitHub CLI that exits unsuccessfully is reported as broken, not missing", () => {
+  const tools = fixture({ gh: true, failures: { "gh --version": { status: 19 } } });
+  try {
+    const result = tools.run("--publish", "--json");
+    assert.equal(result.status, 1);
+    const gh = JSON.parse(result.stdout).checks.find((check) => check.name === "gh CLI");
+    assert.match(gh.detail, /exited with status 19/);
+    assert.equal(gh.fix, null);
+  } finally {
+    tools.cleanup();
+  }
+});
+
+test("a genuinely missing browser retains an installation hint", () => {
+  const tools = fixture({ browserMissing: true });
+  try {
+    const result = tools.run("--json");
+    assert.equal(result.status, 1);
+    const browser = JSON.parse(result.stdout).checks.find((check) => check.name === "agent-browser");
+    assert.match(browser.detail, /not found/);
+    assert.match(browser.fix, /agent-browser/);
+  } finally {
+    tools.cleanup();
+  }
+});
+
+test("missing media tools retain install hints", () => {
+  const tools = fixture();
+  try {
+    const result = tools.run("--prepare", "--json");
+    assert.equal(result.status, 1);
+    const checks = JSON.parse(result.stdout).checks;
+    for (const name of ["ffmpeg", "ffprobe", "ImageMagick montage"]) {
+      const check = checks.find((item) => item.name === name);
+      assert.match(check.detail, /not found/);
+      assert.ok(check.fix, name);
+    }
+  } finally {
+    tools.cleanup();
+  }
+});
+
+test("a failed FFmpeg encoder diagnostic does not claim the encoder is missing", () => {
+  const tools = fixture({ media: true, failures: { "ffmpeg -hide_banner -encoders": { status: 7 } } });
+  try {
+    const result = tools.run("--prepare", "--json");
+    assert.equal(result.status, 1);
+    const encoder = JSON.parse(result.stdout).checks.find((check) => check.name === "libx264");
+    assert.match(encoder.detail, /exited with status 7/);
+    assert.equal(encoder.fix, null);
+  } finally {
+    tools.cleanup();
+  }
+});
+
+test("a doctor launch error reports its code even if the process result contains output", () => {
+  const tools = fixture({ failures: { "agent-browser doctor --offline --quick --json": {
+    code: "EACCES", status: 0,
+    stdout: JSON.stringify({ checks: [{ id: "chrome.installed", status: "pass" }] }),
+  } } });
+  try {
+    const result = tools.run("--json");
+    assert.equal(result.status, 1);
+    const chrome = JSON.parse(result.stdout).checks.find((check) => check.name === "Chrome");
+    assert.match(chrome.detail, /EACCES/);
+    assert.equal(chrome.fix, null);
   } finally {
     tools.cleanup();
   }

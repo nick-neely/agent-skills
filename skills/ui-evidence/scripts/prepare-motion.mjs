@@ -104,8 +104,10 @@ function commandExists(binary, args = ["-version"]) {
   try {
     execFileSync(binary, args, { stdio: "ignore" });
     return true;
-  } catch {
-    return false;
+  } catch (error) {
+    if (error.code === "ENOENT") return false;
+    const detail = error.code ?? (Number.isInteger(error.status) ? `exit ${error.status}` : error.signal ?? error.message);
+    die(`could not run ${binary} (${detail}); check the executable and its permissions`);
   }
 }
 

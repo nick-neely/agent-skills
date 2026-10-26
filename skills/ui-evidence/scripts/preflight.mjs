@@ -49,6 +49,33 @@ function run(binary, args) {
   return spawnSync(binary, args, { encoding: "utf8", maxBuffer: 8 * 1024 * 1024 });
 }
 
+function succeeded(result) {
+  return !result.error && result.status === 0;
+}
+
+function failureDetail(binary, result) {
+  if (result.error?.code === "ENOENT") return `${binary} not found`;
+  if (result.error) return `${binary} could not start (${result.error.code || "unknown error"})`;
+  if (result.signal) return `${binary} was terminated by ${result.signal}`;
+  return `${binary} exited with status ${result.status ?? "unknown"}`;
+}
+
+function missingHint(result, tool) {
+  return result.error?.code === "ENOENT" ? hint(tool) : null;
+}
+
+function findTool(candidates) {
+  let failure;
+  for (const [binary, args] of candidates) {
+    const result = run(binary, args);
+    if (succeeded(result)) return { binary, result };
+    if (!failure || (failure.result.error?.code === "ENOENT" && result.error?.code !== "ENOENT")) {
+      failure = { binary, result };
+    }
+  }
+  return failure;
+}
+
 const args = process.argv.slice(2);
 if (args.includes("--help") || args.includes("-h")) {
   console.log(HELP);
@@ -91,7 +118,7 @@ const add = (name, ok, detail, fix = null, required = true) =>
 
 if (["capture", "motion", "annotate"].includes(mode)) {
   const version = run("agent-browser", ["--version"]);
-  const hasBrowser = version.status === 0;
+  const hasBrowser = succeeded(version);
   const versionMatch = version.stdout?.match(/\b(\d+)\.(\d+)\.(\d+)(-[\w.-]+)?/);
   const meetsMotionVersion = Boolean(versionMatch) && (
     Number(versionMatch[1]) > 0 || Number(versionMatch[2]) > 38 ||
@@ -100,7 +127,7 @@ if (["capture", "motion", "annotate"].includes(mode)) {
   );
   const motion = mode === "motion";
   if (!hasBrowser) {
-    add("agent-browser", false, "not found", hint("agent-browser"));
+    add("agent-browser", false, failureDetail("agent-browser", version), missingHint(version, "agent-browser"));
   } else if (motion && !meetsMotionVersion) {
     add("agent-browser", false, `${version.stdout.trim() || "version unknown"}; motion requires 0.38.1 or newer`,
       "upgrade agent-browser to 0.38.1 or newer using its existing installation method");
@@ -110,52 +137,64 @@ if (["capture", "motion", "annotate"].includes(mode)) {
 
   if (hasBrowser) {
     const doctor = run("agent-browser", ["doctor", "--offline", "--quick", "--json"]);
-    let chrome;
-    let diagnostic = "agent-browser doctor did not report Chrome availability; inspect its diagnostic output";
-    try {
-      chrome = JSON.parse(doctor.stdout).checks?.find((check) => check.id === "chrome.installed");
-    } catch {
-      diagnostic = doctor.stdout?.trim()
-        ? "agent-browser doctor returned invalid JSON; inspect its diagnostic output"
-        : "agent-browser doctor failed to produce a diagnostic; inspect the environment and retry";
-    }
-    if (chrome?.status === "pass") {
-      add("Chrome", true, "installed");
-    } else if (chrome?.status === "fail") {
-      add("Chrome", false, chrome.message || "not installed", "agent-browser install");
+    if (doctor.error) {
+      add("Chrome", false, failureDetail("agent-browser doctor", doctor), missingHint(doctor, "agent-browser"));
     } else {
-      add("Chrome", false, diagnostic);
+      let chrome;
+      let diagnostic = "agent-browser doctor did not report Chrome availability; inspect its diagnostic output";
+      try {
+        chrome = JSON.parse(doctor.stdout).checks?.find((check) => check.id === "chrome.installed");
+      } catch {
+        const failure = succeeded(doctor) ? "" : ` (${failureDetail("agent-browser doctor", doctor)})`;
+        diagnostic = doctor.stdout?.trim()
+          ? `agent-browser doctor returned invalid JSON${failure}; inspect its diagnostic output`
+          : `agent-browser doctor failed to produce a diagnostic${failure}; inspect the environment and retry`;
+      }
+      if (chrome?.status === "pass") {
+        add("Chrome", true, "installed");
+      } else if (chrome?.status === "fail") {
+        add("Chrome", false, chrome.message || "not installed", "agent-browser install");
+      } else {
+        add("Chrome", false, diagnostic);
+      }
     }
   } else {
-    add("Chrome", false, "cannot check without agent-browser");
+    add("Chrome", false, "cannot check because agent-browser could not run");
   }
 }
 
 if (["motion", "prepare"].includes(mode)) {
-  const ffmpeg = run("ffmpeg", ["-version"]).status === 0;
-  add("ffmpeg", ffmpeg, ffmpeg ? "installed" : "not found", ffmpeg ? null : hint("ffmpeg"));
+  const probe = run("ffmpeg", ["-version"]);
+  const ffmpeg = succeeded(probe);
+  add("ffmpeg", ffmpeg, ffmpeg ? "installed" : failureDetail("ffmpeg", probe), missingHint(probe, "ffmpeg"));
   if (ffmpeg) {
     const encoders = run("ffmpeg", ["-hide_banner", "-encoders"]);
     const encoder = format === "gif" ? (mode === "motion" ? "libvpx" : "gif") : "libx264";
-    const found = encoders.status === 0 && new RegExp(`^\\s*[A-Z.]{6}\\s+${encoder}(?:\\s|$)`, "m").test(encoders.stdout);
-    add(encoder === "gif" ? "GIF encoder" : encoder, found,
-      found ? "available" : `FFmpeg lacks the ${encoder} encoder`,
-      found ? null : `use an FFmpeg build with ${encoder} support`);
+    const name = encoder === "gif" ? "GIF encoder" : encoder;
+    if (!succeeded(encoders)) {
+      add(name, false, failureDetail("ffmpeg -encoders", encoders), missingHint(encoders, "ffmpeg"));
+    } else {
+      const found = new RegExp(`^\\s*[A-Z.]{6}\\s+${encoder}(?:\\s|$)`, "m").test(encoders.stdout);
+      add(name, found, found ? "available" : `FFmpeg lacks the ${encoder} encoder`,
+        found ? null : `use an FFmpeg build with ${encoder} support`);
+    }
   }
 }
 if (mode === "prepare") {
-  const ffprobe = run("ffprobe", ["-version"]).status === 0;
-  add("ffprobe", ffprobe, ffprobe ? "installed" : "not found", ffprobe ? null : hint("ffmpeg"));
-  const montage = run("magick", ["montage", "-version"]).status === 0 ||
-    run("montage", ["-version"]).status === 0;
-  add("ImageMagick montage", montage, montage ? "installed" : "not found",
-    montage ? null : hint("imagemagick"));
+  const probe = run("ffprobe", ["-version"]);
+  const ffprobe = succeeded(probe);
+  add("ffprobe", ffprobe, ffprobe ? "installed" : failureDetail("ffprobe", probe), missingHint(probe, "ffmpeg"));
+  const montage = findTool([["magick", ["montage", "-version"]], ["montage", ["-version"]]]);
+  const hasMontage = succeeded(montage.result);
+  add("ImageMagick montage", hasMontage, hasMontage ? "installed" : failureDetail(montage.binary, montage.result),
+    missingHint(montage.result, "imagemagick"));
 }
 if (mode === "annotate") {
   const candidates = process.platform === "win32" ? ["magick"] : ["magick", "convert"];
-  const binary = candidates.find((candidate) => run(candidate, ["-version"]).status === 0);
-  add("ImageMagick", Boolean(binary), binary ? `found as ${binary}` : "not found",
-    binary ? null : hint("imagemagick"));
+  const magick = findTool(candidates.map((binary) => [binary, ["-version"]]));
+  const hasMagick = succeeded(magick.result);
+  add("ImageMagick", hasMagick, hasMagick ? `found as ${magick.binary}` : failureDetail(magick.binary, magick.result),
+    missingHint(magick.result, "imagemagick"));
 }
 if (["prepare", "annotate"].includes(mode)) {
   const font = existsSync(FONT_PATH);
@@ -165,16 +204,15 @@ if (["prepare", "annotate"].includes(mode)) {
 
 if (mode === "publish") {
   const gh = run("gh", ["--version"]);
-  const installed = gh.status === 0;
-  add("gh CLI", installed, installed ? gh.stdout.split("\n")[0] : "not found",
-    installed ? null : hint("gh"));
+  const installed = succeeded(gh);
+  add("gh CLI", installed, installed ? gh.stdout.split("\n")[0] : failureDetail("gh", gh), missingHint(gh, "gh"));
   if (installed) {
     const auth = run("gh", ["auth", "token"]);
-    const authenticated = auth.status === 0 && Boolean(auth.stdout?.trim());
+    const authenticated = succeeded(auth) && Boolean(auth.stdout?.trim());
     add("gh authentication", authenticated, authenticated ? "authenticated" : "no token for this host",
       authenticated ? null : "gh auth login");
     const help = run("gh", ["pr", "edit", "--help"]);
-    const native = help.status === 0 && /(?:^|\s)--attach(?:[=\s,]|$)/m.test(help.stdout);
+    const native = succeeded(help) && /(?:^|\s)--attach(?:[=\s,]|$)/m.test(help.stdout);
     add("gh native attachments", native,
       native ? "available" : "unavailable or could not inspect; standard body/new-comment uploads need gh 2.99.0 or newer; some layouts use direct attachments",
       null, false);

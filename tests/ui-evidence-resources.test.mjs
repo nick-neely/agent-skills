@@ -275,10 +275,11 @@ test("removal refuses a clean registered worktree created by another tool", () =
   try {
     const foreign = join(project.root, "external-worktree");
     project.git("worktree", "add", "--detach", foreign, "HEAD");
+    const original = readFileSync(join(foreign, "app.txt"));
     const removed = project.run("remove", "--dir", foreign);
     assert.equal(removed.status, 1);
     assert.match(removed.stderr, /ownership record/i);
-    assert.equal(readFileSync(join(foreign, "app.txt"), "utf8"), "after\n");
+    assert.deepEqual(readFileSync(join(foreign, "app.txt")), original);
   } finally {
     project.cleanup();
   }

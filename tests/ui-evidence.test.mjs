@@ -74,6 +74,34 @@ try {
     cwd: repo, encoding: "utf8", env: { ...process.env, PATH: "" },
   });
   assert.equal(helpWithoutTools.status, 0);
+  const dependencyPreload = join(temporary, "dependency-preload.mjs");
+  writeFileSync(dependencyPreload, `
+    import childProcess from "node:child_process";
+    import { syncBuiltinESMExports } from "node:module";
+    const realExecFileSync = childProcess.execFileSync;
+    childProcess.execFileSync = (binary, args, options) => {
+      if (binary === "ffmpeg" && args[0] === "-version") {
+        const error = new Error("simulated dependency failure");
+        if (process.env.UI_EVIDENCE_FAKE_DEPENDENCY === "NONZERO") error.status = 73;
+        else error.code = process.env.UI_EVIDENCE_FAKE_DEPENDENCY;
+        throw error;
+      }
+      return realExecFileSync(binary, args, options);
+    };
+    syncBuiltinESMExports();
+  `);
+  for (const [condition, expected] of [["ENOENT", /ffmpeg not found/], ["EACCES", /could not run ffmpeg.*EACCES/],
+    ["EPERM", /could not run ffmpeg.*EPERM/], ["NONZERO", /could not run ffmpeg.*exit 73/]]) {
+    const dependency = spawnSync(process.execPath, [prepare, "--spec", "spec.json", "--out", "out.mp4",
+      "--review-out", "review.png"], {
+      cwd: repo, encoding: "utf8", env: { ...process.env,
+        NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ""} --import=${pathToFileURL(dependencyPreload).href}`.trim(),
+        UI_EVIDENCE_FAKE_DEPENDENCY: condition },
+    });
+    assert.notEqual(dependency.status, 0);
+    assert.match(dependency.stderr, expected);
+    if (condition !== "ENOENT") assert.doesNotMatch(dependency.stderr, /not found|install|preflight/i);
+  }
   failure(["--unknown"], /unknown option/);
   failure(["--spec", "--out", "x.mp4", "--review-out", "x.png"], /--spec requires a value/);
   failure(["--inspect", "raw.webm", "--spec", "spec.json", "--review-out", "x.png"], /cannot.*--inspect|--inspect.*cannot/);
