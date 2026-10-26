@@ -464,7 +464,7 @@ async function main() {
     try { if (saved !== undefined) savedBlock = block(saved); }
     catch (error) { readError = error.message; }
     const verification = saved === undefined || readError ? { verified: false, urls: [] } : transport === "native-gh" ? verify(saved, expected, assets, tokenPrefix) : { verified: saved === expected, urls: uploads.map((item) => item.url) };
-    const savedReferences = [...savedBlock.matchAll(/https:\/\/github\.com\/user-attachments\/assets\/[^\s<>()]+/g)].map((match) => match[0]);
+    const savedReferences = [...savedBlock.matchAll(/https:\/\/github\.com\/user-attachments\/assets\/[^\s<>()"']+/g)].map((match) => match[0]);
     const unresolved = assets.filter((asset) => asset.staged && savedBlock.includes(asset.staged)).flatMap((asset) => asset.refs);
     const result = { ...plan, commentId, uploads, readback: { verified: verification.verified, changed: saved === undefined ? (writeAttempted ? null : false) : saved !== current, savedReferences, unresolved, error: readError } };
     if (transport === "native-gh" && verification.verified) result.uploads = assets.map((asset) => ({ refs: asset.refs, url: verification.urls[asset.index] }));

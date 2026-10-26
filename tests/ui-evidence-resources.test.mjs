@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 
 import assert from "node:assert/strict";
-import { execFileSync, spawn, spawnSync } from "node:child_process";
+import { execFileSync, execSync, spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import test from "node:test";
 
@@ -59,9 +59,13 @@ test("default creation prints an explicit cleanup command and can remove a clean
     assert.match(info.removeCommand, /remove --dir /);
     assert.ok(info.removeCommand.includes(info.path));
     assert.ok(info.removeCommand.includes(info.owner));
+    const canonical = realpathSync.native(info.path);
+    const gitPath = project.git("-C", info.path, "rev-parse", "--show-toplevel");
+    assert.equal(realpathSync.native(gitPath), canonical);
     const removed = project.run("remove", "--dir", info.path, "--owner", info.owner);
     assert.equal(removed.status, 0, removed.stderr);
     assert.equal(JSON.parse(removed.stdout).removed, true);
+    assert.equal(JSON.parse(removed.stdout).path, canonical);
   } finally {
     project.cleanup();
   }
@@ -172,14 +176,11 @@ test("explicit paths round-trip through the printed removal command", () => {
     const info = JSON.parse(created.stdout);
     assert.equal(info.path, path);
     assert.equal(info.mergeBase, project.git("rev-parse", "HEAD"));
-    const shell = process.platform === "win32" ? process.env.ComSpec ?? "cmd.exe" : "/bin/sh";
-    const shellOption = process.platform === "win32" ? "/c" : "-c";
-    const realPath = realpathSync(path);
-    const removed = spawnSync(shell, [shellOption, info.removeCommand], {
-      cwd: project.checkout, encoding: "utf8",
+    const realPath = realpathSync.native(path);
+    const removed = execSync(info.removeCommand, {
+      cwd: project.checkout, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"],
     });
-    assert.equal(removed.status, 0, removed.stderr);
-    assert.equal(JSON.parse(removed.stdout).path, realPath);
+    assert.equal(JSON.parse(removed).path, realPath);
     assert.equal(existsSync(path), false);
   } finally {
     project.cleanup();
@@ -300,6 +301,24 @@ test("a different run's owner ID cannot remove a clean owned worktree", () => {
   }
 });
 
+test("an equivalent older recorded path still identifies the owned checkout", () => {
+  const project = fixture();
+  try {
+    const created = JSON.parse(project.run("create").stdout);
+    const admin = project.git("-C", created.path, "rev-parse", "--absolute-git-dir");
+    const recordPath = join(admin, "ui-evidence-before-capture.json");
+    const record = JSON.parse(readFileSync(recordPath, "utf8"));
+    assert.equal(record.path, realpathSync.native(created.path));
+    record.path = `${created.path}${sep}..${sep}${basename(created.path)}`;
+    writeFileSync(recordPath, JSON.stringify(record));
+    const removed = project.run("remove", "--dir", created.path, "--owner", created.owner);
+    assert.equal(removed.status, 0, removed.stderr);
+    assert.equal(existsSync(created.path), false);
+  } finally {
+    project.cleanup();
+  }
+});
+
 test("a worktree moved after creation is refused when its recorded path no longer matches", () => {
   const project = fixture();
   try {
@@ -339,7 +358,7 @@ test("a partial ownership-record write leaves the created worktree intact", () =
     assert.equal(result.status, 1);
     assert.match(result.stderr, /could not write the ownership record/i);
     assert.ok(existsSync(join(path, "app.txt")));
-    assert.equal(realpathSync(project.git("-C", path, "rev-parse", "--show-toplevel")), realpathSync(path));
+    assert.equal(realpathSync.native(project.git("-C", path, "rev-parse", "--show-toplevel")), realpathSync.native(path));
     const removed = project.run("remove", "--dir", path, "--owner", "unknown");
     assert.equal(removed.status, 1);
     assert.match(removed.stderr, /no valid ownership record/i);

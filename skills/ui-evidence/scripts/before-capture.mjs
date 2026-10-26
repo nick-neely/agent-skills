@@ -116,12 +116,14 @@ if (command === "remove") {
   if (!existsSync(worktreeDir)) {
     die(`worktree path does not exist: ${worktreeDir}`);
   }
-  worktreeDir = realpathSync(worktreeDir);
+  // The native resolver expands Windows short names, so Git's long path and
+  // a TEMP path like RUNNER~1 identify the same registered checkout.
+  worktreeDir = realpathSync.native(worktreeDir);
   const worktrees = gitOrDie(["worktree", "list", "--porcelain", "-z"])
     .split("\0").filter((entry) => entry.startsWith("worktree "))
     .map((entry) => {
       const path = entry.slice("worktree ".length);
-      try { return realpathSync(path); } catch { return resolve(path); }
+      try { return realpathSync.native(path); } catch { return null; }
     });
   if (!worktrees.includes(worktreeDir)) {
     die(`path is not registered as a worktree of this repository: ${worktreeDir}`);
@@ -133,7 +135,13 @@ if (command === "remove") {
     die(`no valid ownership record for ${worktreeDir}. The worktree was left untouched.`);
   }
   if (!options.owner) die("remove requires the explicit --owner printed by create");
-  if (!ownership || typeof ownership !== "object" || ownership.version !== 1 || ownership.path !== worktreeDir ||
+  let recordedPath;
+  try {
+    if (typeof ownership?.path === "string") recordedPath = realpathSync.native(ownership.path);
+  } catch {
+    // A missing or unresolvable recorded path cannot establish ownership.
+  }
+  if (!ownership || typeof ownership !== "object" || ownership.version !== 1 || recordedPath !== worktreeDir ||
       typeof ownership.owner !== "string" || !ownership.owner || ownership.owner !== options.owner) {
     die(`ownership record does not match this path and owner: ${worktreeDir}. The worktree was left untouched.`);
   }
@@ -168,7 +176,7 @@ try {
 }
 const owner = randomUUID();
 try {
-  const ownership = { version: 1, path: realpathSync(worktreeDir), owner };
+  const ownership = { version: 1, path: realpathSync.native(worktreeDir), owner };
   writeFileSync(ownershipPath(worktreeDir), `${JSON.stringify(ownership)}\n`, { flag: "wx", mode: 0o600 });
 } catch (error) {
   die(`could not write the ownership record: ${error.message}\nThe worktree was left at ${worktreeDir}; inspect it before removing it manually.`);

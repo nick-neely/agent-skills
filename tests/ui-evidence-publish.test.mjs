@@ -171,7 +171,9 @@ test("publishes HTML image tables and standalone video using direct attachments"
   assert.match(result.github.body, /<img src="https:\/\/github\.com\/user-attachments\/assets\/direct-1" width="480">/);
   assert.match(result.github.body, /<img src="https:\/\/github\.com\/user-attachments\/assets\/direct-2">/);
   assert.match(result.github.body, /\n\nhttps:\/\/github\.com\/user-attachments\/assets\/direct-3\n\n/);
-  assert.equal(JSON.parse(result.stdout).transport, "direct-attachment");
+  const output = JSON.parse(result.stdout);
+  assert.equal(output.transport, "direct-attachment");
+  assert.deepEqual(output.readback.savedReferences, output.uploads.map((upload) => upload.url));
 });
 
 test("reads back a partial native failure and reports unresolved evidence without retrying", () => {
