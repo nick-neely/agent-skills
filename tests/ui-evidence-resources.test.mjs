@@ -58,7 +58,8 @@ test("default creation prints an explicit cleanup command and can remove a clean
     assert.equal(info.mergeBase, project.git("rev-parse", "main"));
     assert.match(info.removeCommand, /remove --dir /);
     assert.ok(info.removeCommand.includes(info.path));
-    const removed = project.run("remove", "--dir", info.path);
+    assert.ok(info.removeCommand.includes(info.owner));
+    const removed = project.run("remove", "--dir", info.path, "--owner", info.owner);
     assert.equal(removed.status, 0, removed.stderr);
     assert.equal(JSON.parse(removed.stdout).removed, true);
   } finally {
@@ -151,11 +152,11 @@ test("concurrent default creations reserve distinct worktree paths", async () =>
   try {
     const results = await Promise.all([project.runAsync("create"), project.runAsync("create")]);
     for (const result of results) assert.equal(result.status, 0, result.stderr);
-    const paths = results.map((result) => JSON.parse(result.stdout).path);
-    assert.notEqual(paths[0], paths[1]);
-    for (const path of paths) {
-      assert.ok(existsSync(path));
-      assert.equal(project.run("remove", "--dir", path).status, 0);
+    const created = results.map((result) => JSON.parse(result.stdout));
+    assert.notEqual(created[0].path, created[1].path);
+    for (const info of created) {
+      assert.ok(existsSync(info.path));
+      assert.equal(project.run("remove", "--dir", info.path, "--owner", info.owner).status, 0);
     }
   } finally {
     project.cleanup();
@@ -191,7 +192,7 @@ test("removal requires a path and refuses a worktree from another repository", (
   try {
     const foreign = JSON.parse(other.run("create").stdout);
     assert.equal(project.run("remove").status, 1);
-    const removed = project.run("remove", "--dir", foreign.path);
+    const removed = project.run("remove", "--dir", foreign.path, "--owner", foreign.owner);
     assert.equal(removed.status, 1);
     assert.match(removed.stderr, /not registered.*repository/i);
     assert.ok(existsSync(join(foreign.path, "app.txt")));
@@ -221,14 +222,14 @@ test("removal refuses tracked changes and untracked files and leaves them intact
     const created = JSON.parse(project.run("create").stdout);
     const note = join(created.path, "notes.txt");
     writeFileSync(note, "keep this\n");
-    const removed = project.run("remove", "--dir", created.path);
+    const removed = project.run("remove", "--dir", created.path, "--owner", created.owner);
     assert.equal(removed.status, 1);
     assert.match(removed.stderr, /modified or untracked/i);
     assert.equal(readFileSync(note, "utf8"), "keep this\n");
     assert.ok(existsSync(created.path));
     unlinkSync(note);
     writeFileSync(join(created.path, "app.txt"), "uncommitted\n");
-    const dirty = project.run("remove", "--dir", created.path);
+    const dirty = project.run("remove", "--dir", created.path, "--owner", created.owner);
     assert.equal(dirty.status, 1);
     assert.match(dirty.stderr, /modified or untracked/i);
     assert.equal(readFileSync(join(created.path, "app.txt"), "utf8"), "uncommitted\n");
@@ -245,7 +246,7 @@ test("help explains that normal removal deletes ignored files in the selected ch
     const ignored = join(created.path, "ignored-build");
     mkdirSync(ignored);
     writeFileSync(join(ignored, "artifact"), "generated output");
-    const removed = project.run("remove", "--dir", created.path);
+    const removed = project.run("remove", "--dir", created.path, "--owner", created.owner);
     assert.equal(removed.status, 0, removed.stderr);
     assert.equal(existsSync(created.path), false);
   } finally {
@@ -259,10 +260,105 @@ test("removal refuses a path that is not registered to the current repository", 
     const unrelated = join(project.root, "unrelated");
     mkdirSync(unrelated);
     writeFileSync(join(unrelated, "keep.txt"), "keep\n");
-    const removed = project.run("remove", "--dir", unrelated);
+    const removed = project.run("remove", "--dir", unrelated, "--owner", "not-an-owner");
     assert.equal(removed.status, 1);
     assert.match(removed.stderr, /not registered.*repository/i);
     assert.equal(readFileSync(join(unrelated, "keep.txt"), "utf8"), "keep\n");
+  } finally {
+    project.cleanup();
+  }
+});
+
+test("removal refuses a clean registered worktree created by another tool", () => {
+  const project = fixture();
+  try {
+    const foreign = join(project.root, "external-worktree");
+    project.git("worktree", "add", "--detach", foreign, "HEAD");
+    const removed = project.run("remove", "--dir", foreign);
+    assert.equal(removed.status, 1);
+    assert.match(removed.stderr, /ownership record/i);
+    assert.equal(readFileSync(join(foreign, "app.txt"), "utf8"), "after\n");
+  } finally {
+    project.cleanup();
+  }
+});
+
+test("a different run's owner ID cannot remove a clean owned worktree", () => {
+  const project = fixture();
+  try {
+    const first = JSON.parse(project.run("create").stdout);
+    const second = JSON.parse(project.run("create").stdout);
+    assert.notEqual(first.owner, second.owner);
+    const removed = project.run("remove", "--dir", second.path, "--owner", first.owner);
+    assert.equal(removed.status, 1);
+    assert.match(removed.stderr, /ownership record does not match/i);
+    assert.ok(existsSync(join(second.path, "app.txt")));
+    assert.equal(project.run("remove", "--dir", first.path, "--owner", first.owner).status, 0);
+    assert.equal(project.run("remove", "--dir", second.path, "--owner", second.owner).status, 0);
+  } finally {
+    project.cleanup();
+  }
+});
+
+test("a worktree moved after creation is refused when its recorded path no longer matches", () => {
+  const project = fixture();
+  try {
+    const created = JSON.parse(project.run("create").stdout);
+    const moved = join(project.root, "moved-worktree");
+    project.git("worktree", "move", created.path, moved);
+    const removed = project.run("remove", "--dir", moved, "--owner", created.owner);
+    assert.equal(removed.status, 1);
+    assert.match(removed.stderr, /ownership record does not match/i);
+    assert.ok(existsSync(join(moved, "app.txt")));
+  } finally {
+    project.cleanup();
+  }
+});
+
+test("a partial ownership-record write leaves the created worktree intact", () => {
+  const project = fixture();
+  try {
+    const preload = join(project.root, "fail-ownership-write.mjs");
+    const path = join(project.root, "partial-worktree");
+    writeFileSync(preload, String.raw`
+      import fs from "node:fs";
+      import { syncBuiltinESMExports } from "node:module";
+      const write = fs.writeFileSync;
+      fs.writeFileSync = (path) => {
+        write(path, "{", { flag: "wx" });
+        throw new Error("simulated interrupted write");
+      };
+      syncBuiltinESMExports();
+    `);
+    const result = spawnSync(process.execPath, [beforeCapture, "create", "--dir", path], {
+      cwd: project.checkout, encoding: "utf8", env: {
+        ...process.env, TMPDIR: project.temporary, TEMP: project.temporary, TMP: project.temporary,
+        NODE_OPTIONS: `--import=${pathToFileURL(preload).href}`, NODE_TEST_CONTEXT: "",
+      },
+    });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /could not write the ownership record/i);
+    assert.ok(existsSync(join(path, "app.txt")));
+    assert.equal(realpathSync(project.git("-C", path, "rev-parse", "--show-toplevel")), realpathSync(path));
+    const removed = project.run("remove", "--dir", path, "--owner", "unknown");
+    assert.equal(removed.status, 1);
+    assert.match(removed.stderr, /no valid ownership record/i);
+    assert.ok(existsSync(join(path, "app.txt")));
+  } finally {
+    project.cleanup();
+  }
+});
+
+test("a malformed ownership record is refused without removing the checkout", () => {
+  const project = fixture();
+  try {
+    const created = JSON.parse(project.run("create").stdout);
+    const admin = project.git("-C", created.path, "rev-parse", "--absolute-git-dir");
+    writeFileSync(join(admin, "ui-evidence-before-capture.json"), "null\n");
+    const removed = project.run("remove", "--dir", created.path, "--owner", created.owner);
+    assert.equal(removed.status, 1);
+    assert.match(removed.stderr, /ownership record/i);
+    assert.ok(existsSync(join(created.path, "app.txt")));
   } finally {
     project.cleanup();
   }

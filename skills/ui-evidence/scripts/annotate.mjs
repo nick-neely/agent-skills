@@ -18,7 +18,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const SKILL_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const FONT_PATH = join(SKILL_ROOT, "assets", "DejaVuSans.ttf");
-const SESSION = `ui-evidence-annotation-${randomUUID()}`;
+const SESSION = `uie-ann-${randomUUID().replaceAll("-", "").slice(0, 12)}`;
 
 // One accent reads as deliberate. Rotating only kicks in when a single image
 // carries enough annotations that one colour stops disambiguating them.

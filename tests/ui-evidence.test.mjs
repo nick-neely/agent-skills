@@ -36,6 +36,12 @@ function pixelAt(path, x, y) {
     "-vf", `crop=1:1:${x}:${y}:exact=1,format=rgb24`, "-f", "rawvideo", "pipe:1"], { binary: true })];
 }
 
+function framePixel(path, index) {
+  return [...run("ffmpeg", ["-v", "error", "-i", path,
+    "-vf", `select=eq(n\\,${index}),scale=1:1`, "-frames:v", "1", "-pix_fmt", "rgb24",
+    "-f", "rawvideo", "pipe:1"], { binary: true })];
+}
+
 function assertColor(actual, expected) {
   assert.equal(actual.length, 3, "a decoded frame must exist");
   for (let index = 0; index < 3; index += 1) {
@@ -104,6 +110,79 @@ try {
     assertColor(pixel(output, 0.2), [255, 0, 0]);
     assertColor(pixel(output, 1.8), [0, 255, 0]);
     assertColor(pixel(output, 3.6), [0, 0, 255]);
+    writeFileSync(join(temporary, "boundary-list.txt"),
+      "file 'red.ppm'\nduration 0.28\nfile 'green.ppm'\nduration 1\nfile 'blue.ppm'\nduration 0.28\nfile 'blue.ppm'\n");
+    run("ffmpeg", ["-y", "-v", "error", "-f", "concat", "-safe", "0", "-i", "boundary-list.txt",
+      "-vsync", "vfr", "-c:v", "libvpx", "-pix_fmt", "yuv420p", "boundary.webm"], { cwd: temporary });
+    for (const [extension, fps, start] of [["mp4", 30, 0.265], ["gif", 12, 0.24]]) {
+      const boundaryOut = join(temporary, `boundary.${extension}`);
+      writeFileSync(spec, JSON.stringify({ input: "boundary.webm", trim: { start, end: 1.4 },
+        holds: { start: 0.5, end: 0.5 }, profile: { fps }, review: { interval: 2 } }));
+      const boundaryReport = JSON.parse(run(process.execPath, [prepare, "--spec", spec, "--out", boundaryOut,
+        "--review-out", join(temporary, "boundary.png")]));
+      assert.ok(Math.abs(boundaryReport.prepared.duration - (1.4 - start + 1)) < 2 / fps);
+      assertColor(pixel(boundaryOut, 0.1), [255, 0, 0]);
+      assertColor(pixel(boundaryOut, 0.7), [0, 255, 0]);
+      assertColor(pixel(boundaryOut, boundaryReport.prepared.duration - 0.2), [0, 0, 255]);
+
+      writeFileSync(spec, JSON.stringify({ input: "boundary.webm", trim: { start: 0, end: 0.281 },
+        holds: { start: 0.5, end: 0.5 }, profile: { fps }, review: { interval: 2 } }));
+      const shortReport = JSON.parse(run(process.execPath, [prepare, "--spec", spec, "--out", boundaryOut,
+        "--review-out", join(temporary, "boundary.png")]));
+      assertColor(pixel(boundaryOut, 0.1), [255, 0, 0]);
+      assertColor(pixel(boundaryOut, shortReport.prepared.duration - 0.2), [0, 255, 0]);
+
+      writeFileSync(spec, JSON.stringify({ input: "boundary.webm", trim: { start: 0, end: 0.281 },
+        holds: { start: 0, end: 0 }, profile: { fps }, review: { interval: 2 } }));
+      const noHoldReport = JSON.parse(run(process.execPath, [prepare, "--spec", spec, "--out", boundaryOut,
+        "--review-out", join(temporary, "boundary.png")]));
+      assertColor(framePixel(boundaryOut, 0), [255, 0, 0]);
+      assertColor(framePixel(boundaryOut, noHoldReport.prepared.frames - 1), [0, 255, 0]);
+      assert.ok(Math.abs(noHoldReport.prepared.duration - 0.281) < 1 / fps);
+
+      writeFileSync(spec, JSON.stringify({ input: "boundary.webm", trim: { start, end: 1.4 },
+        holds: { start: 0, end: 0 }, profile: { fps }, review: { interval: 2 } }));
+      const noHoldBoundary = JSON.parse(run(process.execPath, [prepare, "--spec", spec, "--out", boundaryOut,
+        "--review-out", join(temporary, "boundary.png")]));
+      assertColor(framePixel(boundaryOut, 0), [255, 0, 0]);
+      assertColor(framePixel(boundaryOut, noHoldBoundary.prepared.frames - 1), [0, 0, 255]);
+
+      writeFileSync(spec, JSON.stringify({ input: "boundary.webm", trim: { start: 0.28, end: 1.4 },
+        holds: { start: 0, end: 0 }, profile: { fps }, review: { interval: 2 } }));
+      run(process.execPath, [prepare, "--spec", spec, "--out", boundaryOut,
+        "--review-out", join(temporary, "boundary.png")]);
+      assertColor(framePixel(boundaryOut, 0), [0, 255, 0]);
+      writeFileSync(spec, JSON.stringify({ input: "boundary.webm", trim: { start: 0, end: 0.28 },
+        holds: { start: 0, end: 0 }, profile: { fps }, review: { interval: 2 } }));
+      const exclusiveEnd = JSON.parse(run(process.execPath, [prepare, "--spec", spec, "--out", boundaryOut,
+        "--review-out", join(temporary, "boundary.png")]));
+      assertColor(framePixel(boundaryOut, exclusiveEnd.prepared.frames - 1), [255, 0, 0]);
+
+      writeFileSync(spec, JSON.stringify({ input: "boundary.webm", trim: { start: 0, end: 1.4 },
+        holds: { start: 0, end: 0 }, profile: { fps }, review: { interval: 2 } }));
+      run(process.execPath, [prepare, "--spec", spec, "--out", boundaryOut,
+        "--review-out", join(temporary, "boundary.png")]);
+      assertColor(framePixel(boundaryOut, Math.floor(0.28 * fps)), [255, 0, 0]);
+      assertColor(framePixel(boundaryOut, Math.ceil(0.28 * fps)), [0, 255, 0]);
+
+      writeFileSync(spec, JSON.stringify({ input: "boundary.webm", trim: { start, end: 0.29 },
+        holds: { start: 0, end: 0 }, profile: { fps } }));
+      failure(["--spec", spec, "--out", join(temporary, `unrepresentable.${extension}`),
+        "--review-out", join(temporary, "boundary.png")], /too short|distinct boundary states/);
+    }
+    run("ffmpeg", ["-y", "-v", "error", "-f", "lavfi", "-i", "sine=frequency=440:duration=2",
+      "-itsoffset", "0.4", "-i", "boundary.webm", "-map", "1:v:0", "-map", "0:a:0",
+      "-c:v", "copy", "-c:a", "libopus", "-shortest", "offset-video.webm"], { cwd: temporary });
+    writeFileSync(spec, JSON.stringify({ input: "offset-video.webm", holds: { start: 0, end: 0 },
+      review: { interval: 2 } }));
+    const offsetOut = join(temporary, "offset.mp4");
+    const offsetReport = JSON.parse(run(process.execPath, [prepare, "--spec", spec, "--out", offsetOut,
+      "--review-out", join(temporary, "offset.png")]));
+    assert.ok(Math.abs(offsetReport.prepared.duration - 1.6) < 0.04);
+    assertColor(framePixel(offsetOut, 0), [255, 0, 0]);
+    assertColor(framePixel(offsetOut, 9), [0, 255, 0]);
+    assertColor(framePixel(offsetOut, offsetReport.prepared.frames - 1), [0, 0, 255]);
+    assert.equal(JSON.parse(run("ffprobe", ["-v", "error", "-show_streams", "-of", "json", offsetOut])).streams.length, 1);
     run("ffmpeg", ["-y", "-v", "error", "-i", "sparse.webm", "-f", "lavfi", "-i",
       "sine=frequency=440:duration=3.04", "-map", "0:v:0", "-map", "1:a:0",
       "-c:v", "copy", "-c:a", "libopus", "-shortest", "with-audio.webm"], { cwd: temporary });
@@ -121,6 +200,10 @@ try {
     assert.ok(Math.abs(mp4Report.prepared.duration - 2) < 0.06);
     assertColor(pixel(mp4, 0.1), [0, 255, 0]);
     assertColor(pixel(mp4, 1.8), [0, 255, 0]);
+    writeFileSync(spec, JSON.stringify({ input: "with-audio.webm", trim: { start: 1, end: 2 },
+      holds: { start: 0.5, end: 0.5 }, profile: { maxBytes: mp4Report.prepared.size } }));
+    failure(["--spec", spec, "--out", join(temporary, "exact-ceiling.mp4"),
+      "--review-out", join(temporary, "held-review.png")], /at or above.*limit/);
     writeFileSync(spec, JSON.stringify({ input: "sparse.webm", trim: { start: 1, end: 2 },
       holds: { start: 0.5, end: 0.5 }, profile: { fps: 10 } }));
     const heldGif = join(temporary, "held.gif");

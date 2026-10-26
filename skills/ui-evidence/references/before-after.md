@@ -52,12 +52,14 @@ Neither replaces checking that both captures show the intended app state.
 ## Remove only this run's clean checkout
 
 ```bash
-node "<skill-root>/scripts/before-capture.mjs" remove --dir <returned-path>
+node "<skill-root>/scripts/before-capture.mjs" remove \
+  --dir <returned-path> --owner <returned-owner>
 ```
 
-Keep the exact removal command returned by `create`. Removal requires an
-explicit registered worktree path belonging to this repository and refuses
-dirty or untracked contents. Stop only the server this run started, then remove
+Keep the exact removal command returned by `create`. A per-run ownership record
+stays in that worktree's private Git metadata. Removal requires the matching
+owner ID and registered path, and refuses dirty or untracked contents. Stop
+only the server this run started, then remove
 the clean checkout. Normal Git removal also removes ignored dependencies and
 build output in that checkout; inspect any ignored files that need to be kept.
 A refusal preserves the files for inspection; do not force

@@ -12,6 +12,7 @@ missed.
 ## Rehearse before recording
 
 Use the run's isolated session and absolute evidence directory from `SKILL.md`.
+Keep session and namespace names short enough for the OS socket-path limit.
 Open the intended page, set its final viewport, authenticate through supported
 browser controls, seed sanitized data, and wait for an app-specific ready signal.
 Discover selectors and rehearse the claim before starting the take.
@@ -99,7 +100,7 @@ node "<skill-root>/scripts/prepare-motion.mjs" \
   --preview-out "$EVIDENCE_DIR/interaction-review.html"
 ```
 
-MP4 output uses H.264, a browser-compatible pixel format, even dimensions,
+MP4 output uses H.264 at CRF 18, a browser-compatible pixel format, even dimensions,
 fast-start metadata, and video only. GIF output is selected by an `.gif` output
 path; run preflight with `--prepare --format gif`. Its palette and frame timing
 must preserve essential initial, intermediate, and final states.
@@ -115,6 +116,11 @@ must preserve essential initial, intermediate, and final states.
 | `limits.maxDuration` | Optional user-chosen ceiling, not a universal duration policy |
 | `review.interval` | Final-output sampling interval, normally 0.5 seconds |
 | `provenance` | Optional local capture revision/state metadata |
+
+Output timing is quantized to the chosen frame rate. Initial and final holds
+use the actual source states at the trim boundaries, before resampling. A trim
+too short to represent those states fails with guidance to widen it or raise
+the frame rate.
 
 ## Preserve truth and readability
 

@@ -412,3 +412,129 @@ test("accepts an explicitly selected filesystem root as the media root", () => {
   assert.equal(result.status, 0, result.stderr);
   assert.equal(JSON.parse(result.stdout).assets.length, 1);
 });
+
+test("does not upload an existing image named only in an indented code example", () => {
+  const f = fixture("Usage:\n\n    ![Example](example.png)\n\nThe finished screen:\n\n![Result](result.png)");
+  writeFileSync(join(f.dir, "example.png"), "local example");
+  writeFileSync(join(f.dir, "result.png"), "result");
+  const result = run(f);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const output = JSON.parse(result.stdout);
+  assert.deepEqual(output.assets.map((asset) => asset.refs), [["result.png"]]);
+  assert.match(result.github.body, /    !\[Example\]\(example\.png\)/);
+  assert.match(result.github.body, /!\[Result\]\(https:\/\/github\.com\/user-attachments\/assets\/asset-1\)/);
+});
+
+test("publishes an indented paragraph continuation as evidence", () => {
+  const f = fixture("The finished screen:\n    ![Result](result.png)");
+  writeFileSync(join(f.dir, "result.png"), "result");
+  const result = run(f);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.deepEqual(JSON.parse(result.stdout).assets.map((asset) => asset.refs), [["result.png"]]);
+  assert.match(result.github.body, /    !\[Result\]\(https:\/\/github\.com\/user-attachments\/assets\/asset-1\)/);
+});
+
+test("distinguishes an indented list code example from list and table evidence", () => {
+  const f = fixture("- Instructions\n\n      ![Example](example.png)\n\n  ![In list](list.png)\n\n| View |\n| --- |\n| ![In table](table.png) |");
+  for (const name of ["example.png", "list.png", "table.png"]) writeFileSync(join(f.dir, name), name);
+  const result = run(f);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.deepEqual(JSON.parse(result.stdout).assets.map((asset) => asset.refs), [["list.png"], ["table.png"]]);
+  assert.match(result.github.body, /      !\[Example\]\(example\.png\)/);
+});
+
+test("keeps indented code examples inside block quotes out of the upload plan", () => {
+  const f = fixture("> Instructions\n>\n>     ![Example](example.png)\n>\n> ![Result](result.png)");
+  writeFileSync(join(f.dir, "example.png"), "example");
+  writeFileSync(join(f.dir, "result.png"), "result");
+  const result = run(f);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.deepEqual(JSON.parse(result.stdout).assets.map((asset) => asset.refs), [["result.png"]]);
+  assert.match(result.github.body, />     !\[Example\]\(example\.png\)/);
+});
+
+test("keeps fenced code inside block quotes out of the upload plan", () => {
+  const f = fixture("> Example:\n>\n> ```md\n> ![Example](example.png)\n> ```\n>\n> ![Result](result.png)");
+  writeFileSync(join(f.dir, "example.png"), "example");
+  writeFileSync(join(f.dir, "result.png"), "result");
+  const result = run(f);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.deepEqual(JSON.parse(result.stdout).assets.map((asset) => asset.refs), [["result.png"]]);
+  assert.match(result.github.body, /> !\[Example\]\(example\.png\)/);
+});
+
+test("does not upload an image inside a multiline inline code span", () => {
+  const f = fixture("The example `spans a line\n![Example](example.png)` and stays literal.\n\n![Result](result.png)");
+  writeFileSync(join(f.dir, "example.png"), "example");
+  writeFileSync(join(f.dir, "result.png"), "result");
+  const result = run(f);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.deepEqual(JSON.parse(result.stdout).assets.map((asset) => asset.refs), [["result.png"]]);
+  assert.match(result.github.body, /!\[Example\]\(example\.png\)/);
+});
+
+test("treats list indentation relative to the list marker", () => {
+  const f = fixture("10. Instructions\n\n    ![Result](result.png)\n\n        ![Example](example.png)");
+  writeFileSync(join(f.dir, "example.png"), "example");
+  writeFileSync(join(f.dir, "result.png"), "result");
+  const result = run(f);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.deepEqual(JSON.parse(result.stdout).assets.map((asset) => asset.refs), [["result.png"]]);
+  assert.match(result.github.body, /        !\[Example\]\(example\.png\)/);
+});
+
+test("resumes finding evidence when an unclosed quoted fence ends with its quote", () => {
+  const f = fixture("> ```md\n> ![Example](example.png)\n\n![Result](result.png)");
+  writeFileSync(join(f.dir, "example.png"), "example");
+  writeFileSync(join(f.dir, "result.png"), "result");
+  const result = run(f);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.deepEqual(JSON.parse(result.stdout).assets.map((asset) => asset.refs), [["result.png"]]);
+});
+
+test("does not let an unmatched backtick hide evidence in a later paragraph", () => {
+  const f = fixture("This ` remains open.\n\n![Result](result.png) followed by `another open marker.");
+  writeFileSync(join(f.dir, "result.png"), "result");
+  const result = run(f);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.deepEqual(JSON.parse(result.stdout).assets.map((asset) => asset.refs), [["result.png"]]);
+});
+
+test("treats escaped backticks as literal punctuation near real evidence", () => {
+  const f = fixture("Literal \\` marks ![Result](result.png) with another \\` mark.");
+  writeFileSync(join(f.dir, "result.png"), "result");
+  const result = run(f);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.deepEqual(JSON.parse(result.stdout).assets.map((asset) => asset.refs), [["result.png"]]);
+});
+
+test("handles a fenced example and evidence within a list", () => {
+  const f = fixture("- Instructions\n\n  ```md\n  ![Example](example.png)\n  ```\n\n  ![Result](result.png)");
+  writeFileSync(join(f.dir, "example.png"), "example");
+  writeFileSync(join(f.dir, "result.png"), "result");
+  const result = run(f);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.deepEqual(JSON.parse(result.stdout).assets.map((asset) => asset.refs), [["result.png"]]);
+});
+
+test("keeps an indented code block that starts a list item out of uploads", () => {
+  const f = fixture("-     ![Example](example.png)\n\n![Result](result.png)");
+  writeFileSync(join(f.dir, "example.png"), "example");
+  writeFileSync(join(f.dir, "result.png"), "result");
+  const result = run(f);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.deepEqual(JSON.parse(result.stdout).assets.map((asset) => asset.refs), [["result.png"]]);
+});
+
+test("publishes an indented example without uploading its existing image file", () => {
+  const f = fixture("    ![Example](example.png)\n");
+  writeFileSync(join(f.dir, "example.png"), "local example");
+  const result = run(f);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const output = JSON.parse(result.stdout);
+  assert.deepEqual(output.assets, []);
+  assert.equal(output.transport, "none");
+  assert.match(result.github.body, /    !\[Example\]\(example\.png\)/);
+  assert.deepEqual(result.github.uploads, []);
+  assert.equal(result.github.calls.some((call) => call.includes("--attach")), false);
+});

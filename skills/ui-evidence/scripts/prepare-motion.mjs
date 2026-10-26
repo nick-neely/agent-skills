@@ -35,9 +35,9 @@ const HELP = `prepare-motion.mjs - prepare or inspect motion evidence
   --preview-out <path>  Local HTML preview; do not publish it
   --keep-temp           Keep intermediate encodes and sampled frames
 
-  MP4 defaults: 30 fps and the full crop width (rounded to even dimensions).
+  MP4 defaults: H.264 CRF 18, 30 fps and the full crop width (rounded to even dimensions).
   GIF defaults: 12 fps and at most 720px wide. Both default to a 9,500,000-byte
-  limit; profile.maxBytes may be set up to 100,000,000 when supported. Holds
+  exclusive ceiling; profile.maxBytes may be set up to 100,000,000 when supported. Holds
   default to 0.5s at the start and 1s at the end, with 0.5s review sampling.
 `;
 
@@ -139,8 +139,8 @@ function inspect(path) {
       "-v", "error",
       "-count_frames",
       "-select_streams", "v:0",
-      "-show_entries", "stream=width,height,r_frame_rate,avg_frame_rate,nb_read_frames",
-      "-show_entries", "format=duration,size",
+      "-show_entries", "stream=width,height,r_frame_rate,avg_frame_rate,nb_read_frames,duration",
+      "-show_entries", "format=duration,size,start_time",
       "-of", "json",
       path,
     ],
@@ -160,9 +160,58 @@ function inspect(path) {
     width: Number(stream.width),
     height: Number(stream.height),
     duration,
+    streamDuration: Number.isFinite(Number(stream.duration)) && Number(stream.duration) > 0 ? Number(stream.duration) : null,
+    startTime: Number.isFinite(Number(parsed.format?.start_time)) ? Number(parsed.format.start_time) : 0,
     size: Number(parsed.format?.size ?? statSync(path).size),
     frames: Number.isFinite(frames) ? frames : null,
   };
+}
+
+function sourceTimeline(path, source) {
+  const raw = run("ffprobe", ["-v", "error", "-select_streams", "v:0",
+    "-show_entries", "frame=best_effort_timestamp_time,pkt_duration_time,duration_time", "-of", "json", path],
+  "ffprobe frame timestamps");
+  let result;
+  try {
+    result = JSON.parse(raw);
+  } catch {
+    die("ffprobe returned invalid frame timestamp JSON");
+  }
+  const frames = (result.frames ?? []).map((frame) => ({
+    timestamp: Number.parseFloat(frame.best_effort_timestamp_time),
+    duration: [frame.duration_time, frame.pkt_duration_time].map(Number.parseFloat)
+      .find((duration) => Number.isFinite(duration) && duration > 0),
+  })).filter((frame) => Number.isFinite(frame.timestamp));
+  if (!frames.length || frames.length !== source.frames) {
+    die("could not determine each decoded source frame timestamp; inspect or re-record the source");
+  }
+  const origin = frames[0].timestamp;
+  const final = frames.at(-1);
+  const videoDuration = Number.isFinite(final.duration) && final.duration > 0
+    ? final.timestamp - origin + final.duration
+    : source.streamDuration ?? source.duration - (origin - source.startTime);
+  if (!Number.isFinite(videoDuration) || videoDuration <= 0) die("could not determine the source video duration");
+  source.videoStartTime = origin;
+  source.videoDuration = videoDuration;
+  return frames;
+}
+
+function boundaryFrames(frames, source, trim) {
+  let first = -1;
+  let last = -1;
+  for (const [index, frame] of frames.entries()) {
+    const time = frame.timestamp - source.videoStartTime;
+    if (time <= trim.start + 1e-9) first = index;
+    if (time < trim.end - 1e-9) last = index;
+  }
+  if (first < 0 || last < 0) die("trim starts before the first source frame; adjust the trim or inspect the source");
+  return { first, last };
+}
+
+function extractBoundary(path, index, output) {
+  run("ffmpeg", ["-y", "-v", "error", "-i", path, "-vf", `select=eq(n\\,${index})`,
+    "-frames:v", "1", output], `extract source frame ${index}`);
+  if (!existsSync(output)) die(`could not extract source frame ${index}`);
 }
 
 function finite(value, name, { min = -Infinity, max = Infinity, integer = false } = {}) {
@@ -238,27 +287,32 @@ function ffmpegColor(hex) {
   return `0x${hex.slice(1)}`;
 }
 
-function buildFilter({ trim, crop, redactions, holds, profile, format }) {
+function buildFilter({ crop, redactions, holds, profile, format, firstThrough, lastFrom, startTick, endTick }) {
   const chain = [
-    `fps=${profile.fps}`,
-    `trim=start=${trim.start}:end=${trim.end}`,
     "setpts=PTS-STARTPTS",
+    `fps=${profile.fps}:round=up`,
+    `trim=start_pts=${startTick}:end_pts=${endTick}`,
+    "setpts=PTS-STARTPTS",
+    `tpad=start_mode=clone:start_duration=${holds.start}` +
+      `:stop_mode=clone:stop_duration=${holds.end}`,
   ];
-  if (crop.explicit) chain.push(`crop=${crop.width}:${crop.height}:${crop.x}:${crop.y}:exact=1`);
+  const finish = [];
+  if (crop.explicit) finish.push(`crop=${crop.width}:${crop.height}:${crop.x}:${crop.y}:exact=1`);
   for (const redaction of redactions) {
-    chain.push(
+    finish.push(
       `drawbox=x=${redaction.x}:y=${redaction.y}:w=${redaction.width}:h=${redaction.height}` +
         `:color=${ffmpegColor(redaction.color)}:t=fill`,
     );
   }
-  chain.push(
+  finish.push(
     `scale=w=trunc(min(iw\\,${profile.width})/2)*2:h=-2:flags=lanczos`,
-    `tpad=start_mode=clone:start_duration=${holds.start}` +
-      `:stop_mode=clone:stop_duration=${holds.end}`,
   );
-  if (format === "mp4") return `[0:v]${chain.join(",")}[out]`;
+  const boundaries = `[0:v]${chain.join(",")}[timed];` +
+    `[timed][1:v]overlay=0:0:format=auto:shortest=1:enable='lt(n\\,${firstThrough})'[begin];` +
+    `[begin][2:v]overlay=0:0:format=auto:shortest=1:enable='gte(n\\,${lastFrom})'[bounded];`;
+  if (format === "mp4") return `${boundaries}[bounded]${finish.join(",")}[out]`;
   return (
-    `[0:v]${chain.join(",")},split=2[frames][palette_source];` +
+    `${boundaries}[bounded]${finish.join(",")},split=2[frames][palette_source];` +
     "[palette_source]palettegen=stats_mode=full[palette];" +
     "[frames][palette]paletteuse=dither=sierra2_4a:diff_mode=rectangle[out]"
   );
@@ -267,12 +321,14 @@ function buildFilter({ trim, crop, redactions, holds, profile, format }) {
 function encode(input, output, settings) {
   const filter = buildFilter(settings);
   const encoding = settings.format === "mp4"
-    ? ["-an", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-movflags", "+faststart"]
+    ? ["-an", "-c:v", "libx264", "-crf", "18", "-pix_fmt", "yuv420p", "-movflags", "+faststart"]
     : ["-loop", "0"];
   run(
     "ffmpeg",
     [
       "-y", "-v", "error", "-i", input,
+      "-loop", "1", "-framerate", String(settings.profile.fps), "-i", settings.firstImage,
+      "-loop", "1", "-framerate", String(settings.profile.fps), "-i", settings.lastImage,
       "-filter_complex", filter,
       "-map", "[out]",
       ...encoding,
@@ -356,10 +412,11 @@ if (options.inspect) {
   const input = resolve(options.inspect);
   if (!existsSync(input)) die(`no such input: ${input}`);
   const source = inspect(input);
+  sourceTimeline(input, source);
   const reviewOut = resolve(options.reviewOut);
   const previewOut = options.previewOut ? resolve(options.previewOut) : null;
   ensureDistinct([input, reviewOut, previewOut]);
-  const reviewTimes = buildReviewSheet(input, reviewOut, temp, source, 0.5);
+  const reviewTimes = buildReviewSheet(input, reviewOut, temp, { ...source, duration: source.videoDuration }, 0.5);
   if (previewOut) buildPreview(previewOut, input, null);
   console.log(JSON.stringify({ input, source, reviewOut, previewOut, reviewTimes, reviewLastFrame: true,
     warnings: ["Frame count alone does not prove smooth capture. Review the complete recording."],
@@ -385,13 +442,17 @@ const input = resolveInput(specPath, spec.input);
 if (!existsSync(input)) die(`no such input: ${input}`);
 ensureDistinct([specPath, input, options.out, options.reviewOut, options.previewOut]);
 const source = inspect(input);
+const frames = sourceTimeline(input, source);
 const crop = resolveCrop(spec.crop, source);
 if (crop.width < 2 || crop.height < 2) die("crop must be at least 2x2 pixels");
 const trim = {
-  start: finite(defaultValue(spec.trim?.start, 0), "trim.start", { min: 0, max: source.duration }),
-  end: finite(defaultValue(spec.trim?.end, source.duration), "trim.end", { min: 0, max: source.duration }),
+  start: finite(defaultValue(spec.trim?.start, 0), "trim.start", { min: 0, max: source.videoDuration }),
+  end: finite(defaultValue(spec.trim?.end, source.videoDuration), "trim.end", { min: 0 }),
 };
 if (trim.end <= trim.start) die("trim.end must be greater than trim.start");
+if (trim.end > source.videoDuration + 1e-6) {
+  die(`duration mismatch: trim.end ${trim.end}s exceeds the ${source.videoDuration.toFixed(3)}s video timeline; inspect the source and trim`);
+}
 
 const holds = {
   start: finite(defaultValue(spec.holds?.start, 0.5), "holds.start", { min: 0 }),
@@ -430,12 +491,39 @@ const reviewInterval = finite(defaultValue(spec.review?.interval, 0.5), "review.
 try {
   const selected = { width: Math.min(profile.maxWidth, crop.width), fps: profile.fps,
     path: join(temp, `prepared.${format}`) };
-  selected.size = encode(input, selected.path, { trim, crop, redactions, holds, profile: selected, format });
-  if (selected.size > profile.maxBytes) {
-    die(`output is ${selected.size} bytes, above the ${profile.maxBytes} byte limit; crop more tightly, reduce duration only if it preserves the claim, or set an allowed higher profile.maxBytes`);
+  const boundary = boundaryFrames(frames, source, trim);
+  const startTick = Math.ceil(trim.start * profile.fps - 1e-9);
+  const endTick = Math.ceil(trim.end * profile.fps - 1e-9);
+  const actionFrames = endTick - startTick;
+  const startFrames = Math.round(holds.start * profile.fps);
+  const endFrames = Math.round(holds.end * profile.fps);
+  if (actionFrames < 1) {
+    die("trim is too short to represent at the requested frame rate; increase profile.fps or widen the trim");
+  }
+  const firstImage = join(temp, "first-boundary.png");
+  const lastImage = boundary.first === boundary.last ? firstImage : join(temp, "last-boundary.png");
+  extractBoundary(input, boundary.first, firstImage);
+  if (lastImage !== firstImage) extractBoundary(input, boundary.last, lastImage);
+  const differentBoundaries = lastImage !== firstImage && !readFileSync(firstImage).equals(readFileSync(lastImage));
+  // CFR quantizes event times. Retain the exact source states at both trim
+  // boundaries even when neither one lands on the output frame grid.
+  let firstThrough = startFrames + 1;
+  let lastFrom = startFrames + actionFrames - 1;
+  if (actionFrames === 1 && differentBoundaries) {
+    if (startFrames > 0) firstThrough = startFrames;
+    else if (endFrames > 0) lastFrom = 1;
+    else die("trim contains distinct boundary states but only one output frame; increase profile.fps, widen the trim, or add a hold");
+  }
+  selected.size = encode(input, selected.path, { trim, crop, redactions, holds, profile: selected, format,
+    firstImage, lastImage, firstThrough, lastFrom, startTick, endTick });
+  if (selected.size >= profile.maxBytes) {
+    die(`output is ${selected.size} bytes, at or above the exclusive ${profile.maxBytes} byte limit; crop more tightly, reduce duration only if it preserves the claim, or set an allowed higher profile.maxBytes`);
   }
 
   const prepared = inspect(selected.path);
+  if (prepared.frames !== startFrames + actionFrames + endFrames) {
+    die(`duration mismatch: expected ${startFrames + actionFrames + endFrames} normalized frames, encoded ${prepared.frames}; inspect the source and trim`);
+  }
   const tolerance = 1.5 / profile.fps + 0.02;
   if (Math.abs(prepared.duration - expectedDuration) > tolerance) {
     die(`duration mismatch: expected ${expectedDuration.toFixed(2)}s, encoded ${prepared.duration.toFixed(2)}s (tolerance ${tolerance.toFixed(2)}s); inspect the source and trim`);
@@ -448,7 +536,8 @@ try {
   copyFileSync(selected.path, out);
   const previewOut = options.previewOut ? resolve(options.previewOut) : null;
   if (previewOut) buildPreview(previewOut, input, out);
-  const warnings = ["Frame count alone does not prove smooth capture. Review the complete output."];
+  const warnings = ["Frame count alone does not prove smooth capture. Review the complete output.",
+    `Output timing is quantized to ${profile.fps} fps; brief intermediate states can be missed.`];
   if (expectedDuration > 20) warnings.push("This clip is longer than 20 seconds; keep it focused on the claim.");
   if (profile.targetBytes !== null && selected.size > profile.targetBytes) {
     warnings.push(`output is below the limit but above the ${(profile.targetBytes / MIB).toFixed(2)} MiB target`);
@@ -465,6 +554,7 @@ try {
     crop,
     redactions: redactions.length,
     holds,
+    boundaryFrames: boundary,
     selectedProfile: { width: prepared.width, fps: selected.fps, size: selected.size, maxBytes: profile.maxBytes },
     reviewTimes,
     reviewLastFrame: true,

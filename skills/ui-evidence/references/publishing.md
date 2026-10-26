@@ -25,6 +25,9 @@ source checkout. Relative media paths resolve under the asset root. Missing
 files, unsupported media, and paths escaping that root, including symlinks, are
 refused. Code examples are not treated as upload references. Use inline Markdown
 images or quoted HTML `img` sources; reference definitions are not supported.
+The scanner supports these simple forms rather than every GFM extension. Prefer
+fenced examples for unusual nested markup and inspect the dry-run asset list
+before uploading.
 
 ## Choose a readable layout
 

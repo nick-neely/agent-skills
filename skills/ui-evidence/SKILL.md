@@ -35,7 +35,7 @@ paths to the browser, whose daemon may have a different working directory.
 
 ```bash
 EVIDENCE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/ui-evidence.XXXXXX")"
-export AGENT_BROWSER_SESSION="ui-evidence-$(basename "$EVIDENCE_DIR")"
+export AGENT_BROWSER_SESSION="$(basename "$EVIDENCE_DIR")"
 node "<skill-root>/scripts/preflight.mjs"
 ```
 

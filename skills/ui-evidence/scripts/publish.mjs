@@ -79,7 +79,8 @@ function blockLocation(body) {
   return { start: starts[0].index, end: ends[0].index + END.length };
 }
 function spliceSection(body, section) {
-  const managed = `${START}\n\n${section.trim()}\n\n${END}`;
+  const content = section.replace(/^(?:[ \t]*\r?\n)+/, "").replace(/(?:\r?\n[ \t]*)+$/, "");
+  const managed = `${START}\n\n${content}\n\n${END}`;
   const location = blockLocation(body);
   if (location) return body.slice(0, location.start) + managed + body.slice(location.end);
   if (!body) return `${managed}\n`;
@@ -91,18 +92,135 @@ function block(body) {
   return location ? body.slice(location.start, location.end) : "";
 }
 
-// Mask fenced code and inline code so example markup is not treated as evidence.
+// Identify code in the common paragraph, quote and list forms used for
+// evidence. Paragraph continuations are not indented code blocks.
 function maskCode(markdown) {
-  let fence = null;
-  return markdown.split(/(?<=\n)/).map((line) => {
-    const marker = /^ {0,3}(`{3,}|~{3,})/.exec(line);
-    if (fence) {
-      if (marker && marker[1][0] === fence[0] && marker[1].length >= fence.length && /^\s*$/.test(line.slice(marker[0].length))) fence = null;
-      return line.replace(/[^\n]/g, " ");
+  const width = (spaces) => [...spaces].reduce((columns, char) => columns + (char === "\t" ? 4 - columns % 4 : 1), 0);
+  const stripColumns = (text, wanted) => {
+    let columns = 0;
+    let index = 0;
+    while (columns < wanted && (text[index] === " " || text[index] === "\t")) {
+      columns += text[index] === "\t" ? 4 - columns % 4 : 1;
+      index += 1;
     }
-    if (marker) { fence = marker[1]; return line.replace(/[^\n]/g, " "); }
-    return line.replace(/(`+)([^\n]*?)\1/g, (value) => " ".repeat(value.length));
-  }).join("");
+    return " ".repeat(Math.max(0, columns - wanted)) + text.slice(index);
+  };
+  const masked = (line) => line.replace(/[^\n]/g, " ");
+  const lines = [];
+  let fence = null;
+  let paragraph = false;
+  let indented = false;
+  let quoteDepth = 0;
+  let listIndents = [];
+  let segment = 0;
+  for (const line of markdown.split(/(?<=\n)/)) {
+    let content = line;
+    let depth = 0;
+    for (;;) {
+      const quote = /^ {0,3}>[ \t]?/.exec(content);
+      if (!quote) break;
+      depth += 1;
+      content = content.slice(quote[0].length);
+    }
+    const blank = /^\s*$/.test(content);
+    const leading = /^[ \t]*/.exec(content)[0];
+    const columns = width(leading);
+    if (fence) {
+      if (depth < fence.depth || (!blank && depth === fence.depth && columns < fence.base)) {
+        fence = null;
+        paragraph = false;
+        indented = false;
+      } else {
+        const relativeFence = stripColumns(content, fence.base);
+        const closing = /^ {0,3}(`{3,}|~{3,})/.exec(relativeFence);
+        if (depth === fence.depth && closing && closing[1][0] === fence.marker[0] && closing[1].length >= fence.marker.length && /^\s*$/.test(relativeFence.slice(closing[0].length))) fence = null;
+        lines.push({ text: masked(line), segment: null });
+        continue;
+      }
+    }
+    if (depth !== quoteDepth && (depth > 0 || !paragraph)) {
+      paragraph = false;
+      indented = false;
+      listIndents = [];
+    }
+    quoteDepth = depth;
+    if (blank) {
+      paragraph = false;
+      lines.push({ text: line, segment: null });
+      continue;
+    }
+    while (listIndents.length && columns < listIndents.at(-1)) listIndents.pop();
+    const base = listIndents.at(-1) ?? 0;
+    let relative = stripColumns(content, base);
+    const list = /^ {0,3}([-+*]|\d{1,9}[.)])([ \t]+|(?=\r?\n|$))/.exec(relative);
+    let newItem = false;
+    if (list) {
+      const markerWidth = list[1].length;
+      const padding = width(list[2]);
+      const usedPadding = padding >= 1 && padding <= 4 ? padding : 1;
+      const markerIndent = width(/^ */.exec(list[0])[0]);
+      listIndents.push(base + markerIndent + markerWidth + usedPadding);
+      relative = " ".repeat(Math.max(0, padding - usedPadding)) + relative.slice(list[0].length);
+      paragraph = false;
+      indented = false;
+      newItem = true;
+    }
+    const marker = /^ {0,3}(`{3,}|~{3,})/.exec(relative);
+    const indentation = width(/^[ \t]*/.exec(relative)[0]);
+    if (indentation >= 4 && (indented || !paragraph)) {
+      indented = true;
+      paragraph = false;
+      lines.push({ text: masked(line), segment: null });
+      continue;
+    }
+    indented = false;
+    if (marker) {
+      fence = { marker: marker[1], depth, base: listIndents.at(-1) ?? 0 };
+      paragraph = false;
+      lines.push({ text: masked(line), segment: null });
+      continue;
+    }
+    const standalone = /^ {0,3}(?:#{1,6}(?:\s|$)|(?:[-*_]\s*){3,}$|(?:=+|-+)\s*$)/.test(relative.trimEnd());
+    const tableRow = /^ {0,3}\|.*\|\s*$/.test(relative.trimEnd());
+    if (!paragraph || newItem || tableRow || standalone) segment += 1;
+    lines.push({ text: line, segment });
+    paragraph = !standalone && !tableRow;
+  }
+  // A code span can cross a line break within the same paragraph. Masking each
+  // paragraph separately prevents an unmatched backtick from hiding later media.
+  const maskInline = (group) => {
+    const runs = [...group.matchAll(/`+/g)];
+    const nextMatching = [];
+    const following = new Map();
+    for (let index = runs.length - 1; index >= 0; index -= 1) {
+      nextMatching[index] = following.get(runs[index][0].length) ?? -1;
+      following.set(runs[index][0].length, index);
+    }
+    let output = "";
+    let cursor = 0;
+    for (let index = 0; index < runs.length; index += 1) {
+      const start = runs[index].index;
+      let slashes = 0;
+      while (start - slashes - 1 >= 0 && group[start - slashes - 1] === "\\") slashes += 1;
+      if (slashes % 2) continue;
+      const close = nextMatching[index];
+      if (close < 0) continue;
+      const end = runs[close].index + runs[close][0].length;
+      output += group.slice(cursor, start) + masked(group.slice(start, end));
+      cursor = end;
+      index = close;
+    }
+    return output + group.slice(cursor);
+  };
+  let output = "";
+  for (let index = 0; index < lines.length;) {
+    const current = lines[index].segment;
+    let group = lines[index++].text;
+    while (current !== null && index < lines.length && lines[index].segment === current) group += lines[index++].text;
+    if (current !== null) group = maskInline(group);
+    output += group;
+  }
+  return output;
 }
 const IMAGE = /!\[([^\]\n]*)\]\(\s*(?:<([^>\n]+)>|([^\s)]+))\s*\)/g;
 const HTML_IMAGE = /<img\b[^>]*?\bsrc\s*=\s*(["'])([^"']+)\1[^>]*>/gi;
