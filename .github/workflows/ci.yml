@@ -33,9 +33,12 @@ jobs:
           python-version: '3.12'
       - name: Install media behavior test tools
         if: runner.os == 'Linux'
+        timeout-minutes: 10
         run: |
+          # The runner's Azure mirror can stream packages very slowly.
+          sudo sed -i 's|http://azure\.archive\.ubuntu\.com/ubuntu/|https://archive.ubuntu.com/ubuntu/|g' /etc/apt/apt-mirrors.txt
           sudo apt-get update
-          sudo apt-get install --yes ffmpeg imagemagick
+          sudo apt-get install --yes --no-install-recommends ffmpeg imagemagick
       - name: Validate skills and behavior
         shell: bash
         env:
