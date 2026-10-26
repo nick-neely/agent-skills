@@ -1,162 +1,111 @@
 ---
 name: ui-evidence
-description: Capture, prepare, annotate, and publish reviewer-facing UI evidence as screenshots or GIFs in a GitHub pull request or issue. Use for before/after comparisons, static visual changes, interaction flows, animation or timing changes, drag and click behavior, annotated callouts, cropping, redaction, and requests such as "add screenshots to the PR", "show the interaction", or "attach visual evidence".
-compatibility: Requires git, an authenticated gh CLI, agent-browser with Chrome, and ImageMagick. GIF evidence also requires FFmpeg and ffprobe.
+description: Capture, prepare, and publish screenshots or video that prove a UI change in a GitHub pull request or issue. Use for visual comparisons, interaction recordings, reviewer callouts, or requests to attach UI evidence.
+compatibility: Requires Node.js. Capture uses agent-browser with Chrome; motion capture requires agent-browser 0.38.1+ and FFmpeg. Preparation uses FFmpeg, ffprobe, and ImageMagick. Publishing uses authenticated gh 2.99.0+ with repository push access.
 ---
 
 # UI evidence
 
-Turn a UI change into evidence a reviewer can understand in ten seconds.
+Show the reviewer what changed and how to inspect it. This skill owns evidence
+selection, preparation, review, and publication. `agent-browser` owns browser
+state, capture, pointer feedback, and direct interaction. Substitute this file's
+directory for `<skill-root>`.
 
-This skill owns evidence selection, preparation, composition, review, and
-publishing. `agent-browser` owns browser state and raw capture. Replace
-`<skill-root>` below with the directory containing this file.
+## Choose the evidence
 
-## Check dependencies
+Name the visible claims and the states that prove them. Cover the surfaces the
+user requested. One coherent image or clip can prove related claims.
 
-```bash
-node "<skill-root>/scripts/preflight.mjs"
-node "<skill-root>/scripts/preflight.mjs" --motion
-```
-
-Use the first command for screenshots and the second when the plan includes a
-GIF. Report missing dependencies and their install commands. Ask before
-installing system packages, global npm modules, or Chrome.
-
-## Scope the claims
-
-Name each UI claim and the surface and state that proves it before capturing.
-When the user names surfaces or states, capture exactly those.
-
-Choose the smallest truthful medium:
-
-| Evidence | Use it for |
+| Medium | Use |
 | --- | --- |
-| Screenshot | Layout, styling, copy, contrast, focus, persistent state, precise before/after |
-| GIF | Order, transition, timing, click, drag, progressive disclosure, movement |
-| Neither | A change with no useful visible proof |
+| Screenshot | Layout, copy, focus, persistent state, precise before/after |
+| MP4, default for motion | Interaction, drag, scrolling, transitions, loading; reviewers can pause and seek |
+| GIF, opt-in | A tiny loop whose essential states and timing remain readable |
+| Neither | No material visible difference; explain any visible claim left without evidence |
 
-A GIF proves one interaction claim. A screenshot proves one static claim. Do
-not add media that merely decorates the description.
+## Prepare the capture
 
-## Capture screenshots
+Read the installed browser workflow with `agent-browser skills get core` before
+using browser commands. Reuse a dev server after confirming it serves the
+intended worktree, route, and fixture. Finish heavy builds or tests before a
+motion take. Use sanitized fixture data.
 
-Reuse an existing dev server when available.
+Create one absolute directory outside the source tree for this run. Pass full
+paths to the browser, whose daemon may have a different working directory.
 
 ```bash
-agent-browser open <url>
+EVIDENCE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/ui-evidence.XXXXXX")"
+export AGENT_BROWSER_SESSION="$(basename "$EVIDENCE_DIR")"
+node "<skill-root>/scripts/preflight.mjs"
+```
+
+Preflight checks only the selected operation: default screenshot capture,
+`--motion`, `--prepare`, `--annotate`, or `--publish`. Use `--format gif` for GIF
+preparation or WebM capture. Report missing tools and the suggested fix; ask
+before system packages, global modules, browser downloads, or global upgrades
+unless already authorized.
+
+## Capture and prepare
+
+For static evidence, wait for the intended state, fonts, and unrelated motion to
+settle. Keep the animation under test intact. Suppress only known development
+overlays. Capture enough context for the claim:
+
+```bash
+agent-browser open '<url>'
 agent-browser set viewport 1280 800
-agent-browser screenshot ./after.png
+agent-browser screenshot "$EVIDENCE_DIR/after.png"
 ```
 
-Use `agent-browser get box <selector>` for exact element geometry. For a base
-revision comparison, read [before-after.md](references/before-after.md). Before
-and after captures must use the same viewport, device pixel ratio, route,
-theme, scroll position, and seeded data.
+Use selector screenshots for a simple element crop and `diff screenshot` for a
+quick baseline comparison. For a base revision, read
+[before-after.md](references/before-after.md). For changed-region geometry or
+reviewer callouts, use `regions.mjs` and read
+[annotation-spec.md](references/annotation-spec.md) before `annotate.mjs`.
+Browser `--annotate` numbers interactive refs for diagnostics; it does not
+replace reviewer callouts or redaction.
 
-## Capture motion
+For any recording, read [motion.md](references/motion.md). It covers rehearsing
+direct actions, structured batches, assertions, native cursor feedback, raw
+inspection, MP4/GIF preparation, and final-output review. The supported recorder
+captures the ready active page without resetting its context.
 
-Read [motion.md](references/motion.md) before recording. It defines the
-recording reset boundary, pointer contract, motion spec, size profiles,
-redaction, and contact-sheet review.
+Crop to the claim and redact unrelated identifying data before upload. Keep
+annotations purposeful. Add a final-state screenshot only when independently
+useful. Start with a soft budget of six assets and two clips; preserve requested
+coverage and collapse secondary evidence when more is needed.
 
-Use direct `agent-browser` actions. Do not build a second action language.
+## Review and publish
+
+Review every final screenshot and the complete motion evidence with sampled
+frames. State what the available tools actually let you inspect; a sheet or
+frame count alone does not prove smooth motion or absence of a brief disclosure.
+Re-record when moving sensitive content cannot be safely redacted. Local review
+sheets and previews stay local unless explicitly requested as published evidence.
+
+An invocation to attach evidence to a specified PR or issue authorizes capture,
+preparation, uploads, and that target update. Use a destination already established
+in the conversation without requesting approval again. Local preview requests
+authorize preparation only. Ask only for a missing destination or a specific
+sensitive disclosure decision that cannot be resolved by sanitizing the evidence.
+
+Read [publishing.md](references/publishing.md) for supported markup, upload
+behavior, managed blocks, and failure recovery. Name the GitHub repository
+explicitly, even when publishing from a worktree:
 
 ```bash
-EVIDENCE_SESSION="$(agent-browser session id --scope worktree --prefix ui-evidence)"
-agent-browser --session "$EVIDENCE_SESSION" open <url>
-agent-browser --session "$EVIDENCE_SESSION" set viewport 1280 800
-agent-browser --session "$EVIDENCE_SESSION" record start ./raw.webm <url>
-node "<skill-root>/scripts/pointer.mjs" install --session "$EVIDENCE_SESSION"
-agent-browser --session "$EVIDENCE_SESSION" snapshot -i
-agent-browser --session "$EVIDENCE_SESSION" batch --bail \
-  "wait 800" "click #trigger" "wait 500" "drag #item #target" "wait 1000"
-agent-browser --session "$EVIDENCE_SESSION" record stop
-node "<skill-root>/scripts/pointer.mjs" remove --session "$EVIDENCE_SESSION"
+node "<skill-root>/scripts/preflight.mjs" --publish
+node "<skill-root>/scripts/publish.mjs" --repo owner/project \
+  --target pr:123 --section "$EVIDENCE_DIR/section.md" --dry-run
+node "<skill-root>/scripts/publish.mjs" --repo owner/project \
+  --target pr:123 --section "$EVIDENCE_DIR/section.md"
 ```
 
-Set the viewport and intended URL before recording. Do not run `open`, `reload`,
-or `set viewport` after `record start`; the recorder is bound to the page target
-created at start. Stop and discard the take if a full navigation is required.
-Once selectors are known, prefer one `agent-browser batch --bail` invocation
-for a planned multi-step claim. Separate CLI processes can add long idle gaps
-between otherwise short actions. This remains direct `agent-browser` control.
+Completion requires reviewed outputs and authenticated readback confirming every
+intended hosted reference on the target. Saved references do not establish
+browser rendering. Qualify a new video publishing path through real playback
+when practical; signed-in browser inspection is not a routine publication gate.
 
-Install the pointer by default for user-driven interaction. Skip it for passive
-motion such as loading, automatic animation, or timing comparison. The pointer
-is instrumented evidence, not a native operating-system cursor.
-
-Prepare the GIF and its local review sheet:
-
-```bash
-node "<skill-root>/scripts/prepare-gif.mjs" \
-  --spec motion.json \
-  --out interaction.gif \
-  --review-out interaction-review.png
-```
-
-## Locate and annotate static changes
-
-```bash
-node "<skill-root>/scripts/regions.mjs" before.png after.png
-node "<skill-root>/scripts/annotate.mjs" --spec annotation.json --out annotated.png
-```
-
-Use changed regions to find static differences, then discard rendering noise,
-timestamps, and animation frames. Regions do not apply to GIFs. Read
-[annotation-spec.md](references/annotation-spec.md) for the full screenshot
-annotation vocabulary.
-
-Crop to the claim. Point instead of narrating. Let table headers and nearby
-prose carry meaning. Redact names, emails, customer identifiers, avatars, and
-organization names before upload.
-
-## Compose the evidence
-
-Use after-only motion by default. Add before/after GIFs only when their contrast
-proves the claim. Put synchronized clips with matching dimensions side by side;
-stack clips with different timing or geometry.
-
-Give every GIF meaningful alt text and adjacent prose that names the action and
-result. Add a final-state screenshot only when that state is independently
-useful. Start with a soft budget of six visual assets and two GIFs. Exceed it
-only when each additional asset proves a named claim, and collapse secondary
-evidence.
-
-Read [publishing.md](references/publishing.md) for layouts, managed blocks, and
-upload behavior.
-
-## Review and authorization
-
-An explicit invocation to attach or publish UI evidence to a specified pull
-request or issue authorizes capture, preparation, uploads, and the scoped target
-update. Use a target already established in the conversation; do not ask for a
-second approval of the same publication. A request for local captures or a
-preview authorizes preparation only. Ask when the publication destination is
-missing or ambiguous.
-
-Inspect every publishable screenshot and the complete GIF plus sampled frames.
-Redact unrelated personal or customer data before upload. If sensitive content
-is essential to the claim or cannot be safely redacted, show the prepared result
-and ask for that specific disclosure decision. Otherwise publish the reviewed
-section and show the result without an additional confirmation round.
-
-Review sheets are local privacy aids. Never reference them in the published
-section unless the user explicitly asks to publish one.
-
-## Publish and verify
-
-```bash
-node "<skill-root>/scripts/publish.mjs" --target pr:123 --section section.md
-node "<skill-root>/scripts/publish.mjs" --target issue:45 --section section.md --mode comment
-```
-
-Verify publication through authenticated `gh` or the GitHub API: read back the
-target body or managed comment and confirm the evidence block contains every
-expected hosted asset reference. See [publishing.md](references/publishing.md)
-for readback commands. Completion requires reviewed local evidence, successful
-uploads, and the expected references saved on the authorized target.
-
-Browser inspection of the published page is optional unless the user explicitly
-requests it. A signed-out GitHub browser is not a blocker; use the existing CLI
-authentication instead of asking the user to sign in for this check.
+If later commits change the captured UI, refresh the affected assets and replace
+the managed block. Record the captured revision and dirty state in local notes
+or motion provenance when useful. Leave unaffected evidence intact.

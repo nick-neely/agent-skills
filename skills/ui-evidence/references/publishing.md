@@ -1,155 +1,146 @@
 # Publishing
 
 ```bash
-node "<skill-root>/scripts/publish.mjs" --target <pr:N|issue:N> --section <file.md> [options]
+node "<skill-root>/scripts/publish.mjs" --repo owner/project \
+  --target pr:123 --section /absolute/evidence/section.md --dry-run
 ```
+
+This validates local media and the named GitHub target without uploading or
+editing it. Remove `--dry-run` to upload the reviewed assets and replace the
+managed evidence section. Publishing requires the authorization described in
+`SKILL.md`; the dry run does not create that authorization.
 
 | Option | Meaning |
 | --- | --- |
-| `--repo <owner/name>` | Defaults to the current repository |
-| `--mode body\|comment` | Edit the description, or manage a single comment; default `body` |
-| `--image-root <path>` | Directory images must live under; defaults to the section file's directory |
-| `--dry-run` | Resolve the repository and image references, upload nothing |
+| `--repo owner/name` | Required; never inferred from the working directory |
+| `--target pr:N` or `issue:N` | Required destination in that repository |
+| `--section path` | Markdown section, without managed markers |
+| `--mode body` or `comment` | Replace the description block or manage one comment; default `body` |
+| `--image-root path` | Asset directory, defaulting to the section's directory; applies to video too |
+| `--max-video-bytes N` | Explicit exclusive video byte ceiling, at most 100,000,000; raising it asserts paid-plan eligibility |
+| `--dry-run` | Read-only validation and a plan including the selected upload transport |
 
-Referencing an image outside the image root is refused rather than uploaded, so
-a section cannot reach arbitrary files on the machine. Widen it deliberately
-with `--image-root` when images genuinely live elsewhere.
+Use absolute paths for the section and a unique evidence directory outside the
+source checkout. Relative media paths resolve under the asset root. Missing
+files, unsupported media, and paths escaping that root, including symlinks, are
+refused. Code examples are not treated as upload references. Use inline Markdown
+images or quoted HTML `img` sources; reference definitions are not supported.
+The scanner supports these simple forms rather than every GFM extension. Prefer
+fenced examples for unusual nested markup and inspect the dry-run asset list
+before uploading.
 
-Editing a body is a read-modify-write, and the GitHub API does not support
-conditional writes on `PATCH`. An edit made between the read and the write is
-overwritten. In practice this means avoiding a publish while someone is editing
-the same description by hand.
+## Choose a readable layout
 
-The script finds every local image the section references, in markdown
-`![](path)` form and HTML `<img src="path">` form alike, uploads each one,
-rewrites the reference to the hosted URL, and splices the result into the
-target.
-
-Run `--dry-run` first. It confirms the repository, the target, and that every
-referenced image exists, before anything is uploaded.
-
-## The managed block
-
-Content is written between these markers:
-
-```html
-<!-- ui-evidence:start -->
-<!-- ui-evidence:end -->
-```
-
-Re-running replaces what is between them. Anything the user wrote outside them
-is preserved. When the markers are absent, the block is appended once.
-
-In `comment` mode the script finds its own previous comment on that issue or
-pull request and updates it, so repeated runs do not stack duplicates. Use
-`comment` mode when the point is "here is what changed since your last review".
-Use `body` mode, the default, when the point is "here is what this change looks
-like".
-
-## Verify publication
-
-Read back the saved body using authenticated CLI access:
-
-```bash
-gh pr view <number> --repo <owner/name> --json body --jq .body
-gh issue view <number> --repo <owner/name> --json body --jq .body
-```
-
-For comment mode, read the comment identified by the publisher's `commentId`.
-When a new comment was created, list comments and locate the publishing user's
-comment containing the managed block:
-
-```bash
-gh api repos/<owner/name>/issues/comments/<comment-id> --jq .body
-gh api repos/<owner/name>/issues/<number>/comments --paginate
-```
-
-Confirm the managed block contains the intended section and every hosted URL
-reported by the publisher. Check that image markup is outside code fences.
-Successful uploads and this readback complete publication verification; they
-confirm saved references, not browser rendering. Report that distinction when
-summarizing verification.
-
-## Layout
-
-GitHub markdown has no native side-by-side, so pairs need an HTML table.
-
-```html
-<table>
-<tr><th>Before</th><th>After</th></tr>
-<tr>
-<td><img src="before.png" width="480"></td>
-<td><img src="after.png" width="480"></td>
-</tr>
-</table>
-```
-
-A single screenshot or GIF needs no table:
+A screenshot needs descriptive alt text:
 
 ```markdown
-![Empty state replaces the spinner](annotated.png)
+![Saved filter is visible after reloading](after.png)
 ```
 
-Past three primary assets, collapse secondary evidence so the description stays readable:
+A video needs a standalone empty-alt image reference, separated from adjacent
+prose by blank lines. The publisher replaces it with a hosted video URL:
+
+```markdown
+Selecting Yearly updates the summary; dropping the card confirms the move.
+
+![](interaction.mp4)
+```
+
+Video alt text is not supported. Keep the action and result in nearby prose;
+avoid autoplay-dependent explanations. Stack before/after videos with labels
+so the reviewer can control each player. Use an after-only clip when sufficient.
+
+For static before/after, a Markdown table can use native uploads:
+
+```markdown
+| Before | After |
+| --- | --- |
+| ![Before](before.png) | ![After](after.png) |
+```
+
+Existing HTML tables remain supported through the narrower direct attachment
+transport. Keep secondary screenshots in `details` blocks when useful:
 
 ```html
-<details><summary>More states (3)</summary>
+<details><summary>Additional states</summary>
 
 ![Dark mode](dark.png)
 
 </details>
 ```
 
-Start with a soft budget of six visual assets and two GIFs. Exceed it only when
-each additional asset proves a named claim. When you leave a scoped state out,
-say so in the section. Silent truncation reads as complete coverage.
+Budgets are soft: prefer six assets and two clips or fewer, while preserving
+the user's named coverage. Explain any omitted state. Do not reference raw
+footage, local previews, or contact sheets in the published section.
 
-Use after-only motion by default. Put synchronized before/after GIFs with
-matching dimensions in a table. Stack clips with different timing or geometry
-so two unrelated loops do not compete side by side.
+## Upload behavior
 
-Give every GIF alt text that names the action and result. Nearby prose must
-carry the same meaning for reviewers who disable animated-image autoplay. Add
-a companion screenshot only when its static state is independently useful.
+Use authenticated gh 2.99.0+ with repository push access. The publisher prefers
+the supported `--attach` interface for body updates and new comments with
+Markdown media. It stages hash-only filenames, preserving the original files.
+No local basename or absolute path is used as the hosted asset name.
 
-## Upload tiers
+For an existing managed comment, update that exact comment ID. Native
+`gh pr comment --edit-last` could select an unrelated newer comment, so this
+case retains the direct attachment endpoint and an ID-specific API update.
+Local HTML images also select that transport, since the native CLI's documented
+rewrite contract covers Markdown. The direct endpoint remains undocumented;
+failures are reported without creating a release or trying another publication
+destination. The dry-run/result identifies the transport.
 
-**Attachments.** `uploads.github.com/user-attachments/assets` with a bearer
-token. Clean URLs, no repository pollution, works for private repositories.
-This endpoint is undocumented and could change without notice.
+The default exclusive byte ceiling is 9,500,000 for images and video, leaving
+headroom under GitHub's decimal 10 MB attachment limit. GitHub allows videos up
+to 100 MB in paid-plan repositories, subject to uploader eligibility. Verify
+that eligibility before raising `--max-video-bytes`; images retain the default
+ceiling. MP4/H.264 is the default preparation path for browser compatibility.
 
-**Release assets.** Used automatically when the attachment upload fails. Assets
-are attached to a prerelease tagged `ui-evidence-assets`, created on
-first use. Documented and stable, at the cost of a visible release in the
-repository.
+## Managed updates and readback
 
-Filenames are prefixed with a content hash, so the same image uploaded twice
-does not collide and a changed image gets a new URL.
+The publisher owns only the block between:
 
-Each run uploads afresh and GitHub mints a new asset URL, even for identical
-bytes. Previously published images are left behind rather than reused. This
-costs nothing and needs no cleanup, but it does mean the URLs in the section
-change on every run.
+```html
+<!-- ui-evidence:start -->
 
-An attachment from a private repository is not publicly readable: an
-unauthenticated request returns `404`, including after the asset is referenced
-in an issue. Do not treat that as a substitute for redaction in a public
-repository.
+<!-- ui-evidence:end -->
+```
 
-## Troubleshooting
+Re-running replaces that block and preserves unrelated prose. Ambiguous or
+malformed markers are refused. Comment mode locates the publishing user's
+managed comment across all pages and refuses multiple matches instead of
+guessing. Each run uploads local assets afresh; remote references are preserved.
 
-**`HTTP 401` or `HTTP 403` on upload.** The token lacks repository access. Check
-`gh auth status`, and confirm the token's scopes cover the target repository.
+The publisher reads back the saved body or exact comment and verifies the
+expected text and hosted references. Successful JSON reports
+`readback.verified: true` and the hosted URLs. To inspect independently:
 
-**Images reported as missing.** Use the authenticated readback above to check
-the saved section and hosted URLs. Check that HTML `<img>` tags are not nested
-inside a markdown code fence.
+```bash
+gh pr view 123 --repo owner/project --json body --jq .body
+gh api repos/owner/project/issues/comments/<comment-id> --jq .body
+```
 
-**`gh api` fails with `Not Found`.** Usually the wrong repository, or a pull
-request number used with `issue:` or the reverse. Both live in the same number
-space per repository, and the script picks a different endpoint for each.
+Readback proves saved references, not browser rendering. A new video publication
+path should be qualified through actual playback when practical. Routine
+publication does not require signing into a browser.
 
-**A release appears in the repository.** The attachment upload failed and the
-fallback took over. The release is a prerelease and can be deleted once the
-attachment path works again, but deleting it breaks images already published
-through it.
+Body edits are read-modify-write. Concurrent edits can still race; avoid
+publishing while someone edits that description. Authentication or authorization
+errors are not permission to switch repositories or hosting destinations.
+
+## Failure recovery
+
+The native CLI can upload some files, update the body, and then exit nonzero.
+The publisher still attempts readback and reports whether the saved target
+changed, which hosted references exist, and which references remain unresolved.
+Treat nonzero as incomplete even if some assets appear. Inspect the returned
+state before retrying; the publisher does not blindly retry uploads or append
+duplicate evidence.
+
+An upload failure can leave an unused hosted attachment. It does not trigger
+release creation or cleanup of earlier assets. A failed direct upload leaves the
+target untouched unless its write had already been attempted; readback reports
+the observed outcome. Refresh the affected evidence after relevant follow-up UI
+commits and replace the managed block.
+
+Primary references: [GitHub CLI attachments](https://docs.github.com/en/github-cli/github-cli/attaching-files-with-github-cli),
+[formats and limits](https://docs.github.com/en/get-started/writing-on-github/working-with-advanced-formatting/attaching-files),
+[partial native upload behavior](https://cli.github.com/manual/gh_pr_edit).

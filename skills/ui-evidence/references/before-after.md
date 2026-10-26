@@ -1,87 +1,68 @@
 # Before and after
 
-"Before" means the base ref rendered, not the current code with a feature flag
-off. That requires a second checkout and a second dev server.
-
-Only do this when the comparison earns it. A new screen has no meaningful
-before. A changed screen usually does.
-
-## The worktree
-
 ```bash
 node "<skill-root>/scripts/before-capture.mjs" create
 ```
 
-Resolves the merge base against the remote default branch, checks it out into a
-detached worktree in the system temp directory, and prints the path. Pass
-`--ref <branch>` to compare against something else, or `--dir <path>` to place
-the worktree yourself.
+This creates a detached checkout of the merge base with the remote default
+branch in a unique temporary location. It leaves the current checkout intact.
+Pass `--ref <branch>` to choose the comparison branch, or `--dir <path>` for an
+explicit unused location. Record the returned base and merge-base revision so
+the label identifies what was rendered.
 
-Uncommitted work stays untouched, and it is correctly included in "after",
-because the after-capture runs against your working tree.
+Capture a base revision only when its comparison helps the reviewer. A new
+screen may need after-only evidence. A feature toggle in the changed code is
+not a substitute for rendering the actual baseline revision.
 
-Install dependencies and start the dev server inside that worktree using the
-project's own commands. The script does not guess them.
+## Start and identify the servers
 
-Tear down when you are finished:
+Use the project's setup and dev-server commands inside the temporary checkout.
+Confirm each server's process working directory or another reliable worktree
+marker, then check the intended route and fixture. Reusing a port does not prove
+server identity. Give the baseline its own port when possible, preserving the
+running after-server.
 
-```bash
-node "<skill-root>/scripts/before-capture.mjs" remove
-```
+Use separate browser sessions for before and after. Authenticate each through
+the app's supported flow and verify that both show the intended signed-in
+surface. Cookies are scoped by domain/path and are not isolated by port.
+Local/session storage, auth callback allowlists, signing secrets, and databases
+can still depend on the origin or checkout. Diagnose the actual dependency
+before deciding that two ports cannot work.
 
-If you created the worktree with `--dir <path>`, pass the same `--dir <path>` to
-`remove`. Without it the command looks in the default location and reports that
-there is nothing to remove. The `create` output prints the matching command.
+Use sanitized, comparable data and the project's isolated local-data setup.
+Do not run an older checkout's migrations against another server's database.
+If the app genuinely requires the original port, get authorization before
+stopping a user-owned server and restore it afterwards. If a truthful baseline
+cannot be prepared, publish after-only evidence and explain the limitation;
+a login page is not the requested baseline.
 
-Remove the worktree even when capture failed. A stale worktree makes the next
-run fail with a path collision.
+## Match the states
 
-## Which port
+| Match | Check |
+| --- | --- |
+| Geometry | Viewport, device pixel ratio, route, scroll position |
+| Appearance | Theme, fonts, relevant settings |
+| Data | Same sanitized seed and meaningful row/content state |
+| Timing | Settle unrelated animation and timestamps for static comparisons; retain motion under test |
 
-This is the decision that determines whether authenticated screens work.
+The browser's `diff screenshot --baseline <absolute-path>` provides quick visual
+inspection. Use `regions.mjs` when changed-region geometry helps annotation.
+Neither replaces checking that both captures show the intended app state.
 
-**Unauthenticated surfaces: run both servers at once, on different ports.**
-Capture in parallel. Ports are irrelevant when no session is involved.
-
-**Authenticated surfaces: run sequentially, on one port.** Cookies are scoped to
-an origin, and an origin includes the port. A session established on `:3000`
-does not exist on `:3001`, so a before-capture on a different port silently
-photographs a login page instead of the screen you wanted.
-
-The sequence for an authenticated surface:
-
-1. Capture "after" against the already-running dev server.
-2. Ask the user before stopping that server. It is theirs, and it may be
-   holding state they care about.
-3. Start the worktree's server on the freed port.
-4. Authenticate, then capture "before".
-5. Stop it, remove the worktree, and restart the original server.
-
-If the user declines the stop, produce an annotated after-only image and say
-that before/after was skipped and why. Do not publish a login page labelled
-"before".
-
-## Authentication itself
-
-`agent-browser` owns this. It has a credential vault, pluggable credential
-providers, cookie and header control, and persistent sessions.
+## Remove only this run's clean checkout
 
 ```bash
-agent-browser auth save <name> --url <login-url> --username <user> --password-stdin
-agent-browser auth login <name>
+node "<skill-root>/scripts/before-capture.mjs" remove \
+  --dir <returned-path> --owner <returned-owner>
 ```
 
-Do not build a login bypass into the application for this. Do not commit
-credentials or storage state.
+Keep the exact removal command returned by `create`. A per-run ownership record
+stays in that worktree's private Git metadata. Removal requires the matching
+owner ID and registered path, and refuses dirty or untracked contents. Stop
+only the server this run started, then remove
+the clean checkout. Normal Git removal also removes ignored dependencies and
+build output in that checkout; inspect any ignored files that need to be kept.
+A refusal preserves the files for inspection; do not force
+removal or delete an unrelated path to finish cleanup.
 
-## Matching the two captures
-
-The region script rejects mismatched dimensions, which catches the common
-failure. These still need attention:
-
-- Same viewport and device pixel ratio on both captures.
-- Same route, same scroll position, same theme.
-- Freeze anything that moves. Animations, carousels, relative timestamps, and
-  randomised content all register as changed regions and drown the real diff.
-- Seed the same data. A different row count is a different screen, not a
-  different style.
+Cookie behavior: [RFC 6265, section 8.5](https://www.rfc-editor.org/rfc/rfc6265#section-8.5).

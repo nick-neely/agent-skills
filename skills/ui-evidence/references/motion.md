@@ -1,172 +1,152 @@
 # Motion evidence
 
-Prepare one short, deterministic interaction that proves one claim.
-
-## Contents
-
-- [Recording boundary](#recording-boundary)
-- [Pointer instrumentation](#pointer-instrumentation)
-- [Capture sequence](#capture-sequence)
-- [Motion spec](#motion-spec)
-- [Size and duration](#size-and-duration)
-- [Privacy review](#privacy-review)
-- [Before and after](#before-and-after)
-
-## Recording boundary
-
-`agent-browser record start` creates a fresh browser context. Treat it as a
-runtime reset:
-
-- The URL, viewport, and cookies normally survive.
-- Element references are stale and must be rediscovered.
-- Set the final viewport before recording.
-- Pass the intended URL to `record start` when navigation is required.
-- Prepare an initial route or sanitized fixture that does not depend on
-  pre-recording local storage or session storage.
-- Assume local storage and session storage were cleared. This has occurred in
-  released `agent-browser` versions even when their help text claimed otherwise.
-
-The recorder captures a fixed page target. Do not run `open`, `reload`, or
-`set viewport` after `record start`; released versions can then produce a
-one-frame file or hang at `record stop`. Stop and discard the take if a full
-navigation or viewport change is required. Restore permitted state through
-cookies, the initial URL, or in-page actions that do not navigate.
-
-Record setup and readiness waits, then trim them out. This is more reliable
-than trying to make pre-recording page state cross the context boundary
-invisibly.
-
-## Pointer instrumentation
-
-`agent-browser` video does not include a native cursor or click feedback. The
-pointer script injects a fixed, non-interactive overlay into the page:
-
 ```bash
-node "<skill-root>/scripts/pointer.mjs" install --session "$EVIDENCE_SESSION"
-node "<skill-root>/scripts/pointer.mjs" status --session "$EVIDENCE_SESSION"
-node "<skill-root>/scripts/pointer.mjs" remove --session "$EVIDENCE_SESSION"
+node "<skill-root>/scripts/preflight.mjs" --motion
 ```
 
-Install it after `record start`, then run `status`. A reload or full navigation
-invalidates both the pointer and the recording target, so stop and discard that
-take. If status fails, repair the capture instead of silently producing
-cursorless evidence.
+Motion capture needs agent-browser 0.38.1+ and FFmpeg. Preparation additionally
+needs ffprobe and ImageMagick. Use MP4 for controlled playback; GIF is an opt-in
+loop. Neither a format change nor duplicated frames restores motion the recorder
+missed.
 
-The pointer follows click-by-reference, hover, mouse movement, and
-`agent-browser drag`. Its `dragover` tracking keeps the pointer visible after
-HTML drag starts. Scrolling leaves it at the current viewport coordinate while
-the page moves underneath, matching normal pointer behavior.
+## Rehearse before recording
 
-The install report lists `blockedFrames`. Same-origin iframes receive their own
-overlay. Cross-origin iframe input cannot be observed from the parent document;
-capture that frame at its own origin or state clearly that pointer feedback is
-unavailable inside it.
+Use the run's isolated session and absolute evidence directory from `SKILL.md`.
+Keep session and namespace names short enough for the OS socket-path limit.
+Open the intended page, set its final viewport, authenticate through supported
+browser controls, seed sanitized data, and wait for an app-specific ready signal.
+Discover selectors and rehearse the claim before starting the take.
 
-The pointer is evidence instrumentation. It does not prove the appearance of a
-native cursor. A change to the CSS `cursor` value needs separate computed-style
-evidence or a native recording outside this skill's v1 boundary.
+With the supported recorder, `record start` without a URL records the active
+page in place, including in-page state. Supplying a URL navigates first. Older
+releases reset browser context and could lose storage or the recording target;
+upgrade to the supported baseline instead of applying those workarounds to every
+take. Keep the intended tab and viewport stable during capture. A navigation
+that belongs to the flow is legitimate; assert its result and inspect the take.
 
-## Capture sequence
-
-1. Explore the page and plan one interaction.
-2. Set the final viewport.
-3. Start the WebM recording, passing the intended URL when needed.
-4. Wait for the initial state without a full navigation or viewport reset.
-5. Install the pointer unless the motion is passive.
-6. Take a fresh snapshot and reacquire references.
-7. Hold the stable initial state briefly.
-8. Perform one interaction using direct `agent-browser` commands, batching a
-   planned sequence when it has multiple steps.
-9. Hold the stable result briefly.
-10. Stop recording, then remove the pointer.
-11. Write the motion spec and prepare the GIF.
-
-Prefer an app-specific ready signal over a fixed wait. The short holds belong in
-the prepared output as well, so GIF looping remains readable.
-
-Use one batch after the necessary selectors are known:
+## Record direct browser actions
 
 ```bash
-agent-browser --session "$EVIDENCE_SESSION" batch --bail \
-  "wait 800" "click #reveal" "wait 500" "drag #item #target" "wait 1000"
+agent-browser record start "$EVIDENCE_DIR/raw.mp4" --fps 30 --cursor --contact-sheet
+agent-browser batch --bail <<'JSON'
+[
+  ["wait", "600"],
+  ["click", "fieldset label:nth-child(2)"],
+  ["wait", "--fn", "document.querySelector('#yearly').checked"],
+  ["eval", "(() => { if (!document.querySelector('#yearly').checked) throw new Error('Yearly did not activate'); return true; })()"],
+  ["wait", "1200"]
+]
+JSON
+agent-browser record stop --json
 ```
 
-Commands used to install and verify instrumentation can make the raw recording
-look much longer than the interaction. Trim that setup away. Avoid snapshots,
-geometry reads, and other diagnostic calls between visible actions; each
-separate CLI process can create reviewer-visible dead air.
+Replace the sample selector and assertion with the actual claim. Use JSON arrays
+of arguments so selectors containing spaces and quoted text survive parsing.
+This is the browser's batch interface, not a new action language. A successful
+click command alone does not prove the UI changed. Accept the take only after
+an assertion or inspected snapshot confirms the expected state.
 
-## Motion spec
+Use state-based waits for readiness and explicit short holds for human reading.
+Avoid diagnostic calls between planned visible actions; separate processes add
+dead air. Stop the take even when a batch fails, then inspect or re-record it.
+Close only the session this run owns when finished.
 
-Coordinates refer to the original WebM frame. Cropping translates fixed
-redaction rectangles automatically.
+Use 30 fps normally and 60 fps for a short motion-sensitive claim when capture
+can sustain it. `record stop` reports written frames and distinct captured frames.
+Static content legitimately has few distinct frames; counts alone do not prove
+smoothness. Native `--cursor` is an injected pointer/click overlay, not an OS
+cursor. Skip it for passive motion. Use native human-like input only when pointer
+trajectory matters. Check pointer behavior in the actual take, including frames
+or navigation involved in the claim.
+
+## Inspect the raw take
+
+```bash
+node "<skill-root>/scripts/preflight.mjs" --prepare
+node "<skill-root>/scripts/prepare-motion.mjs" \
+  --inspect "$EVIDENCE_DIR/raw.mp4" \
+  --review-out "$EVIDENCE_DIR/raw-review.png" \
+  --preview-out "$EVIDENCE_DIR/raw-review.html"
+```
+
+Use the timestamped sheet and local player to locate action bounds before
+writing the spec. Raw sheets/previews can contain material later redacted; keep
+them local. Native contact sheets select visual changes with a threshold and a
+frame cap, so they do not replace final-output sampling or complete review.
+
+## Prepare the final output
+
+Write `motion.json` in the evidence directory. Coordinates refer to source
+pixels; cropping translates fixed redactions. Example:
 
 ```json
 {
-  "input": "raw.webm",
-  "trim": { "start": 1.4, "end": 6.7 },
+  "input": "raw.mp4",
+  "trim": { "start": 1.4, "end": 10.7 },
   "crop": { "x": 180, "y": 80, "width": 820, "height": 520 },
   "holds": { "start": 0.5, "end": 1 },
-  "redactions": [
-    { "at": [940, 24, 180, 32], "color": "#111827" }
-  ],
-  "profile": {
-    "maxWidth": 720,
-    "fps": 12,
-    "targetBytes": 5242880,
-    "maxBytes": 10485760
-  },
-  "limits": { "maxDuration": 8 },
-  "review": { "interval": 0.5 }
+  "redactions": [{ "at": [940, 24, 180, 32], "color": "#111827" }],
+  "profile": { "maxWidth": 1280, "fps": 30, "maxBytes": 9500000 },
+  "review": { "interval": 0.5 },
+  "provenance": { "revision": "<captured-head>", "dirty": false }
 }
 ```
 
-| Field | Meaning |
+```bash
+node "<skill-root>/scripts/prepare-motion.mjs" \
+  --spec "$EVIDENCE_DIR/motion.json" \
+  --out "$EVIDENCE_DIR/interaction.mp4" \
+  --review-out "$EVIDENCE_DIR/interaction-review.png" \
+  --preview-out "$EVIDENCE_DIR/interaction-review.html"
+```
+
+MP4 output uses H.264 at CRF 18, a browser-compatible pixel format, even dimensions,
+fast-start metadata, and video only. GIF output is selected by an `.gif` output
+path; run preflight with `--prepare --format gif`. Its palette and frame timing
+must preserve essential initial, intermediate, and final states.
+
+| Spec field | Meaning |
 | --- | --- |
-| `input` | WebM path, relative to the spec or absolute |
-| `trim` | Action bounds in source seconds; never inferred or shortened automatically |
-| `crop` | Optional original-frame rectangle |
-| `holds` | Cloned first and final frame durations |
-| `redactions` | Opaque fixed rectangles, applied to every frame |
-| `profile` | Initial width/FPS and target/hard byte limits |
-| `limits.maxDuration` | Prepared duration ceiling; defaults to 8 seconds; allowed range is 1 to 12 |
-| `review.interval` | Contact-sheet sampling interval; defaults to 0.5 seconds |
+| `input` | Source path, absolute or relative to the spec |
+| `trim` | Explicit source-time bounds; normalization preserves sparse held states |
+| `crop` | Optional source-frame rectangle |
+| `holds` | Additional cloned initial/final reading time |
+| `redactions` | Opaque fixed rectangles on every output frame |
+| `profile` | Explicit width, frame rate, and byte limits; see CLI help for format defaults |
+| `limits.maxDuration` | Optional user-chosen ceiling, not a universal duration policy |
+| `review.interval` | Final-output sampling interval, normally 0.5 seconds |
+| `provenance` | Optional local capture revision/state metadata |
 
-## Size and duration
+Output timing is quantized to the chosen frame rate. Initial and final holds
+use the actual source states at the trim boundaries, before resampling. A trim
+too short to represent those states fails with guidance to widen it or raise
+the frame rate.
 
-The default profile is 720px, 12 fps, a 5 MiB target, and GitHub's 10 MiB hard
-ceiling. The preparation script steps down through bounded profiles, never
-below 640px or 8 fps unless the source itself is narrower. It reports every
-attempt and the selected profile.
+## Preserve truth and readability
 
-Keep reviewer-facing GIFs at or below the 8-second default. The 12-second hard
-configuration maximum exists for unusual evidence, not as the normal target.
-Split a longer claim when the essential action cannot be made readable within
-that range.
+Keep each clip focused, often 5-20 seconds. Let the claim determine its length;
+prefer a readable longer take over rushing an essential action. Retain real
+response time when timing or loading is the claim. Remove setup or accidental
+tool gaps only when irrelevant to that claim. Label cuts or slow motion in an
+explanatory walkthrough. Preparation does not infer cuts or speed changes.
 
-The script never shortens the interaction. If the prepared duration exceeds the
-limit, tighten the explicit trim. If every bounded profile exceeds 10 MiB,
-reduce the crop or split the claim into a shorter interaction.
+Use a tighter crop or explicit encoding settings before sacrificing readable
+text or motion. Oversized MP4 output fails with guidance rather than silently
+lowering FPS, shrinking the image, or shortening the action. The default byte
+ceiling leaves headroom under GitHub's decimal 10 MB free-plan limit. A higher
+explicit ceiling requires verified paid-plan upload eligibility.
 
-## Privacy review
+Inspect the prepared output, its sampled first/intermediate/final states, and
+its reported duration. A source with missing frames must be re-recorded for a
+motion claim. A one-frame privacy flash can fall between samples. Use sanitized
+fixtures, inspect the full motion with suitable tools, and accurately report
+any review limitation. Fixed redactions are for stationary regions; re-record
+moving or unpredictable sensitive content.
 
-Use sanitized fixture data first. Use an opaque fixed redaction when a sensitive
-region stays put. Re-record when sensitive content moves, scrolls, animates, or
-appears in an unpredictable region.
+Default to after-only motion. Capture before motion when the behavioral contrast
+is useful, with matched geometry and data. Stack independent videos with clear
+labels so the reviewer controls each one. Put the action and result in nearby
+prose. Keep review sheets and previews local.
 
-`prepare-gif.mjs` produces a local contact sheet containing the first frame,
-the last frame, and samples every 500ms by default. Watch the full GIF and read
-the sheet. A sampled sheet can miss a very brief frame, so it supplements the
-animation review rather than replacing it.
-
-Keep the contact sheet local. Publish it only when it is itself useful evidence
-and the user explicitly approves it.
-
-## Before and after
-
-Use one after GIF when it fully demonstrates the corrected behavior. Capture a
-before GIF only when the behavioral contrast is the claim.
-
-Put matching, synchronized clips side by side. Stack clips whose timing,
-geometry, or duration differs. Do not force two animations into one combined
-file unless the transition between them is explicit and easy to understand.
+Upstream: [recording](https://agent-browser.dev/recording),
+[version boundaries](https://github.com/vercel-labs/agent-browser/blob/main/CHANGELOG.md).
