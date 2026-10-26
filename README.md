@@ -33,10 +33,6 @@ Skills that shell out have their own runtime dependencies, listed in each
   findings, and stop within a bounded review budget.
 - [`file-pr`](skills/file-pr/) - Review the branch diff, reuse or open a PR,
   and use the separately installed `pr` skill for its body format.
-- [`full-send`](skills/full-send/) - Complete explicitly authorized work
-  through a verified merged PR.
-- [`full-stop`](skills/full-stop/) - Complete explicitly authorized work
-  through a verified PR ready for the user to merge.
 - [`generated-image-assets`](skills/generated-image-assets/) - Remove an image's
   background, verify the alpha edges, and size it for shipping.
 - [`implement-stack`](skills/implement-stack/) - Implement a spec, issue set, or
@@ -46,11 +42,11 @@ Skills that shell out have their own runtime dependencies, listed in each
 - [`jira-acli`](skills/jira-acli/) - Read, plan, and update Jira work items through
   Atlassian ACLI. Requires local Jira authentication; writes need explicit intent.
 - [`leaving-pr-comments`](skills/leaving-pr-comments/) - Write and verify
-  evidence-backed PR comments and review replies.
+  evidence-backed GitHub comments and review replies.
 - [`ship-spec`](skills/ship-spec/) - Claude Code only. Deliver every issue in a
   GitHub spec as a resumable orchestrated loop.
 - [`sol-loop`](skills/sol-loop/) - Run bounded independent code review with
-  the reviewer selected by project instructions.
+  Sol through explicit T3 or native reviewer routes.
 - [`to-spec`](skills/to-spec/) - Synthesize the current conversation into a spec
   and publish it to the issue tracker.
 - [`to-tickets`](skills/to-tickets/) - Break a spec or plan into tracer-bullet

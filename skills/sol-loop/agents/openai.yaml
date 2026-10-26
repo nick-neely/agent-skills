@@ -1,3 +1,3 @@
 interface:
   display_name: "Sol Loop"
-  short_description: "Run bounded independent review using project reviewer policy"
+  short_description: "Run bounded Sol review with explicit T3 and native routing"
