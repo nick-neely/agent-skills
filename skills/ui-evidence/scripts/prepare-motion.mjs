@@ -1,0 +1,477 @@
+#!/usr/bin/env node
+// Prepare a recording as review-ready MP4 or GIF evidence.
+
+import { execFileSync } from "node:child_process";
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { tmpdir } from "node:os";
+import { fileURLToPath, pathToFileURL } from "node:url";
+
+const SKILL_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const FONT_PATH = join(SKILL_ROOT, "assets", "DejaVuSans.ttf");
+const MIB = 1024 * 1024;
+const DEFAULT_MAX_BYTES = 9_500_000;
+const MAX_BYTES = 100_000_000;
+
+const HELP = `prepare-motion.mjs - prepare or inspect motion evidence
+
+  node prepare-motion.mjs --spec <spec.json> --out <evidence.mp4|evidence.gif> --review-out <contact.png> [--preview-out <preview.html>] [--keep-temp]
+  node prepare-motion.mjs --inspect <raw.webm|raw.mp4> --review-out <contact.png> [--preview-out <preview.html>] [--keep-temp]
+
+  --spec <path>         Motion preparation spec
+  --inspect <path>      Inspect a raw recording without encoding it
+  --out <path>          Prepared MP4 or GIF output
+  --review-out <path>   Local sampled-frame contact sheet; do not publish it
+  --preview-out <path>  Local HTML preview; do not publish it
+  --keep-temp           Keep intermediate encodes and sampled frames
+
+  MP4 defaults: 30 fps and the full crop width (rounded to even dimensions).
+  GIF defaults: 12 fps and at most 720px wide. Both default to a 9,500,000-byte
+  limit; profile.maxBytes may be set up to 100,000,000 when supported. Holds
+  default to 0.5s at the start and 1s at the end, with 0.5s review sampling.
+`;
+
+function die(message) {
+  console.error(`prepare-motion: ${message}`);
+  process.exit(1);
+}
+
+function parseArgs(argv) {
+  const options = { keepTemp: false };
+  const valued = { "--spec": "spec", "--inspect": "inspect", "--out": "out",
+    "--review-out": "reviewOut", "--preview-out": "previewOut" };
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg === "--help" || arg === "-h") {
+      console.log(HELP);
+      process.exit(0);
+    } else if (Object.hasOwn(valued, arg)) {
+      const value = argv[index + 1];
+      if (!value || value.startsWith("--")) die(`${arg} requires a value`);
+      if (options[valued[arg]] !== undefined) die(`${arg} may only be specified once`);
+      options[valued[arg]] = value;
+      index += 1;
+    } else if (arg === "--keep-temp") options.keepTemp = true;
+    else die(`unknown option ${arg}`);
+  }
+  if (!options.reviewOut) die(`--review-out is required\n\n${HELP}`);
+  if (options.inspect && (options.spec || options.out)) die("--inspect cannot be combined with --spec or --out");
+  if (!options.inspect && !options.spec) die(`--spec or --inspect is required\n\n${HELP}`);
+  if (!options.inspect && !options.out) die(`--out is required\n\n${HELP}`);
+  if (options.out && !/\.(mp4|gif)$/i.test(options.out)) die("--out must end in .mp4 or .gif");
+  if (options.inspect && !/\.(webm|mp4)$/i.test(options.inspect)) die("--inspect must end in .webm or .mp4");
+  if (!/\.png$/i.test(options.reviewOut)) die("--review-out must end in .png");
+  if (options.previewOut && !/\.html?$/i.test(options.previewOut)) die("--preview-out must end in .html or .htm");
+  return options;
+}
+
+function canonicalPath(path) {
+  const absolute = resolve(path);
+  let ancestor = absolute;
+  while (!existsSync(ancestor)) {
+    const parent = dirname(ancestor);
+    if (parent === ancestor) break;
+    ancestor = parent;
+  }
+  const canonical = resolve(realpathSync(ancestor), relative(ancestor, absolute));
+  return process.platform === "win32" ? canonical.toLowerCase() : canonical;
+}
+
+function ensureDistinct(paths) {
+  const seen = [];
+  for (const path of paths.filter(Boolean)) {
+    const canonical = canonicalPath(path);
+    const stat = existsSync(path) ? statSync(path) : null;
+    if (seen.some((entry) => entry.canonical === canonical ||
+      (stat?.ino && entry.stat?.ino && stat.ino === entry.stat.ino && stat.dev === entry.stat.dev))) {
+      die("input, spec, output, review, and preview paths must be distinct to avoid overwriting evidence");
+    }
+    seen.push({ canonical, stat });
+  }
+}
+
+function commandExists(binary, args = ["-version"]) {
+  try {
+    execFileSync(binary, args, { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function requireBinary(binary) {
+  if (!commandExists(binary)) die(`${binary} not found. Run scripts/preflight.mjs --prepare.`);
+}
+
+function resolveMontage() {
+  if (commandExists("magick")) return { binary: "magick", prefix: ["montage"] };
+  if (commandExists("montage")) return { binary: "montage", prefix: [] };
+  die("ImageMagick montage not found. Run scripts/preflight.mjs --prepare.");
+}
+
+function run(binary, args, label) {
+  try {
+    return execFileSync(binary, args, {
+      encoding: "utf8",
+      maxBuffer: 32 * 1024 * 1024,
+      stdio: ["ignore", "pipe", "pipe"],
+    }).trim();
+  } catch (error) {
+    const detail = error.stderr?.toString().trim() || error.message;
+    die(`${label} failed: ${detail}`);
+  }
+}
+
+function inspect(path) {
+  const raw = run(
+    "ffprobe",
+    [
+      "-v", "error",
+      "-count_frames",
+      "-select_streams", "v:0",
+      "-show_entries", "stream=width,height,r_frame_rate,avg_frame_rate,nb_read_frames",
+      "-show_entries", "format=duration,size",
+      "-of", "json",
+      path,
+    ],
+    `ffprobe ${path}`,
+  );
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    die(`ffprobe returned invalid JSON for ${path}`);
+  }
+  const stream = parsed.streams?.[0];
+  const duration = Number(parsed.format?.duration);
+  if (!stream || !Number.isFinite(duration)) die(`could not inspect video stream in ${path}`);
+  const frames = Number(stream.nb_read_frames);
+  return {
+    width: Number(stream.width),
+    height: Number(stream.height),
+    duration,
+    size: Number(parsed.format?.size ?? statSync(path).size),
+    frames: Number.isFinite(frames) ? frames : null,
+  };
+}
+
+function finite(value, name, { min = -Infinity, max = Infinity, integer = false } = {}) {
+  const number = value;
+  if (typeof number !== "number" || !Number.isFinite(number) || number < min || number > max || (integer && !Number.isInteger(number))) {
+    die(`${name} must be ${integer ? "an integer" : "a number"} from ${min} to ${max}`);
+  }
+  return number;
+}
+
+function defaultValue(value, fallback) {
+  return value === undefined ? fallback : value;
+}
+
+function requireObject(value, name) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) die(`${name} must be an object`);
+}
+
+function resolveInput(specPath, input) {
+  if (!input || typeof input !== "string") die('spec needs an "input" path');
+  return isAbsolute(input) ? resolve(input) : resolve(dirname(specPath), input);
+}
+
+function resolveCrop(raw, source) {
+  if (raw === undefined) return { x: 0, y: 0, width: source.width, height: source.height, explicit: false };
+  const crop = {
+    x: finite(raw.x, "crop.x", { min: 0, integer: true }),
+    y: finite(raw.y, "crop.y", { min: 0, integer: true }),
+    width: finite(raw.width, "crop.width", { min: 1, integer: true }),
+    height: finite(raw.height, "crop.height", { min: 1, integer: true }),
+    explicit: true,
+  };
+  if (crop.x + crop.width > source.width || crop.y + crop.height > source.height) {
+    die(`crop ${crop.x},${crop.y} ${crop.width}x${crop.height} exceeds ${source.width}x${source.height}`);
+  }
+  return crop;
+}
+
+const HEX_COLOUR = /^#(?:[0-9a-fA-F]{6}|[0-9a-fA-F]{6}[fF]{2})$/;
+
+function resolveRedactions(raw, crop) {
+  if (raw === undefined) return [];
+  if (!Array.isArray(raw)) die("redactions must be an array");
+  return raw.flatMap((redaction, index) => {
+    if (!redaction || !Array.isArray(redaction.at) || redaction.at.length !== 4) {
+      die(`redactions[${index}].at must be [x, y, width, height]`);
+    }
+    const [x, y, width, height] = redaction.at.map((value, part) =>
+      finite(value, `redactions[${index}].at[${part}]`, { min: 0, integer: true }),
+    );
+    if (width < 1 || height < 1) die(`redactions[${index}] needs positive width and height`);
+    const color = defaultValue(redaction.color, "#111827");
+    if (typeof color !== "string" || !HEX_COLOUR.test(color)) {
+      die(`redactions[${index}].color must be opaque #RRGGBB or #RRGGBBFF`);
+    }
+
+    const left = Math.max(x, crop.x);
+    const top = Math.max(y, crop.y);
+    const right = Math.min(x + width, crop.x + crop.width);
+    const bottom = Math.min(y + height, crop.y + crop.height);
+    if (right <= left || bottom <= top) return [];
+    return [{
+      x: left - crop.x,
+      y: top - crop.y,
+      width: right - left,
+      height: bottom - top,
+      color,
+    }];
+  });
+}
+
+function ffmpegColor(hex) {
+  return `0x${hex.slice(1)}`;
+}
+
+function buildFilter({ trim, crop, redactions, holds, profile, format }) {
+  const chain = [
+    `fps=${profile.fps}`,
+    `trim=start=${trim.start}:end=${trim.end}`,
+    "setpts=PTS-STARTPTS",
+  ];
+  if (crop.explicit) chain.push(`crop=${crop.width}:${crop.height}:${crop.x}:${crop.y}:exact=1`);
+  for (const redaction of redactions) {
+    chain.push(
+      `drawbox=x=${redaction.x}:y=${redaction.y}:w=${redaction.width}:h=${redaction.height}` +
+        `:color=${ffmpegColor(redaction.color)}:t=fill`,
+    );
+  }
+  chain.push(
+    `scale=w=trunc(min(iw\\,${profile.width})/2)*2:h=-2:flags=lanczos`,
+    `tpad=start_mode=clone:start_duration=${holds.start}` +
+      `:stop_mode=clone:stop_duration=${holds.end}`,
+  );
+  if (format === "mp4") return `[0:v]${chain.join(",")}[out]`;
+  return (
+    `[0:v]${chain.join(",")},split=2[frames][palette_source];` +
+    "[palette_source]palettegen=stats_mode=full[palette];" +
+    "[frames][palette]paletteuse=dither=sierra2_4a:diff_mode=rectangle[out]"
+  );
+}
+
+function encode(input, output, settings) {
+  const filter = buildFilter(settings);
+  const encoding = settings.format === "mp4"
+    ? ["-an", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-movflags", "+faststart"]
+    : ["-loop", "0"];
+  run(
+    "ffmpeg",
+    [
+      "-y", "-v", "error", "-i", input,
+      "-filter_complex", filter,
+      "-map", "[out]",
+      ...encoding,
+      output,
+    ],
+    `ffmpeg encode ${settings.profile.width}px ${settings.profile.fps}fps`,
+  );
+  if (!existsSync(output)) die(`ffmpeg reported success but produced no file: ${output}`);
+  return statSync(output).size;
+}
+
+function sampleTimes(duration, interval) {
+  const times = [];
+  for (let time = 0; time < duration; time += interval) times.push(Number(time.toFixed(3)));
+  return times;
+}
+
+function buildReviewSheet(input, output, temp, media, interval) {
+  const montage = resolveMontage();
+  const times = sampleTimes(media.duration, interval);
+  if (!Number.isInteger(media.frames) || media.frames < 1) die("could not count decoded frames for the contact sheet");
+  const samples = [...times.map((time) => ({ time })), { last: true }];
+  const frames = samples.map(({ time, last }, index) => {
+    const frame = join(temp, `review-${String(index).padStart(3, "0")}.png`);
+    const filter = last ? `select=eq(n\\,${media.frames - 1})`
+      : `setpts=PTS-STARTPTS,fps=60,tpad=stop_mode=clone:stop_duration=${media.duration},select=gte(t\\,${time})`;
+    const label = last ? "last frame" : `${time.toFixed(1)}s`;
+    run(
+      "ffmpeg",
+      ["-y", "-v", "error", "-i", input, "-vf", filter, "-frames:v", "1", frame],
+      `extract review frame ${label}`,
+    );
+    if (!existsSync(frame)) die(`ffmpeg produced no review frame ${label}`);
+    return { frame, label };
+  });
+
+  mkdirSync(dirname(output), { recursive: true });
+  const args = [
+    ...montage.prefix,
+    "-background", "white",
+    "-fill", "#111827",
+    "-font", FONT_PATH,
+    "-pointsize", "18",
+    "-tile", "4x",
+    "-geometry", "360x+8+8",
+  ];
+  for (const { frame, label } of frames) args.push("-label", label, frame);
+  args.push(output);
+  run(montage.binary, args, "ImageMagick contact sheet");
+  if (!existsSync(output)) die(`ImageMagick produced no contact sheet: ${output}`);
+  return times;
+}
+
+function escapeHtml(value) {
+  return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
+}
+
+function buildPreview(previewPath, input, output) {
+  const sourceUrl = escapeHtml(pathToFileURL(input).href);
+  const result = output && /\.gif$/i.test(output)
+    ? `<h2>Prepared GIF</h2><img src="${escapeHtml(pathToFileURL(output).href)}" alt="Prepared GIF">`
+    : output
+      ? `<h2>Prepared output</h2><video controls playsinline preload="metadata" src="${escapeHtml(pathToFileURL(output).href)}"></video>`
+      : "";
+  const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Motion evidence review</title><style>body{font:16px system-ui,sans-serif;max-width:1100px;margin:2rem auto;padding:0 1rem}video,img{display:block;max-width:100%;max-height:75vh}p{line-height:1.5}</style></head><body><h1>Motion evidence review</h1><p>Local preview. Watch the complete prepared output and review the sampled frames before publication. Raw footage can contain unredacted data.</p><h2>Raw recording</h2><video controls playsinline preload="metadata" src="${sourceUrl}"></video>${result}</body></html>`;
+  mkdirSync(dirname(previewPath), { recursive: true });
+  writeFileSync(previewPath, html);
+}
+
+const options = parseArgs(process.argv.slice(2));
+requireBinary("ffmpeg");
+requireBinary("ffprobe");
+if (!existsSync(FONT_PATH)) die(`bundled font missing at ${FONT_PATH}`);
+const temp = mkdtempSync(join(tmpdir(), "ui-evidence-motion-"));
+const cleanup = () => {
+  if (!options.keepTemp) rmSync(temp, { recursive: true, force: true });
+};
+process.once("exit", cleanup);
+if (options.inspect) {
+  const input = resolve(options.inspect);
+  if (!existsSync(input)) die(`no such input: ${input}`);
+  const source = inspect(input);
+  const reviewOut = resolve(options.reviewOut);
+  const previewOut = options.previewOut ? resolve(options.previewOut) : null;
+  ensureDistinct([input, reviewOut, previewOut]);
+  const reviewTimes = buildReviewSheet(input, reviewOut, temp, source, 0.5);
+  if (previewOut) buildPreview(previewOut, input, null);
+  console.log(JSON.stringify({ input, source, reviewOut, previewOut, reviewTimes, reviewLastFrame: true,
+    warnings: ["Frame count alone does not prove smooth capture. Review the complete recording."],
+    ...(options.keepTemp ? { temp } : {}) }, null, 2));
+  process.exit(0);
+}
+const format = options.out.toLowerCase().endsWith(".mp4") ? "mp4" : "gif";
+const specPath = resolve(options.spec);
+if (!existsSync(specPath)) die(`no such spec: ${specPath}`);
+
+let spec;
+try {
+  spec = JSON.parse(readFileSync(specPath, "utf8"));
+} catch (error) {
+  die(`spec is not valid JSON: ${error.message}`);
+}
+requireObject(spec, "spec");
+for (const field of ["trim", "crop", "holds", "profile", "limits", "review"]) {
+  if (spec[field] !== undefined) requireObject(spec[field], field);
+}
+
+const input = resolveInput(specPath, spec.input);
+if (!existsSync(input)) die(`no such input: ${input}`);
+ensureDistinct([specPath, input, options.out, options.reviewOut, options.previewOut]);
+const source = inspect(input);
+const crop = resolveCrop(spec.crop, source);
+if (crop.width < 2 || crop.height < 2) die("crop must be at least 2x2 pixels");
+const trim = {
+  start: finite(defaultValue(spec.trim?.start, 0), "trim.start", { min: 0, max: source.duration }),
+  end: finite(defaultValue(spec.trim?.end, source.duration), "trim.end", { min: 0, max: source.duration }),
+};
+if (trim.end <= trim.start) die("trim.end must be greater than trim.start");
+
+const holds = {
+  start: finite(defaultValue(spec.holds?.start, 0.5), "holds.start", { min: 0 }),
+  end: finite(defaultValue(spec.holds?.end, 1), "holds.end", { min: 0 }),
+};
+const maxDuration = spec.limits?.maxDuration === undefined
+  ? null : finite(spec.limits.maxDuration, "limits.maxDuration", { min: Number.MIN_VALUE });
+const expectedDuration = trim.end - trim.start + holds.start + holds.end;
+if (maxDuration !== null && expectedDuration > maxDuration + 1e-9) {
+  die(
+    `prepared duration would be ${expectedDuration.toFixed(2)}s, above ${maxDuration}s; ` +
+      "tighten trim.start or trim.end",
+  );
+}
+
+const profile = {
+  maxWidth: finite(defaultValue(spec.profile?.maxWidth, format === "mp4" ? crop.width : 720), "profile.maxWidth", {
+    min: 2,
+    integer: true,
+  }),
+  fps: finite(defaultValue(spec.profile?.fps, format === "mp4" ? 30 : 12), "profile.fps", { min: 1, max: 60, integer: true }),
+  targetBytes: spec.profile?.targetBytes === undefined ? null : finite(spec.profile.targetBytes, "profile.targetBytes", {
+    min: 1, max: MAX_BYTES, integer: true,
+  }),
+  maxBytes: finite(defaultValue(spec.profile?.maxBytes, DEFAULT_MAX_BYTES), "profile.maxBytes", {
+    min: 1,
+    max: MAX_BYTES,
+    integer: true,
+  }),
+};
+if (profile.targetBytes !== null && profile.targetBytes > profile.maxBytes) die("profile.targetBytes cannot exceed profile.maxBytes");
+
+const redactions = resolveRedactions(spec.redactions, crop);
+const reviewInterval = finite(defaultValue(spec.review?.interval, 0.5), "review.interval", { min: 0.1 });
+
+try {
+  const selected = { width: Math.min(profile.maxWidth, crop.width), fps: profile.fps,
+    path: join(temp, `prepared.${format}`) };
+  selected.size = encode(input, selected.path, { trim, crop, redactions, holds, profile: selected, format });
+  if (selected.size > profile.maxBytes) {
+    die(`output is ${selected.size} bytes, above the ${profile.maxBytes} byte limit; crop more tightly, reduce duration only if it preserves the claim, or set an allowed higher profile.maxBytes`);
+  }
+
+  const prepared = inspect(selected.path);
+  const tolerance = 1.5 / profile.fps + 0.02;
+  if (Math.abs(prepared.duration - expectedDuration) > tolerance) {
+    die(`duration mismatch: expected ${expectedDuration.toFixed(2)}s, encoded ${prepared.duration.toFixed(2)}s (tolerance ${tolerance.toFixed(2)}s); inspect the source and trim`);
+  }
+
+  const out = resolve(options.out);
+  const reviewOut = resolve(options.reviewOut);
+  mkdirSync(dirname(out), { recursive: true });
+  const reviewTimes = buildReviewSheet(selected.path, reviewOut, temp, prepared, reviewInterval);
+  copyFileSync(selected.path, out);
+  const previewOut = options.previewOut ? resolve(options.previewOut) : null;
+  if (previewOut) buildPreview(previewOut, input, out);
+  const warnings = ["Frame count alone does not prove smooth capture. Review the complete output."];
+  if (expectedDuration > 20) warnings.push("This clip is longer than 20 seconds; keep it focused on the claim.");
+  if (profile.targetBytes !== null && selected.size > profile.targetBytes) {
+    warnings.push(`output is below the limit but above the ${(profile.targetBytes / MIB).toFixed(2)} MiB target`);
+  }
+
+  console.log(JSON.stringify({
+    input,
+    out,
+    reviewOut,
+    previewOut,
+    source,
+    prepared,
+    trim,
+    crop,
+    redactions: redactions.length,
+    holds,
+    selectedProfile: { width: prepared.width, fps: selected.fps, size: selected.size, maxBytes: profile.maxBytes },
+    reviewTimes,
+    reviewLastFrame: true,
+    warnings,
+    ...(spec.provenance === undefined ? {} : { provenance: spec.provenance }),
+    ...(options.keepTemp ? { temp } : {}),
+  }, null, 2));
+} finally {
+  cleanup();
+}

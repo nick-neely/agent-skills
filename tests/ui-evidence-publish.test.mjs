@@ -1,0 +1,414 @@
+import { after, test } from "node:test";
+import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { mkdtempSync, readFileSync, rmSync, symlinkSync, truncateSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join, parse, resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+
+const repo = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const publish = join(repo, "skills", "ui-evidence", "scripts", "publish.mjs");
+const temp = mkdtempSync(join(tmpdir(), "ui-evidence-publish-test-"));
+const mock = join(temp, "github-boundary.mjs");
+after(() => rmSync(temp, { recursive: true, force: true }));
+
+// Fake the external GitHub boundary in the publisher process. State represents
+// the saved GitHub body and comments, not internal publisher implementation.
+writeFileSync(mock, String.raw`
+import cp from "node:child_process";
+import { readFileSync, writeFileSync } from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
+const statePath = process.env.UI_EVIDENCE_TEST_STATE;
+const load = () => JSON.parse(readFileSync(statePath, "utf8"));
+const save = (state) => writeFileSync(statePath, JSON.stringify(state));
+function fail(message) { const error = new Error(message); error.stderr = Buffer.from(message); throw error; }
+cp.execFileSync = (command, args, options = {}) => {
+  if (command !== "gh") fail("unexpected command");
+  const state = load();
+  state.calls.push(args);
+  const result = (value = "") => { save(state); return value; };
+  const submittedBody = () => args.includes("--input") ? JSON.parse(String(options.input)).body : args.find((arg) => arg.startsWith("body=")).slice(5);
+  if (args.includes("--help")) return result(state.oldGh ? "Usage: gh" : "Usage: gh\n  --attach string");
+  if (args[0] === "auth" && args[1] === "token") return result("test-token\n");
+  if (args[0] === "api") {
+    const methodAt = args.indexOf("--method");
+    const method = methodAt >= 0 ? args[methodAt + 1] : "GET";
+    const path = args.find((item) => item === "user" || item.startsWith("repos/"));
+    if (path === "user") return result(JSON.stringify({ login: "me" }));
+    if (path === "repos/acme/demo") return result(JSON.stringify({ id: 42 }));
+    if (/^repos\/acme\/demo\/(pulls|issues)\/123(?:\?.*)?$/.test(path)) {
+      if (state.missingTarget) { save(state); fail("Not Found"); }
+      if (method === "GET") {
+        state.targetReads = (state.targetReads || 0) + 1;
+        if (state.failReadback && state.targetReads > 1) { save(state); fail("Readback unavailable"); }
+      }
+      const isIssue = path.includes("/issues/");
+      if (method === "PATCH") state.body = submittedBody();
+      return result(JSON.stringify({ body: state.body, ...(isIssue && state.kind === "pr" ? { pull_request: {} } : {}) }));
+    }
+    if (/^repos\/acme\/demo\/issues\/123\/comments(?:\?.*)?$/.test(path)) {
+      if (method === "POST") {
+        const body = submittedBody();
+        const comment = { id: state.nextId++, user: { login: "me" }, body };
+        state.comments.push(comment);
+        return result(JSON.stringify(comment));
+      }
+      return result(JSON.stringify([state.comments]));
+    }
+    const commentMatch = /^repos\/acme\/demo\/issues\/comments\/(\d+)$/.exec(path || "");
+    if (commentMatch) {
+      const comment = state.comments.find((item) => item.id === Number(commentMatch[1]));
+      if (!comment) { save(state); fail("Not Found"); }
+      if (method === "PATCH") comment.body = submittedBody();
+      return result(JSON.stringify(comment));
+    }
+    fail("unexpected api " + JSON.stringify(args));
+  }
+  if ((args[0] === "pr" || args[0] === "issue") && (args[1] === "edit" || args[1] === "comment")) {
+    let body = String(options.input ?? "");
+    const files = [];
+    args.forEach((arg, i) => { if (arg === "--attach") files.push(args[i + 1]); });
+    for (const [index, file] of files.entries()) {
+      if (state.nativeFailure && index > 0) break;
+      const url = "https://github.com/user-attachments/assets/asset-" + (index + 1);
+      const escaped = file.replace(/[.*+?^\u0024{}()|[\]\\]/g, "\\$&");
+      const image = new RegExp("!\\[([^\\]]*)\\]\\((?:<" + escaped + ">|" + escaped + ")\\)", "g");
+      if (!image.test(body)) body += "\n\n" + url + "\n";
+      else {
+        image.lastIndex = 0;
+        body = body.replace(image, (_, alt) => /\.(mp4|mov|webm)$/i.test(file) ? url : "![" + alt + "](" + url + ")");
+      }
+    }
+    if (args[1] === "edit") state.body = body;
+    else state.comments.push({ id: state.nextId++, user: { login: "me" }, body });
+    save(state);
+    if (state.nativeFailure) fail("simulated native failure after write");
+    return args[1] === "comment" ? "https://github.com/acme/demo/issues/123#issuecomment-" + (state.nextId - 1) : "https://github.com/acme/demo/pull/123";
+  }
+  fail("unexpected gh " + JSON.stringify(args));
+};
+syncBuiltinESMExports();
+globalThis.fetch = async (url) => {
+  const state = load();
+  state.uploads.push(String(url));
+  save(state);
+  if (state.uploadFailure || state.uploadFailureAt === state.uploads.length) return { ok: false, status: 503 };
+  return { ok: true, json: async () => ({ url: "https://github.com/user-attachments/assets/direct-" + state.uploads.length }) };
+};
+`);
+
+function fixture(section, overrides = {}) {
+  const dir = mkdtempSync(join(temp, "case-"));
+  const statePath = join(dir, "github.json");
+  const sectionPath = join(dir, "section.md");
+  writeFileSync(sectionPath, section);
+  writeFileSync(statePath, JSON.stringify({ body: "Introduction.\n", kind: "pr", comments: [], nextId: 300, calls: [], uploads: [], ...overrides }));
+  return { dir, sectionPath, statePath };
+}
+
+function run(fixture, extra = [], omitRepo = false) {
+  const result = spawnSync(process.execPath, [publish, ...(omitRepo ? [] : ["--repo", "acme/demo"]), "--target", "pr:123", "--section", fixture.sectionPath, ...extra], {
+    encoding: "utf8",
+    env: { ...process.env, NODE_TEST_CONTEXT: "", NODE_OPTIONS: `--import=${pathToFileURL(mock).href}`, UI_EVIDENCE_TEST_STATE: fixture.statePath },
+  });
+  return { ...result, github: JSON.parse(readFileSync(fixture.statePath, "utf8")) };
+}
+
+test("publishes a screenshot and playable video in the managed block", () => {
+  const f = fixture("The finished screen:\n\n![Finished](screen.png)\n\nThe menu opens and closes.\n\n![](flow.mp4)\n");
+  writeFileSync(join(f.dir, "screen.png"), "screenshot");
+  writeFileSync(join(f.dir, "flow.mp4"), "video");
+  const result = run(f);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.github.body, /^Introduction\.\n\n<!-- ui-evidence:start -->/);
+  assert.match(result.github.body, /!\[Finished\]\(https:\/\/github\.com\/user-attachments\/assets\/asset-1\)/);
+  assert.match(result.github.body, /\n\nhttps:\/\/github\.com\/user-attachments\/assets\/asset-2\n\n<!-- ui-evidence:end -->/);
+  assert.equal(JSON.parse(result.stdout).transport, "native-gh");
+});
+
+test("replaces one managed block and preserves prose on both sides", () => {
+  const f = fixture("![A](a.png)\n\n![B](b.png)\n\n![A again](a.png)\n", {
+    body: "Before.\n\n<!-- ui-evidence:start -->\nOld.\n<!-- ui-evidence:end -->\n\nAfter.\n",
+  });
+  writeFileSync(join(f.dir, "a.png"), "A");
+  writeFileSync(join(f.dir, "b.png"), "B");
+  const result = run(f);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.github.body, /^Before\.\n\n<!-- ui-evidence:start -->/);
+  assert.match(result.github.body, /<!-- ui-evidence:end -->\n\nAfter\.\n$/);
+  assert.doesNotMatch(result.github.body, /Old\./);
+  assert.equal((result.github.body.match(/<!-- ui-evidence:start -->/g) || []).length, 1);
+  assert.match(result.github.body, /!\[A again\]\(https:\/\/github\.com\/user-attachments\/assets\/asset-1\)/);
+  assert.equal(JSON.parse(result.stdout).readback.verified, true);
+});
+
+test("updates the older managed comment by ID and preserves unrelated comments and prose", () => {
+  const f = fixture("![Updated](updated.png)\n", { comments: [
+    { id: 1, user: { login: "me" }, body: "Keep before.\n\n<!-- ui-evidence:start -->\nOld.\n<!-- ui-evidence:end -->\n\nKeep after." },
+    { id: 2, user: { login: "me" }, body: "A newer unrelated comment." },
+  ] });
+  writeFileSync(join(f.dir, "updated.png"), "image");
+  const result = run(f, ["--mode", "comment"]);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.equal(result.github.comments[1].body, "A newer unrelated comment.");
+  assert.match(result.github.comments[0].body, /^Keep before\.\n\n<!-- ui-evidence:start -->/);
+  assert.match(result.github.comments[0].body, /<!-- ui-evidence:end -->\n\nKeep after\.$/);
+  assert.match(result.github.comments[0].body, /!\[Updated\]\(https:\/\/github\.com\/user-attachments\/assets\/direct-1\)/);
+  const output = JSON.parse(result.stdout);
+  assert.equal(output.commentId, 1);
+  assert.equal(output.transport, "direct-attachment");
+  assert.equal(output.readback.verified, true);
+});
+
+test("publishes HTML image tables and standalone video using direct attachments", () => {
+  const f = fixture('<table><tr><td><img src="left.png" width="480"></td><td><img src="right.png"></td></tr></table>\n\nThe panel animates.\n\n![](flow.mov)\n');
+  writeFileSync(join(f.dir, "left.png"), "left");
+  writeFileSync(join(f.dir, "right.png"), "right");
+  writeFileSync(join(f.dir, "flow.mov"), "video");
+  const result = run(f);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.github.body, /<img src="https:\/\/github\.com\/user-attachments\/assets\/direct-1" width="480">/);
+  assert.match(result.github.body, /<img src="https:\/\/github\.com\/user-attachments\/assets\/direct-2">/);
+  assert.match(result.github.body, /\n\nhttps:\/\/github\.com\/user-attachments\/assets\/direct-3\n\n/);
+  assert.equal(JSON.parse(result.stdout).transport, "direct-attachment");
+});
+
+test("reads back a partial native failure and reports unresolved evidence without retrying", () => {
+  const f = fixture("![One](one.png)\n\n![Two](two.png)\n", { nativeFailure: true });
+  writeFileSync(join(f.dir, "one.png"), "first");
+  writeFileSync(join(f.dir, "two.png"), "second");
+  const result = run(f);
+  assert.notEqual(result.status, 0);
+  const output = JSON.parse(result.stdout);
+  assert.equal(output.readback.verified, false);
+  assert.equal(output.readback.changed, true);
+  assert.deepEqual(output.readback.savedReferences, ["https://github.com/user-attachments/assets/asset-1"]);
+  assert.deepEqual(output.readback.unresolved, ["two.png"]);
+  assert.match(output.error, /simulated native failure/);
+  assert.equal(result.github.calls.filter((call) => call[0] === "pr" && call[1] === "edit" && !call.includes("--help")).length, 1);
+  assert.equal(result.github.calls.filter((call) => call[0] === "release").length, 0);
+});
+
+test("reports a direct upload failure without changing the target or creating a release", () => {
+  const f = fixture('<img src="one.png"><img src="two.png">', { uploadFailureAt: 2 });
+  writeFileSync(join(f.dir, "one.png"), "first");
+  writeFileSync(join(f.dir, "two.png"), "second");
+  const result = run(f);
+  assert.notEqual(result.status, 0);
+  const output = JSON.parse(result.stdout);
+  assert.match(output.error, /HTTP 503/);
+  assert.equal(output.uploads.length, 1);
+  assert.equal(output.readback.changed, false);
+  assert.equal(result.github.body, "Introduction.\n");
+  assert.equal(result.github.calls.filter((call) => call[0] === "release").length, 0);
+  assert.ok(result.github.calls.filter((call) => call[0] === "api" && call.includes("repos/acme/demo/pulls/123")).length >= 2);
+});
+
+test("validates the target before attempting any upload", () => {
+  const f = fixture("![Ready](screen.png)", { missingTarget: true });
+  writeFileSync(join(f.dir, "screen.png"), "image");
+  const result = run(f);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /Not Found/);
+  assert.deepEqual(result.github.uploads, []);
+  assert.equal(result.github.calls.some((call) => call.includes("--attach")), false);
+});
+
+test("dry run validates target and local files without credentials or writes", () => {
+  const f = fixture("![Ready](screen.png)");
+  writeFileSync(join(f.dir, "screen.png"), "image");
+  const result = run(f, ["--dry-run"]);
+  assert.equal(result.status, 0, result.stderr);
+  const plan = JSON.parse(result.stdout);
+  assert.equal(plan.transport, "native-gh");
+  assert.deepEqual(plan.assets[0].refs, ["screen.png"]);
+  assert.equal(plan.dryRun, true);
+  assert.deepEqual(result.github.uploads, []);
+  assert.equal(result.github.calls.some((call) => call[0] === "auth"), false);
+  assert.equal(result.github.calls.some((call) => call.includes("--method")), false);
+});
+
+test("requires an explicit repository instead of inferring it from the working directory", () => {
+  const f = fixture("A text-only section.");
+  const result = run(f, [], true);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /--repo/);
+  assert.deepEqual(result.github.calls, []);
+});
+
+test("refuses malformed target markers before uploading", () => {
+  const f = fixture("![Ready](screen.png)", { body: "Keep this.\n<!-- ui-evidence:start -->\nOther text." });
+  writeFileSync(join(f.dir, "screen.png"), "image");
+  const result = run(f);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /malformed/i);
+  assert.equal(result.github.body, "Keep this.\n<!-- ui-evidence:start -->\nOther text.");
+  assert.equal(result.github.calls.some((call) => call.includes("--attach")), false);
+});
+
+test("rejects missing media and assets reached through an escaping symlink", (t) => {
+  const missing = fixture("![Missing](missing.png)");
+  const missingResult = run(missing, ["--dry-run"]);
+  assert.notEqual(missingResult.status, 0);
+  assert.match(missingResult.stderr, /missing asset/i);
+  assert.deepEqual(missingResult.github.calls, []);
+
+  const linked = fixture("![Secret](escape.png)");
+  const outside = join(temp, "outside.png");
+  writeFileSync(outside, "outside");
+  try { symlinkSync(outside, join(linked.dir, "escape.png")); }
+  catch (error) {
+    if (process.platform === "win32" && ["EPERM", "EACCES"].includes(error.code)) { t.skip("symlink creation requires Windows privileges"); return; }
+    throw error;
+  }
+  const linkedResult = run(linked, ["--dry-run"]);
+  assert.notEqual(linkedResult.status, 0);
+  assert.match(linkedResult.stderr, /escapes the image root/);
+  assert.deepEqual(linkedResult.github.calls, []);
+});
+
+test("rejects video syntax that would leave local links in the published block", () => {
+  for (const section of ["[Watch](clip.avi)", "[Watch](clip%2Emp4)", "[Watch](clip with spaces.webm)", "![](clip with spaces.mp4)", "<video src=clip.mp4></video>"]) {
+    const f = fixture(section);
+    const result = run(f, ["--dry-run"]);
+    assert.notEqual(result.status, 0, section);
+    assert.match(result.stderr, /video|media|reference/i, section);
+    assert.equal(result.github.calls.some((call) => call.includes("--method")), false);
+  }
+});
+
+test("creates a managed comment with an ID and updates that same comment on the next run", () => {
+  const f = fixture("The menu opens.\n\n![](flow.webm)\n", { comments: [{ id: 10, user: { login: "me" }, body: "Unrelated." }] });
+  writeFileSync(join(f.dir, "flow.webm"), "video");
+  const first = run(f, ["--mode", "comment"]);
+  assert.equal(first.status, 0, first.stderr || first.stdout);
+  assert.equal(JSON.parse(first.stdout).commentId, 300);
+  assert.equal(first.github.comments.length, 2);
+  writeFileSync(f.sectionPath, "The menu closes.\n\n![](flow.webm)\n");
+  const second = run(f, ["--mode", "comment"]);
+  assert.equal(second.status, 0, second.stderr || second.stdout);
+  assert.equal(JSON.parse(second.stdout).commentId, 300);
+  assert.equal(second.github.comments.length, 2);
+  assert.equal(second.github.comments[0].body, "Unrelated.");
+  assert.match(second.github.comments[1].body, /The menu closes\./);
+  assert.doesNotMatch(second.github.comments[1].body, /The menu opens\./);
+});
+
+test("publishes text and existing remote references without requesting an upload token", () => {
+  const f = fixture("![External](https://example.com/screen.png)");
+  const result = run(f);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.github.body, /!\[External\]\(https:\/\/example\.com\/screen\.png\)/);
+  assert.equal(JSON.parse(result.stdout).transport, "none");
+  assert.equal(result.github.calls.some((call) => call[0] === "auth"), false);
+});
+
+test("enforces conservative image and video limits unless paid video eligibility is explicit", () => {
+  const f = fixture("The menu opens.\n\n![](flow.mp4)\n");
+  writeFileSync(join(f.dir, "flow.mp4"), "");
+  truncateSync(join(f.dir, "flow.mp4"), 9_500_000);
+  const defaultResult = run(f, ["--dry-run"]);
+  assert.notEqual(defaultResult.status, 0);
+  assert.match(defaultResult.stderr, /smaller than 9500000 bytes/);
+  const paidResult = run(f, ["--dry-run", "--max-video-bytes", "20000000"]);
+  assert.equal(paidResult.status, 0, paidResult.stderr);
+  assert.equal(JSON.parse(paidResult.stdout).assets[0].bytes, 9_500_000);
+  const invalidResult = run(f, ["--dry-run", "--max-video-bytes", "100000001"]);
+  assert.notEqual(invalidResult.status, 0);
+  assert.match(invalidResult.stderr, /--max-video-bytes/);
+
+  writeFileSync(f.sectionPath, "![Oversized](image.png)");
+  writeFileSync(join(f.dir, "image.png"), "");
+  truncateSync(join(f.dir, "image.png"), 9_500_000);
+  const imageResult = run(f, ["--dry-run", "--max-video-bytes", "20000000"]);
+  assert.notEqual(imageResult.status, 0);
+  assert.match(imageResult.stderr, /image must be smaller than 9500000 bytes/);
+});
+
+test("reports an actionable error when native attachment support is unavailable", () => {
+  const f = fixture("![Ready](screen.png)", { oldGh: true });
+  writeFileSync(join(f.dir, "screen.png"), "image");
+  const result = run(f);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /gh 2\.99\.0 or newer/);
+  assert.equal(result.github.body, "Introduction.\n");
+  assert.equal(result.github.calls.some((call) => call[0] === "release"), false);
+});
+
+test("handles identical media files without submitting the same native attachment twice", () => {
+  const f = fixture("![First](one.png)\n\n![Second](two.png)");
+  writeFileSync(join(f.dir, "one.png"), "identical");
+  writeFileSync(join(f.dir, "two.png"), "identical");
+  const result = run(f);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.github.body, /!\[First\]\(https:\/\/github\.com\/user-attachments\/assets\/asset-1\)/);
+  assert.match(result.github.body, /!\[Second\]\(https:\/\/github\.com\/user-attachments\/assets\/asset-1\)/);
+});
+
+test("identifies a partially created comment after native gh exits with an error", () => {
+  const f = fixture("![One](one.png)\n\n![Two](two.png)", { nativeFailure: true });
+  writeFileSync(join(f.dir, "one.png"), "first");
+  writeFileSync(join(f.dir, "two.png"), "second");
+  const result = run(f, ["--mode", "comment"]);
+  assert.notEqual(result.status, 0);
+  const output = JSON.parse(result.stdout);
+  assert.equal(output.commentId, 300);
+  assert.equal(output.readback.changed, true);
+  assert.equal(output.readback.verified, false);
+  assert.deepEqual(output.readback.unresolved, ["two.png"]);
+  assert.equal(result.github.comments.length, 1);
+});
+
+test("rejects a pull request supplied as an issue before uploading", () => {
+  const f = fixture("![Ready](screen.png)");
+  writeFileSync(join(f.dir, "screen.png"), "image");
+  const result = run(f, ["--target", "issue:123"]);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /pull request, not an issue/);
+  assert.deepEqual(result.github.uploads, []);
+  assert.equal(result.github.calls.some((call) => call.includes("--attach")), false);
+});
+
+test("reports an unknown write outcome when readback is unavailable", () => {
+  const f = fixture("![Ready](screen.png)", { failReadback: true });
+  writeFileSync(join(f.dir, "screen.png"), "image");
+  const result = run(f);
+  assert.notEqual(result.status, 0);
+  const output = JSON.parse(result.stdout);
+  assert.equal(output.readback.verified, false);
+  assert.equal(output.readback.changed, null);
+  assert.match(output.readback.error, /Readback unavailable/);
+});
+
+test("leaves code examples and HTML comments untouched instead of treating them as media", () => {
+  const f = fixture("Example:\n\n```md\n![](example.mp4)\n```\n\n<!-- ![Draft](draft.png) -->\n\n![Final](final.png)");
+  writeFileSync(join(f.dir, "final.png"), "image");
+  const result = run(f);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.github.body, /!\[\]\(example\.mp4\)/);
+  assert.match(result.github.body, /<!-- !\[Draft\]\(draft\.png\) -->/);
+  assert.match(result.github.body, /!\[Final\]\(https:\/\/github\.com\/user-attachments\/assets\/asset-1\)/);
+  assert.equal(JSON.parse(result.stdout).assets.length, 1);
+});
+
+test("keeps unrelated references even when they contain the asset content hash", () => {
+  const hash = createHash("sha256").update("image").digest("hex");
+  const original = `Unrelated: ![Other](${hash}.png)\n`;
+  const f = fixture("![Ready](screen.png)", { body: original });
+  writeFileSync(join(f.dir, "screen.png"), "image");
+  const result = run(f);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.ok(result.github.body.startsWith(original));
+  assert.match(result.github.body, /!\[Ready\]\(https:\/\/github\.com\/user-attachments\/assets\/asset-1\)/);
+});
+
+test("accepts an explicitly selected filesystem root as the media root", () => {
+  const f = fixture("placeholder");
+  const imagePath = join(f.dir, "screen.png");
+  writeFileSync(imagePath, "image");
+  writeFileSync(f.sectionPath, `![Ready](<${imagePath}>)`);
+  const result = run(f, ["--dry-run", "--image-root", parse(f.dir).root]);
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(JSON.parse(result.stdout).assets.length, 1);
+});

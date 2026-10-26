@@ -9,6 +9,7 @@
 // handles font metrics, text wrapping, and label sizing.
 
 import { execFileSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve } from "node:path";
@@ -17,7 +18,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const SKILL_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const FONT_PATH = join(SKILL_ROOT, "assets", "DejaVuSans.ttf");
-const SESSION = "ui-evidence-annotation";
+const SESSION = `ui-evidence-annotation-${randomUUID()}`;
 
 // One accent reads as deliberate. Rotating only kicks in when a single image
 // carries enough annotations that one colour stops disambiguating them.
@@ -36,8 +37,7 @@ Run scripts/preflight.mjs to verify dependencies before starting work.
 `;
 
 function die(message) {
-  console.error(`annotate: ${message}`);
-  process.exit(1);
+  throw new Error(message);
 }
 
 function resolveMagick() {
@@ -253,128 +253,130 @@ function applyRedactions(magick, source, target, redactions) {
   return current;
 }
 
-const options = parseArgs(process.argv.slice(2));
+async function main() {
+  const options = parseArgs(process.argv.slice(2));
 
-if (!options.spec) die(`--spec is required\n\n${HELP}`);
-if (!options.out) die(`--out is required\n\n${HELP}`);
+  if (!options.spec) die(`--spec is required\n\n${HELP}`);
+  if (!options.out) die(`--out is required\n\n${HELP}`);
 
-const specPath = resolve(options.spec);
-if (!existsSync(specPath)) die(`no such spec: ${specPath}`);
+  const specPath = resolve(options.spec);
+  if (!existsSync(specPath)) die(`no such spec: ${specPath}`);
 
-let spec;
-try {
-  spec = JSON.parse(await readFile(specPath, "utf8"));
-} catch (error) {
-  die(`spec is not valid JSON: ${error.message}`);
-}
+  let spec;
+  try {
+    spec = JSON.parse(await readFile(specPath, "utf8"));
+  } catch (error) {
+    die(`spec is not valid JSON: ${error.message}`);
+  }
 
-if (!spec.image) die('spec needs an "image" path');
-const specDir = dirname(specPath);
-const imagePath = isAbsolute(spec.image) ? spec.image : resolve(specDir, spec.image);
-if (!existsSync(imagePath)) die(`no such image: ${imagePath}`);
+  if (!spec.image) die('spec needs an "image" path');
+  const specDir = dirname(specPath);
+  const imagePath = isAbsolute(spec.image) ? spec.image : resolve(specDir, spec.image);
+  if (!existsSync(imagePath)) die(`no such image: ${imagePath}`);
 
-const magick = resolveMagick();
-requireAgentBrowser();
-if (!existsSync(FONT_PATH)) die(`bundled font missing: ${FONT_PATH}`);
+  const magick = resolveMagick();
+  requireAgentBrowser();
+  if (!existsSync(FONT_PATH)) die(`bundled font missing: ${FONT_PATH}`);
 
-const temp = mkdtempSync(join(tmpdir(), "ui-evidence-annotation-"));
-const cleanup = () => {
-  if (!options.keepTemp) rmSync(temp, { recursive: true, force: true });
-};
-
-try {
-  const annotations = Array.isArray(spec.annotations) ? spec.annotations : [];
-  const crop = spec.crop ? { ...spec.crop, pad: spec.crop.pad ?? 0 } : null;
-
-  // Coordinates in the spec always refer to the original screenshot. Cropping
-  // shifts the origin, so translate everything once here and let the rest of
-  // the pipeline work in canvas space.
-  // Clamp before translating, so padding at the top or left edge of the image
-  // does not shift annotations off by the amount the crop was truncated.
-  const offset = crop
-    ? { x: Math.max(0, crop.x - crop.pad), y: Math.max(0, crop.y - crop.pad) }
-    : { x: 0, y: 0 };
-  const shift = (annotation) => {
-    const copy = { ...annotation };
-    if (Array.isArray(copy.at)) {
-      copy.at = copy.at.length === 4
-        ? [copy.at[0] - offset.x, copy.at[1] - offset.y, copy.at[2], copy.at[3]]
-        : [copy.at[0] - offset.x, copy.at[1] - offset.y];
-    }
-    if (Array.isArray(copy.to)) copy.to = [copy.to[0] - offset.x, copy.to[1] - offset.y];
-    if (Array.isArray(copy.from)) copy.from = [copy.from[0] - offset.x, copy.from[1] - offset.y];
-    return copy;
+  const temp = mkdtempSync(join(tmpdir(), "ui-evidence-annotation-"));
+  const cleanup = () => {
+    if (!options.keepTemp) rmSync(temp, { recursive: true, force: true });
   };
+  let sessionStarted = false;
 
-  let working = imagePath;
+  try {
+    const annotations = Array.isArray(spec.annotations) ? spec.annotations : [];
+    const crop = spec.crop ? { ...spec.crop, pad: spec.crop.pad ?? 0 } : null;
 
-  if (crop) {
-    const width = crop.width + crop.pad * 2;
-    const height = crop.height + crop.pad * 2;
-    const cropped = join(temp, "cropped.png");
-    magickRun(magick, [
-      imagePath,
-      "-crop", `${width}x${height}+${offset.x}+${offset.y}`,
-      "+repage",
-      cropped,
-    ]);
-    working = cropped;
-  }
+    // Coordinates in the spec always refer to the original screenshot. Cropping
+    // shifts the origin, so translate everything once here and let the rest of
+    // the pipeline work in canvas space.
+    // Clamp before translating, so padding at the top or left edge of the image
+    // does not shift annotations off by the amount the crop was truncated.
+    const offset = crop
+      ? { x: Math.max(0, crop.x - crop.pad), y: Math.max(0, crop.y - crop.pad) }
+      : { x: 0, y: 0 };
+    const shift = (annotation) => {
+      const copy = { ...annotation };
+      if (Array.isArray(copy.at)) {
+        copy.at = copy.at.length === 4
+          ? [copy.at[0] - offset.x, copy.at[1] - offset.y, copy.at[2], copy.at[3]]
+          : [copy.at[0] - offset.x, copy.at[1] - offset.y];
+      }
+      if (Array.isArray(copy.to)) copy.to = [copy.to[0] - offset.x, copy.to[1] - offset.y];
+      if (Array.isArray(copy.from)) copy.from = [copy.from[0] - offset.x, copy.from[1] - offset.y];
+      return copy;
+    };
 
-  const shifted = annotations.map(shift);
+    let working = imagePath;
 
-  const redactions = shifted.filter((a) => a.type === "redact");
-  if (redactions.length > 0) {
-    working = applyRedactions(magick, working, join(temp, "redacted.png"), redactions);
-  }
+    if (crop) {
+      const width = crop.width + crop.pad * 2;
+      const height = crop.height + crop.pad * 2;
+      const cropped = join(temp, "cropped.png");
+      magickRun(magick, [
+        imagePath,
+        "-crop", `${width}x${height}+${offset.x}+${offset.y}`,
+        "+repage",
+        cropped,
+      ]);
+      working = cropped;
+    }
 
-  const size = execFileSync(magick, ["identify", "-format", "%wx%h", working], {
-    encoding: "utf8",
-  }).trim();
-  const [canvasWidth, canvasHeight] = size.split("x").map(Number);
-  const scale = scaleFor(canvasWidth);
-  const canvas = { width: canvasWidth, height: canvasHeight, scale };
+    const shifted = annotations.map(shift);
 
-  // Zoom insets are cropped from the already-redacted canvas so a redacted
-  // area cannot reappear magnified in the corner.
-  const insets = shifted.filter((a) => a.type === "inset");
-  const insetHtml = insets.map((annotation, index) => {
-    const b = box(annotation);
-    const zoom = Number(annotation.zoom ?? 2);
-    const file = join(temp, `inset-${index}.png`);
-    magickRun(magick, [
-      working,
-      "-crop", `${b.width}x${b.height}+${b.x}+${b.y}`,
-      "+repage",
-      "-resize", `${Math.round(b.width * zoom)}x${Math.round(b.height * zoom)}!`,
-      file,
-    ]);
-    const colour = colourOf(annotation, index, shifted.length);
-    const place = annotation.place ?? "bottom-right";
-    const [vertical, horizontal] = place.split("-");
-    const style = [
-      `${vertical === "top" ? "top" : "bottom"}: 16px`,
-      `${horizontal === "left" ? "left" : "right"}: 16px`,
-      `border-color:${colour}`,
-    ].join("; ");
-    const caption = annotation.label
-      ? `<div class="inset-caption" style="background:${colour}">${escapeHtml(annotation.label)}</div>`
-      : "";
-    return `<div class="inset" style="${style}">
+    const redactions = shifted.filter((a) => a.type === "redact");
+    if (redactions.length > 0) {
+      working = applyRedactions(magick, working, join(temp, "redacted.png"), redactions);
+    }
+
+    const size = execFileSync(magick, ["identify", "-format", "%wx%h", working], {
+      encoding: "utf8",
+    }).trim();
+    const [canvasWidth, canvasHeight] = size.split("x").map(Number);
+    const scale = scaleFor(canvasWidth);
+    const canvas = { width: canvasWidth, height: canvasHeight, scale };
+
+    // Zoom insets are cropped from the already-redacted canvas so a redacted
+    // area cannot reappear magnified in the corner.
+    const insets = shifted.filter((a) => a.type === "inset");
+    const insetHtml = insets.map((annotation, index) => {
+      const b = box(annotation);
+      const zoom = Number(annotation.zoom ?? 2);
+      const file = join(temp, `inset-${index}.png`);
+      magickRun(magick, [
+        working,
+        "-crop", `${b.width}x${b.height}+${b.x}+${b.y}`,
+        "+repage",
+        "-resize", `${Math.round(b.width * zoom)}x${Math.round(b.height * zoom)}!`,
+        file,
+      ]);
+      const colour = colourOf(annotation, index, shifted.length);
+      const place = annotation.place ?? "bottom-right";
+      const [vertical, horizontal] = place.split("-");
+      const style = [
+        `${vertical === "top" ? "top" : "bottom"}: 16px`,
+        `${horizontal === "left" ? "left" : "right"}: 16px`,
+        `border-color:${colour}`,
+      ].join("; ");
+      const caption = annotation.label
+        ? `<div class="inset-caption" style="background:${colour}">${escapeHtml(annotation.label)}</div>`
+        : "";
+      return `<div class="inset" style="${style}">
       <img src="${pathToFileURL(file).href}" alt="">${caption}</div>`;
-  });
+    });
 
-  // Insets and redactions are already burned in; only geometry remains.
-  const drawable = shifted.filter((a) => a.type !== "redact" && a.type !== "inset");
-  const rendered = drawable.map((annotation, index) =>
-    renderAnnotation(annotation, index, drawable.length, canvas),
-  );
+    // Insets and redactions are already burned in; only geometry remains.
+    const drawable = shifted.filter((a) => a.type !== "redact" && a.type !== "inset");
+    const rendered = drawable.map((annotation, index) =>
+      renderAnnotation(annotation, index, drawable.length, canvas),
+    );
 
-  const captionHtml = spec.caption
-    ? `<div class="caption">${escapeHtml(spec.caption)}</div>`
-    : "";
+    const captionHtml = spec.caption
+      ? `<div class="caption">${escapeHtml(spec.caption)}</div>`
+      : "";
 
-  const html = `<meta charset="utf-8">
+    const html = `<meta charset="utf-8">
 <style>
   @font-face {
     font-family: "Bundled";
@@ -436,25 +438,43 @@ try {
 </div>
 `;
 
-  const htmlPath = join(temp, "render.html");
-  writeFileSync(htmlPath, html, "utf8");
+    const htmlPath = join(temp, "render.html");
+    writeFileSync(htmlPath, html, "utf8");
 
-  const outPath = resolve(options.out);
-  mkdirSync(dirname(outPath), { recursive: true });
+    const outPath = resolve(options.out);
+    mkdirSync(dirname(outPath), { recursive: true });
 
-  browser(["open", pathToFileURL(htmlPath).href]);
-  // A caption wraps to an unpredictable height, so size the viewport to the
-  // measured content rather than guessing and trimming later.
-  const contentHeight = measureContentHeight(canvasHeight);
-  browser(["set", "viewport", String(canvasWidth), String(contentHeight)]);
-  browser(["screenshot", "--full", outPath]);
+    // Opening can create a session even if the command itself fails.
+    sessionStarted = true;
+    browser(["open", pathToFileURL(htmlPath).href]);
+    // A caption wraps to an unpredictable height, so size the viewport to the
+    // measured content rather than guessing and trimming later.
+    const contentHeight = measureContentHeight(canvasHeight);
+    browser(["set", "viewport", String(canvasWidth), String(contentHeight)]);
+    browser(["screenshot", "--full", outPath]);
 
-  if (!existsSync(outPath)) die("agent-browser reported success but produced no file");
+    if (!existsSync(outPath)) die("agent-browser reported success but produced no file");
 
-  const finalSize = execFileSync(magick, ["identify", "-format", "%wx%h", outPath], {
-    encoding: "utf8",
-  }).trim();
-  console.log(JSON.stringify({ out: outPath, size: finalSize, annotations: annotations.length }));
-} finally {
-  cleanup();
+    const finalSize = execFileSync(magick, ["identify", "-format", "%wx%h", outPath], {
+      encoding: "utf8",
+    }).trim();
+    console.log(JSON.stringify({ out: outPath, size: finalSize, annotations: annotations.length }));
+  } finally {
+    if (sessionStarted) {
+      try {
+        browser(["close"]);
+      } catch (error) {
+        console.error(`annotate: failed to close annotation session ${SESSION}: ${error.message}`);
+        process.exitCode = 1;
+      }
+    }
+    cleanup();
+  }
+}
+
+try {
+  await main();
+} catch (error) {
+  console.error(`annotate: ${error.message}`);
+  process.exitCode = 1;
 }
