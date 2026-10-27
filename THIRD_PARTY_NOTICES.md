@@ -24,6 +24,9 @@ continues current progress, and uses the separately installed `tdd` and
 workflow with its existing prohibition on merging. This deliberately encodes
 the implementation practice rather than invoking or changing Matt Pocock's
 manual-only `implement` skill. The remaining Tstack delivery rules are retained.
+Both delivery workflows use `ui-evidence` when visual proof is warranted,
+publish the reviewed assets after the PR exists, and refresh affected evidence
+before handoff or merge when the UI changes.
 
 ## Matt Pocock skills
 

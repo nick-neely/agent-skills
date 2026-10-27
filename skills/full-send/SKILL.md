@@ -18,6 +18,7 @@ The user grants you permission to:
 - Merge the PR once the merge gate passes.
 - Force-push the PR's own branch with `--force-with-lease` after a rebase.
 - Use the test methods that Proof needs, without asking first.
+- Capture, prepare, and attach relevant UI evidence to this task's PR.
 
 ## Testing permission
 
@@ -48,6 +49,10 @@ one appears.
    unrelated work. If on the default branch, create a task branch before editing.
    Record the intended base and its merge-base SHA for review. Continue existing
    implementation from its current state rather than restarting it.
+   For UI, UX, design or interaction changes, or when the user requests visual
+   PR evidence, load the `ui-evidence` skill now to identify claims and plan a
+   before/after baseline where useful. Let that skill select the medium and
+   whether an asset is useful for the visible claim.
 
    - Use the `tdd` skill where appropriate at agreed behavior seams.
    - Run typechecking and focused tests during implementation, then the required
@@ -61,13 +66,19 @@ one appears.
    checks are accounted for, and the implementation review has no unresolved
    substantive finding. If implementation is already complete, retain its
    evidence and continue with the remaining proof and delivery gates.
-2. **Prove it.** Get proof for every change you made. See "Proof".
+2. **Prove it.** Get proof for every change you made. See "Proof". When visual
+   evidence is warranted, use `ui-evidence` to capture, prepare and review the
+   screenshots or recordings that prove the visible claims.
 3. **Get feedback.** Use the `sol-loop` skill to verify changes.
 4. **File the PR** with the `file-pr` skill. Rebase onto the latest default
    branch first. Add one short line to the description that says how you proved
-   the change.
+   the change. Once the PR exists, use `ui-evidence` to publish warranted visual
+   evidence to that PR and complete the skill's publication verification.
+   This evidence belongs on the PR even when full-send will merge it.
 5. **Babysit the PR** with the `babysit-pr` skill. Fix real findings and CI
-   failures. Get proof for each fix before you push it.
+   failures. Get proof for each fix before you push it. If follow-up commits or
+   rebases change the captured UI, refresh the affected PR evidence before
+   applying the final gate.
 6. **Merge** when the merge gate passes.
 7. **Report** in your final message: the PR link, the merge commit, your proof,
    and each decision you made for the user.
@@ -89,8 +100,8 @@ reproduction, a screenshot. Use the most direct proof the change allows:
 - Add one focused test that fails without the fix, when the behavior has none
   and the repo has a test setup.
 - For UI and runtime behavior, run the app and look at the change. Green mocked
-  tests do not prove that the user experience works. Attach screenshots to the
-  PR when they help and you have a way to upload them.
+  tests do not prove that the user experience works. Use `ui-evidence` for
+  warranted screenshots or recordings and their publication to the PR.
 
 When you cannot find a way to prove a change, you do not have full confidence.
 Ask the user.
@@ -100,6 +111,8 @@ Ask the user.
 Full confidence means all of these are true on the latest commit:
 
 - Your proof covers every change in the diff.
+- Warranted UI evidence reflects the final UI, is attached to the PR, and has
+  passed the publication verification required by `ui-evidence`.
 - Required checks are green.
 - Review bots have finished, and each finding is fixed or dismissed with a
   written reason.

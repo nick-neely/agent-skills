@@ -34,7 +34,7 @@ Skills that shell out have their own runtime dependencies, listed in each
 - [`file-pr`](skills/file-pr/) - Review the branch diff, reuse or open a PR,
   and use the separately installed `pr` skill for its body format.
 - [`full-send`](skills/full-send/) - Implement an issue or spec with TDD and
-  code review, then prove, file, babysit and merge its PR.
+  code review, then prove, file, attach warranted UI evidence, babysit and merge.
 - [`full-stop`](skills/full-stop/) - Follow the same implementation and
   delivery workflow, leaving the PR ready for the user to merge.
 - [`generated-image-assets`](skills/generated-image-assets/) - Remove an image's

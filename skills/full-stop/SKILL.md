@@ -10,7 +10,9 @@ Never merge it.
 
 Read the `full-send` skill as the shared workflow reference. Follow its
 implementation step with `tdd` and `code-review`, then its proof, Sol review,
-PR filing and babysitting steps. The no-merging rules below take precedence.
+PR filing and babysitting steps. Apply its conditional `ui-evidence` capture,
+publication and final-evidence gate before handoff. The no-merging rules below
+take precedence.
 An explicit "full stop" request authorizes that
 work without a separate "full send" request. That includes full-send's
 testing permission. A "full stop" request is the permission for the test
