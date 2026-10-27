@@ -2,8 +2,8 @@
 
 ## Tstack workflows
 
-`skills/babysit-pr`, `skills/file-pr`, `skills/sol-loop` and
-`skills/leaving-pr-comments` incorporate ideas and adapted
+`skills/babysit-pr`, `skills/file-pr`, `skills/full-send`, `skills/full-stop`,
+`skills/sol-loop` and `skills/leaving-pr-comments` incorporate ideas and adapted
 instructions from [t3dotgg/tstack](https://github.com/t3dotgg/tstack), MIT licensed,
 at commit `7de017b3fc9d50c03cf3ecb98fb71e0ca65a78bd`. Each directory includes the
 upstream license.
@@ -18,8 +18,12 @@ reviewer brief and routing reference separate, and makes public attribution
 optional. `leaving-pr-comments` follows project attribution rules and adds
 target checks, retry deduplication and saved-comment readback.
 
-`full-send` and `full-stop` are consumed directly from Tstack rather than
-republished here. Their named dependencies can use the custom skills above.
+`full-send` adds an implementation step that loads the supplied issue/spec,
+continues current progress, and uses the separately installed `tdd` and
+`code-review` skills before proof and PR delivery. `full-stop` uses that same
+workflow with its existing prohibition on merging. This deliberately encodes
+the implementation practice rather than invoking or changing Matt Pocock's
+manual-only `implement` skill. The remaining Tstack delivery rules are retained.
 
 ## Matt Pocock skills
 

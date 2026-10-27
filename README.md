@@ -33,6 +33,10 @@ Skills that shell out have their own runtime dependencies, listed in each
   findings, and stop within a bounded review budget.
 - [`file-pr`](skills/file-pr/) - Review the branch diff, reuse or open a PR,
   and use the separately installed `pr` skill for its body format.
+- [`full-send`](skills/full-send/) - Implement an issue or spec with TDD and
+  code review, then prove, file, babysit and merge its PR.
+- [`full-stop`](skills/full-stop/) - Follow the same implementation and
+  delivery workflow, leaving the PR ready for the user to merge.
 - [`generated-image-assets`](skills/generated-image-assets/) - Remove an image's
   background, verify the alpha edges, and size it for shipping.
 - [`implement-stack`](skills/implement-stack/) - Implement a spec, issue set, or

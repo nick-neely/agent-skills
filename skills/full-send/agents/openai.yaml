@@ -1,0 +1,4 @@
+interface:
+  display_name: "Full Send"
+  short_description: "Implement, prove, file, babysit, and merge a PR"
+  default_prompt: "Use $full-send to implement this issue or spec and take it to a merged PR."
