@@ -9,7 +9,8 @@ Do the same work as `full-send`, but stop with the PR ready for the user to merg
 Never merge it.
 
 Read the `full-send` skill as the shared workflow reference. Follow its
-implementation step with `tdd` and `code-review`, then its proof, Sol review,
+implementation step, including assignment of selected GitHub issues to the
+authenticated user and `tdd`/`code-review`, then its proof, Sol review,
 PR filing and babysitting steps. Apply its conditional `ui-evidence` capture,
 publication and final-evidence gate before handoff. The no-merging rules below
 take precedence.
@@ -48,4 +49,5 @@ without the user. If someone else merged it, report that instead.
 
 In T3 Code, call `unwatch_pull_request` before the handoff or a question.
 Report the PR link, final head, verdict, proof, reviewer outcome, and remaining
-risks. State whether the PR is still open and unmerged.
+risks, including the issue assignment outcome. State whether the PR is still
+open and unmerged.

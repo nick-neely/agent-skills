@@ -27,6 +27,8 @@ manual-only `implement` skill. The remaining Tstack delivery rules are retained.
 Both delivery workflows use `ui-evidence` when visual proof is warranted,
 publish the reviewed assets after the PR exists, and refresh affected evidence
 before handoff or merge when the UI changes.
+They also add the authenticated GitHub user to selected implementation issues
+through `gh`, preserving existing assignees and verifying the saved assignment.
 
 ## Matt Pocock skills
 

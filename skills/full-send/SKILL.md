@@ -19,6 +19,8 @@ The user grants you permission to:
 - Force-push the PR's own branch with `--force-with-lease` after a rebase.
 - Use the test methods that Proof needs, without asking first.
 - Capture, prepare, and attach relevant UI evidence to this task's PR.
+- Add the authenticated GitHub user as an assignee to issues selected for
+  implementation in this task, preserving existing assignees.
 
 ## Testing permission
 
@@ -44,6 +46,8 @@ one appears.
 ## Steps
 
 1. **Implement the change.** Read the supplied issue, spec or tickets in full.
+   For GitHub issues selected for implementation, follow
+   [issue assignment](references/issue-assignment.md) before editing code.
    Make the smallest robust change that fulfills the request.
    Inspect repository instructions, current progress and Git status; preserve
    unrelated work. If on the default branch, create a task branch before editing.
@@ -81,7 +85,7 @@ one appears.
    applying the final gate.
 6. **Merge** when the merge gate passes.
 7. **Report** in your final message: the PR link, the merge commit, your proof,
-   and each decision you made for the user.
+   the issue assignment outcome, and each decision you made for the user.
 
 Stay active from step 1 to step 7. If you end your turn while checks or bots are
 pending, the work stops, because nobody will prompt you again. Wait with the
