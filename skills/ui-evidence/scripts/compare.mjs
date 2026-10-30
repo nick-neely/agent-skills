@@ -17,7 +17,7 @@ import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   DEFAULT_DISPLAY_WIDTH, PALETTE, anchorToImageRect, asArray, chooseLayout, chromeFor, contains,
-  detailWindows, intersect, planComparison, rectFrom, sectionMarkdown, snapOut,
+  detailWindows, imText, intersect, numberedPinArgs, planComparison, rectFrom, sectionMarkdown, snapOut,
 } from "./comparison-layout.mjs";
 
 const SKILL_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -88,13 +88,6 @@ function magick(args) {
   } catch (error) {
     die(`ImageMagick failed: ${String(error.stderr || error.message).trim()}`);
   }
-}
-
-// label:, caption:, and -annotate expand `%` escapes, and a leading `@` reads
-// a file. Spec text is data, so neutralize both.
-function imText(text) {
-  const escaped = String(text).replace(/\\/g, "\\\\").replace(/%/g, "%%");
-  return escaped.startsWith("@") ? `\\${escaped}` : escaped;
 }
 
 function imageSize(path) {
@@ -232,16 +225,7 @@ function extract(panel, window, zoom, out) {
   return out;
 }
 
-function pinArgs(id, color, chrome) {
-  const d = chrome.radius * 2;
-  const c = (d - 1) / 2;
-  const digits = String(id).length;
-  const pointsize = Math.max(6, Math.round(chrome.pinFont * (digits >= 3 ? 0.62 : digits === 2 ? 0.8 : 1)));
-  return ["-size", `${d}x${d}`, "xc:none", "-fill", color, "-stroke", "#ffffff", "-strokewidth", String(chrome.ring),
-    "-draw", `circle ${c},${c} ${c},${chrome.ring / 2}`, "-stroke", "none", "-fill", "#ffffff",
-    "-font", FONT_PATH, "-pointsize", String(pointsize), "-gravity", "center", "-annotate", "+0+0", String(id),
-    "-gravity", "NorthWest"];
-}
+const pinArgs = (id, color, chrome) => numberedPinArgs(id, color, chrome, FONT_PATH);
 
 const labelArgs = (text, pointsize, background, color) =>
   ["-background", background, "-fill", color, "-stroke", "none", "+size", "-font", FONT_PATH,

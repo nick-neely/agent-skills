@@ -183,6 +183,26 @@ export function chromeFor(contentWidth, displayWidth = DEFAULT_DISPLAY_WIDTH) {
   };
 }
 
+// label:, caption:, and -annotate expand `%` escapes, and a leading `@` reads
+// a file. Spec text is data, so neutralize both.
+export function imText(text) {
+  const escaped = String(text).replace(/\\/g, "\\\\").replace(/%/g, "%%");
+  return escaped.startsWith("@") ? `\\${escaped}` : escaped;
+}
+
+// ImageMagick arguments for a numbered pin: a filled circle with a white ring
+// and a centred number, on a transparent square of the pin's diameter.
+export function numberedPinArgs(id, color, chrome, font) {
+  const d = chrome.radius * 2;
+  const c = (d - 1) / 2;
+  const digits = String(id).length;
+  const pointsize = Math.max(6, Math.round(chrome.pinFont * (digits >= 3 ? 0.62 : digits === 2 ? 0.8 : 1)));
+  return ["-size", `${d}x${d}`, "xc:none", "-fill", color, "-stroke", "#ffffff", "-strokewidth", String(chrome.ring),
+    "-draw", `circle ${c},${c} ${c},${chrome.ring / 2}`, "-stroke", "none", "-fill", "#ffffff",
+    "-font", font, "-pointsize", String(pointsize), "-gravity", "center", "-annotate", "+0+0", String(id),
+    "-gravity", "NorthWest"];
+}
+
 // Liang-Barsky clipping: does the segment pass through the rectangle's interior?
 export function segmentCrosses(segment, rect) {
   const dx = segment.x2 - segment.x1;

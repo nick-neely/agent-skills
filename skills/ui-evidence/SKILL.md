@@ -41,7 +41,8 @@ node "<skill-root>/scripts/preflight.mjs"
 
 Preflight checks only the selected operation: default screenshot capture,
 `--motion`, `--prepare`, `--annotate`, `--compare`, or `--publish`. Use `--format gif` for GIF
-preparation or WebM capture. Report missing tools and the suggested fix; ask
+preparation or WebM capture, and add `--annotations` to `--prepare` for timed
+annotations or a storyboard. Report missing tools and the suggested fix; ask
 before system packages, global modules, browser downloads, or global upgrades
 unless already authorized.
 
@@ -75,7 +76,10 @@ reports which evidence is fresh, stale, or needs review.
 For any recording, read [motion.md](references/motion.md). It covers rehearsing
 direct actions, structured batches, assertions, native cursor feedback, raw
 inspection, MP4/GIF preparation, and final-output review. The supported recorder
-captures the ready active page without resetting its context.
+captures the ready active page without resetting its context. For an explanatory
+clip or a step sequence, its "Explain the action and result" section adds timed
+step numbers, captions, key indicators, and an optional storyboard in the same
+preparation run.
 
 Crop to the claim and redact unrelated identifying data before upload. Keep
 annotations purposeful. Add a final-state screenshot only when independently

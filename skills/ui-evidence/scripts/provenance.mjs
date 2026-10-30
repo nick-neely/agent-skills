@@ -518,20 +518,26 @@ export function assetsByHash(manifest) {
   return byHash;
 }
 
-// Freshness for the files a publication references. A file at a recorded
-// path is that asset, so an in-place overwrite is caught by its integrity
-// check; content matches only link a copy at an unrecorded path.
-export function publicationFreshness(manifest, files, options = {}) {
-  const report = assessManifest(manifest, options);
+// Recorded asset IDs for a local file. A file at a recorded path is that asset,
+// so an in-place overwrite is caught by its integrity check; content matches
+// only link a copy at an unrecorded path.
+export function assetLookup(manifest) {
   const byHash = assetsByHash(manifest);
   const byPath = new Map();
   for (const [id, asset] of Object.entries(manifest.assets)) {
     const path = canonicalPath(asset.path);
     byPath.set(path, [...(byPath.get(path) ?? []), id]);
   }
+  return (file, hash = sha256File(file)) => byPath.get(canonicalPath(file)) ?? byHash.get(hash) ?? [];
+}
+
+// Freshness for the files a publication references.
+export function publicationFreshness(manifest, files, options = {}) {
+  const report = assessManifest(manifest, options);
+  const lookup = assetLookup(manifest);
   const items = files.map(({ file, refs }) => {
     const hash = sha256File(file);
-    const ids = byPath.get(canonicalPath(file)) ?? byHash.get(hash) ?? [];
+    const ids = lookup(file, hash);
     if (!ids.length) {
       return { refs, assets: [], sha256: hash, status: "untracked", reasons: ["not recorded in the manifest"] };
     }

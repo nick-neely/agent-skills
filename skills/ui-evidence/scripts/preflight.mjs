@@ -10,10 +10,12 @@ const FONT_PATH = join(resolve(dirname(fileURLToPath(import.meta.url)), ".."), "
 
 const HELP = `preflight.mjs - verify dependencies for the requested UI evidence operation
 
-  node preflight.mjs [--motion|--prepare|--publish|--annotate|--compare] [--format mp4|gif] [--json]
+  node preflight.mjs [--motion|--prepare|--publish|--annotate|--compare] [--format mp4|gif]
+                    [--annotations] [--json]
 
 Default: screenshot capture. --motion checks video capture. --prepare checks
-existing-media preparation. --publish checks publishing. --annotate checks
+existing-media preparation; add --annotations for timed captions, step numbers,
+key indicators, or a storyboard. --publish checks publishing. --annotate checks
 screenshot annotation. --compare checks before/after comparison rendering,
 including its flip GIF and onion skin. Motion capture for GIF uses a WebM
 recording.
@@ -88,6 +90,7 @@ let mode = "capture";
 let format = "mp4";
 let formatSpecified = false;
 let selected = false;
+let annotations = false;
 for (let index = 0; index < args.length; index += 1) {
   const arg = args[index];
   if (["--motion", "--prepare", "--publish", "--annotate", "--compare"].includes(arg)) {
@@ -104,6 +107,8 @@ for (let index = 0; index < args.length; index += 1) {
       writeSync(2, "preflight: --format must be mp4 or gif\n");
       process.exit(2);
     }
+  } else if (arg === "--annotations") {
+    annotations = true;
   } else if (arg !== "--json") {
     writeSync(2, `preflight: unknown option ${arg}\n`);
     process.exit(2);
@@ -111,6 +116,10 @@ for (let index = 0; index < args.length; index += 1) {
 }
 if (formatSpecified && !["motion", "prepare"].includes(mode)) {
   writeSync(2, "preflight: --format requires --motion or --prepare\n");
+  process.exit(2);
+}
+if (annotations && mode !== "prepare") {
+  writeSync(2, "preflight: --annotations requires --prepare\n");
   process.exit(2);
 }
 
@@ -191,7 +200,19 @@ if (mode === "prepare") {
   add("ImageMagick montage", hasMontage, hasMontage ? "installed" : failureDetail(montage.binary, montage.result),
     missingHint(montage.result, "imagemagick"));
 }
-if (["annotate", "compare"].includes(mode)) {
+// Timed annotations are drawn with ImageMagick and composited with FFmpeg's
+// overlay and pad filters; storyboards also need ImageMagick.
+if (annotations) {
+  const filters = run("ffmpeg", ["-hide_banner", "-filters"]);
+  if (!succeeded(filters)) {
+    add("FFmpeg overlay/pad", false, failureDetail("ffmpeg -filters", filters), missingHint(filters, "ffmpeg"));
+  } else {
+    const missing = ["overlay", "pad"].filter((name) => !new RegExp(`^\\s*\\S+\\s+${name}\\s`, "m").test(filters.stdout));
+    add("FFmpeg overlay/pad", !missing.length, missing.length ? `FFmpeg lacks the ${missing.join(" and ")} filter` : "available",
+      missing.length ? "use a standard FFmpeg build with libavfilter" : null);
+  }
+}
+if (["annotate", "compare"].includes(mode) || annotations) {
   const candidates = process.platform === "win32" ? ["magick"] : ["magick", "convert"];
   const magick = findTool(candidates.map((binary) => [binary, ["-version"]]));
   const hasMagick = succeeded(magick.result);
@@ -223,7 +244,8 @@ if (mode === "publish") {
 
 const failed = checks.filter((check) => check.required && !check.ok);
 if (args.includes("--json")) {
-  console.log(JSON.stringify({ ok: failed.length === 0, mode, ...(["motion", "prepare"].includes(mode) ? { format } : {}), checks }, null, 2));
+  console.log(JSON.stringify({ ok: failed.length === 0, mode, ...(["motion", "prepare"].includes(mode) ? { format } : {}),
+    ...(annotations ? { annotations } : {}), checks }, null, 2));
 } else {
   for (const check of checks) {
     const mark = check.ok ? "  ok " : check.required ? "MISS " : " opt ";

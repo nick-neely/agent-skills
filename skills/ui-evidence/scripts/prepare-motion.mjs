@@ -13,9 +13,14 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { imText, numberedPinArgs } from "./comparison-layout.mjs";
+import {
+  AnnotationError, formatTime, layoutCaptions, layoutStoryboard, motionMarkdown, outputSize, outputTimeline,
+  planEvents, planStoryboard,
+} from "./motion-annotations.mjs";
 
 const SKILL_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const FONT_PATH = join(SKILL_ROOT, "assets", "DejaVuSans.ttf");
@@ -25,15 +30,23 @@ const MAX_BYTES = 100_000_000;
 
 const HELP = `prepare-motion.mjs - prepare or inspect motion evidence
 
-  node prepare-motion.mjs --spec <spec.json> --out <evidence.mp4|evidence.gif> --review-out <contact.png> [--preview-out <preview.html>] [--keep-temp]
+  node prepare-motion.mjs --spec <spec.json> --out <evidence.mp4|evidence.gif> --review-out <contact.png>
+                         [--preview-out <preview.html>] [--storyboard-out <storyboard.png>]
+                         [--markdown-out <section.md>] [--keep-temp]
   node prepare-motion.mjs --inspect <raw.webm|raw.mp4> --review-out <contact.png> [--preview-out <preview.html>] [--keep-temp]
 
-  --spec <path>         Motion preparation spec
-  --inspect <path>      Inspect a raw recording without encoding it
-  --out <path>          Prepared MP4 or GIF output
-  --review-out <path>   Local sampled-frame contact sheet; do not publish it
-  --preview-out <path>  Local HTML preview; do not publish it
-  --keep-temp           Keep intermediate encodes and sampled frames
+  --spec <path>            Motion preparation spec
+  --inspect <path>         Inspect a raw recording without encoding it
+  --out <path>             Prepared MP4 or GIF output
+  --review-out <path>      Local sampled-frame contact sheet; do not publish it
+  --preview-out <path>     Local HTML preview; do not publish it
+  --storyboard-out <path>  Labelled checkpoint PNG from the final output; needs spec.storyboard
+  --markdown-out <path>    Publisher-compatible section for the output and storyboard
+  --keep-temp              Keep intermediate encodes and sampled frames
+
+  spec.annotations adds timed step numbers, captions, and key indicators;
+  spec.storyboard selects checkpoints. Times refer to the source recording.
+  Both need ImageMagick; run scripts/preflight.mjs --prepare --annotations.
 
   MP4 defaults: H.264 CRF 18, 30 fps and the full crop width (rounded to even dimensions).
   GIF defaults: 12 fps and at most 720px wide. Both default to a 9,500,000-byte
@@ -49,7 +62,8 @@ function die(message) {
 function parseArgs(argv) {
   const options = { keepTemp: false };
   const valued = { "--spec": "spec", "--inspect": "inspect", "--out": "out",
-    "--review-out": "reviewOut", "--preview-out": "previewOut" };
+    "--review-out": "reviewOut", "--preview-out": "previewOut", "--storyboard-out": "storyboardOut",
+    "--markdown-out": "markdownOut" };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === "--help" || arg === "-h") {
@@ -72,6 +86,9 @@ function parseArgs(argv) {
   if (options.inspect && !/\.(webm|mp4)$/i.test(options.inspect)) die("--inspect must end in .webm or .mp4");
   if (!/\.png$/i.test(options.reviewOut)) die("--review-out must end in .png");
   if (options.previewOut && !/\.html?$/i.test(options.previewOut)) die("--preview-out must end in .html or .htm");
+  if (options.inspect && (options.storyboardOut || options.markdownOut)) die("--storyboard-out and --markdown-out need --spec");
+  if (options.storyboardOut && !/\.png$/i.test(options.storyboardOut)) die("--storyboard-out must end in .png");
+  if (options.markdownOut && !/\.md$/i.test(options.markdownOut)) die("--markdown-out must end in .md");
   return options;
 }
 
@@ -128,6 +145,117 @@ function resolveMontage() {
   if (magick.error) failProbe("magick", magick.error);
   if (montage.error) failProbe("montage", montage.error);
   die("ImageMagick montage not found. Run scripts/preflight.mjs --prepare.");
+}
+
+// ImageMagick for measuring and drawing annotations and storyboards.
+let drawBinary;
+function draw(args, label) {
+  if (!drawBinary) {
+    const candidates = process.platform === "win32" ? ["magick"] : ["magick", "convert"];
+    for (const binary of candidates) {
+      const probe = probeCommand(binary);
+      if (probe.available) {
+        drawBinary = binary;
+        break;
+      }
+      if (probe.error) failProbe(binary, probe.error);
+    }
+    if (!drawBinary) die("ImageMagick not found; annotations and storyboards need it. Run scripts/preflight.mjs --prepare --annotations.");
+  }
+  return run(drawBinary, args, label);
+}
+
+function makeMeasure() {
+  const cache = new Map();
+  return (text, pointsize, wrapWidth) => {
+    const key = JSON.stringify([text, pointsize, wrapWidth ?? null]);
+    if (!cache.has(key)) {
+      const args = ["-font", FONT_PATH, "-pointsize", String(pointsize)];
+      if (wrapWidth) args.push("-size", `${Math.floor(wrapWidth)}x`, `caption:${imText(text)}`);
+      else args.push(`label:${imText(text)}`);
+      const [width, height] = draw([...args, "-format", "%w %h", "info:"], "ImageMagick text measurement")
+        .split(/\s+/).map(Number);
+      cache.set(key, { width, height });
+    }
+    return cache.get(key);
+  };
+}
+
+const geometry = (x, y) => `${x < 0 ? "-" : "+"}${Math.abs(Math.round(x))}${y < 0 ? "-" : "+"}${Math.abs(Math.round(y))}`;
+const BAND = "#24292f";
+const CHECKPOINT = "#59636e";
+
+// One transparent overlay per event at the final output size: an outlined
+// control with its step pin, and the caption area's pin, keys, and text.
+function renderEvent(event, layout, size, out) {
+  const { chrome } = layout;
+  const height = size.height + layout.band;
+  const args = ["-size", `${size.width}x${height}`, "xc:none"];
+  const place = (sub, x, y) => args.push("(", ...sub, ")", "-gravity", "NorthWest", "-compose", "Over",
+    "-geometry", geometry(x, y), "-composite");
+  if (event.region) {
+    // Draw the outline just outside the control so it never covers it.
+    const gap = Math.ceil(chrome.stroke / 2) + 2;
+    const left = Math.max(0, event.region.x - gap);
+    const top = Math.max(0, event.region.y - gap);
+    const r = { x: left, y: top,
+      width: Math.min(size.width, event.region.x + event.region.width + gap) - left,
+      height: Math.min(size.height, event.region.y + event.region.height + gap) - top };
+    const corner = Math.max(3, chrome.radius / 3);
+    args.push("-fill", "none", "-stroke", event.color, "-strokewidth", String(chrome.stroke),
+      "-draw", `roundrectangle ${r.x},${r.y} ${r.x + r.width - 1},${r.y + r.height - 1} ${corner},${corner}`);
+    if (event.step !== undefined) {
+      const cx = Math.min(Math.max(r.x, chrome.radius), size.width - chrome.radius);
+      const cy = Math.min(Math.max(r.y, chrome.radius), size.height - chrome.radius);
+      place(numberedPinArgs(event.step, event.color, chrome, FONT_PATH), cx - chrome.radius, cy - chrome.radius);
+    }
+  }
+  const caption = layout.layouts.get(event.index);
+  if (caption && layout.box) {
+    const { y: top, height: boxHeight } = layout.box;
+    if (!layout.band) args.push("-fill", BAND, "-stroke", "none", "-draw", `rectangle 0,${top} ${size.width - 1},${top + boxHeight - 1}`);
+    const middle = (itemHeight) => top + Math.floor((boxHeight - itemHeight) / 2);
+    for (const item of caption.items) {
+      if (item.type === "pin") place(numberedPinArgs(event.step, event.color, chrome, FONT_PATH), item.x, middle(item.size));
+      else {
+        const y = middle(item.height);
+        args.push("-fill", "#f6f8fa", "-stroke", "#d0d7de", "-strokewidth", String(Math.max(1, chrome.ring)),
+          "-draw", `roundrectangle ${item.x},${y} ${item.x + item.width - 1},${y + item.height - 1} 4,4`);
+        place(["-background", "none", "-fill", "#1f2328", "-stroke", "none", "+size", "-font", FONT_PATH,
+          "-pointsize", String(layout.keyFont), `label:${imText(item.text)}`], item.x + chrome.labelPad, y + chrome.labelPad);
+      }
+    }
+    if (caption.text) {
+      place(["-background", "none", "-fill", "#ffffff", "-stroke", "none", "-font", FONT_PATH,
+        "-pointsize", String(layout.font), "-size", `${Math.floor(caption.text.width)}x`, `caption:${imText(event.caption)}`],
+      caption.text.x, middle(caption.text.height));
+    }
+  }
+  draw([...args, "-strip", `PNG32:${out}`], `ImageMagick annotation overlay ${event.index}`);
+  return out;
+}
+
+function renderStoryboard(layout, frames, out) {
+  const { chrome } = layout;
+  const args = ["-size", `${layout.width}x${layout.height}`, "xc:#ffffff"];
+  const place = (sub, x, y) => args.push("(", ...sub, ")", "-gravity", "NorthWest", "-compose", "Over",
+    "-geometry", geometry(x, y), "-composite");
+  layout.panels.forEach((panel, index) => {
+    const { image } = panel;
+    place([frames[index], "-resize", `${image.width}x${image.height}!`], image.x, image.y);
+    args.push("-fill", "none", "-stroke", "#d0d7de", "-strokewidth", "2",
+      "-draw", `rectangle ${image.x - 1},${image.y - 1} ${image.x + image.width},${image.y + image.height}`);
+    // Neutral checkpoint pins, so checkpoint numbers are not read as step numbers.
+    place(numberedPinArgs(panel.checkpoint.index, CHECKPOINT, chrome, FONT_PATH), panel.pin.cx - chrome.radius, panel.pin.cy - chrome.radius);
+    place(["-background", "none", "-fill", "#1f2328", "-stroke", "none", "-font", FONT_PATH,
+      "-pointsize", String(chrome.legendFont), "-size", `${Math.floor(panel.text.width)}x`, `caption:${imText(panel.checkpoint.label)}`],
+    panel.text.x, panel.text.y);
+    place(["-background", "none", "-fill", "#59636e", "-stroke", "none", "-font", FONT_PATH,
+      "-pointsize", String(chrome.labelFont), "-size", `${Math.floor(panel.text.width)}x`, `caption:${imText(panel.time)}`],
+    panel.text.x, panel.text.y + panel.caption.height + chrome.gap);
+  });
+  mkdirSync(dirname(out), { recursive: true });
+  draw([...args, "-strip", out], "ImageMagick storyboard");
 }
 
 function run(binary, args, label) {
@@ -298,7 +426,8 @@ function ffmpegColor(hex) {
   return `0x${hex.slice(1)}`;
 }
 
-function buildFilter({ crop, redactions, holds, profile, format, firstThrough, lastFrom, startTick, endTick }) {
+function buildFilter({ crop, redactions, holds, profile, format, firstThrough, lastFrom, startTick, endTick,
+  size, band = 0, overlays = [] }) {
   const chain = [
     "setpts=PTS-STARTPTS",
     `fps=${profile.fps}:round=up`,
@@ -318,12 +447,19 @@ function buildFilter({ crop, redactions, holds, profile, format, firstThrough, l
   finish.push(
     `scale=w=trunc(min(iw\\,${profile.width})/2)*2:h=-2:flags=lanczos`,
   );
+  // A caption band below the video keeps captions off the UI under test.
+  if (band) finish.push(`pad=w=${size.width}:h=${size.height + band}:x=0:y=0:color=0x${BAND.slice(1)}`);
+  let annotated = `[bounded]${finish.join(",")}`;
+  overlays.forEach((overlay, index) => {
+    annotated += `[a${index}];[a${index}][${3 + index}:v]overlay=0:0:format=auto:shortest=1:` +
+      `enable='between(n\\,${overlay.frames[0]}\\,${overlay.frames[1]})'`;
+  });
   const boundaries = `[0:v]${chain.join(",")}[timed];` +
     `[timed][1:v]overlay=0:0:format=auto:shortest=1:enable='lt(n\\,${firstThrough})'[begin];` +
     `[begin][2:v]overlay=0:0:format=auto:shortest=1:enable='gte(n\\,${lastFrom})'[bounded];`;
-  if (format === "mp4") return `${boundaries}[bounded]${finish.join(",")}[out]`;
+  if (format === "mp4") return `${boundaries}${annotated}[out]`;
   return (
-    `${boundaries}[bounded]${finish.join(",")},split=2[frames][palette_source];` +
+    `${boundaries}${annotated},split=2[frames][palette_source];` +
     "[palette_source]palettegen=stats_mode=full[palette];" +
     "[frames][palette]paletteuse=dither=sierra2_4a:diff_mode=rectangle[out]"
   );
@@ -340,6 +476,7 @@ function encode(input, output, settings) {
       "-y", "-v", "error", "-i", input,
       "-loop", "1", "-framerate", String(settings.profile.fps), "-i", settings.firstImage,
       "-loop", "1", "-framerate", String(settings.profile.fps), "-i", settings.lastImage,
+      ...(settings.overlays ?? []).flatMap((overlay) => ["-loop", "1", "-framerate", String(settings.profile.fps), "-i", overlay.path]),
       "-filter_complex", filter,
       "-map", "[out]",
       ...encoding,
@@ -445,13 +582,18 @@ try {
   die(`spec is not valid JSON: ${error.message}`);
 }
 requireObject(spec, "spec");
-for (const field of ["trim", "crop", "holds", "profile", "limits", "review"]) {
+for (const field of ["trim", "crop", "holds", "profile", "limits", "review", "annotations", "storyboard"]) {
   if (spec[field] !== undefined) requireObject(spec[field], field);
 }
+for (const field of ["title", "summary"]) {
+  if (spec[field] !== undefined && (typeof spec[field] !== "string" || !spec[field].trim())) die(`${field} must be non-empty text`);
+}
+if (spec.storyboard !== undefined && !options.storyboardOut) die("spec.storyboard needs --storyboard-out <storyboard.png>");
+if (options.storyboardOut && spec.storyboard === undefined) die("--storyboard-out needs spec.storyboard with checkpoints");
 
 const input = resolveInput(specPath, spec.input);
 if (!existsSync(input)) die(`no such input: ${input}`);
-ensureDistinct([specPath, input, options.out, options.reviewOut, options.previewOut]);
+ensureDistinct([specPath, input, options.out, options.reviewOut, options.previewOut, options.storyboardOut, options.markdownOut]);
 const source = inspect(input);
 const frames = sourceTimeline(input, source);
 const crop = resolveCrop(spec.crop, source);
@@ -511,6 +653,44 @@ try {
   if (actionFrames < 1) {
     die("trim is too short to represent at the requested frame rate; increase profile.fps or widen the trim");
   }
+  // Validate and lay out annotations and checkpoints before any encoding.
+  const size = outputSize(crop, selected.width);
+  const timeline = outputTimeline({ trim, fps: profile.fps, startTick, endTick, startFrames, endFrames });
+  const sourceBounds = { duration: source.videoDuration };
+  let annotations;
+  let storyboard;
+  try {
+    annotations = planEvents(spec.annotations, { source: sourceBounds, size, timeline,
+      crop: { ...crop, sourceWidth: source.width, sourceHeight: source.height } });
+    storyboard = planStoryboard(spec.storyboard, timeline, sourceBounds);
+  } catch (error) {
+    if (error instanceof AnnotationError) die(error.message);
+    throw error;
+  }
+  const measure = annotations || storyboard ? makeMeasure() : null;
+  let captionLayout = null;
+  try {
+    captionLayout = annotations ? layoutCaptions(annotations, size, measure) : null;
+  } catch (error) {
+    if (error instanceof AnnotationError) die(error.message);
+    throw error;
+  }
+  const markdownOut = options.markdownOut ? resolve(options.markdownOut) : null;
+  const linkFrom = (file) => {
+    const link = relative(dirname(markdownOut), file);
+    if (!link || link.startsWith("..") || isAbsolute(link)) {
+      die(`--markdown-out must be in a directory that contains ${file}, so the publisher can resolve it`);
+    }
+    return link.split(sep).join("/");
+  };
+  if (markdownOut) {
+    linkFrom(resolve(options.out));
+    if (options.storyboardOut) linkFrom(resolve(options.storyboardOut));
+  }
+  const overlays = annotations ? annotations.events.map((event) => ({
+    frames: event.frames, path: renderEvent(event, captionLayout, size, join(temp, `event-${event.index}.png`)),
+  })) : [];
+  const band = captionLayout?.band ?? 0;
   const firstImage = join(temp, "first-boundary.png");
   const lastImage = boundary.first === boundary.last ? firstImage : join(temp, "last-boundary.png");
   extractBoundary(input, boundary.first, firstImage);
@@ -526,12 +706,15 @@ try {
     else die("trim contains distinct boundary states but only one output frame; increase profile.fps, widen the trim, or add a hold");
   }
   selected.size = encode(input, selected.path, { trim, crop, redactions, holds, profile: selected, format,
-    firstImage, lastImage, firstThrough, lastFrom, startTick, endTick });
+    firstImage, lastImage, firstThrough, lastFrom, startTick, endTick, size, band, overlays });
   if (selected.size >= profile.maxBytes) {
     die(`output is ${selected.size} bytes, at or above the exclusive ${profile.maxBytes} byte limit; crop more tightly, reduce duration only if it preserves the claim, or set an allowed higher profile.maxBytes`);
   }
 
   const prepared = inspect(selected.path);
+  if (prepared.width !== size.width || prepared.height !== size.height + band) {
+    die(`encoded ${prepared.width}x${prepared.height}, expected ${size.width}x${size.height + band}; annotations would be misplaced`);
+  }
   if (prepared.frames !== startFrames + actionFrames + endFrames) {
     die(`duration mismatch: expected ${startFrames + actionFrames + endFrames} normalized frames, encoded ${prepared.frames}; inspect the source and trim`);
   }
@@ -547,6 +730,28 @@ try {
   copyFileSync(selected.path, out);
   const previewOut = options.previewOut ? resolve(options.previewOut) : null;
   if (previewOut) buildPreview(previewOut, input, out);
+  // Storyboard panels come from the final prepared output, so they carry its
+  // redactions and annotations.
+  const storyboardOut = options.storyboardOut ? resolve(options.storyboardOut) : null;
+  let storyboardLayout = null;
+  if (storyboard) {
+    const stills = storyboard.checkpoints.map((checkpoint) => {
+      const still = join(temp, `checkpoint-${checkpoint.index}.png`);
+      run("ffmpeg", ["-y", "-v", "error", "-i", selected.path, "-vf", `select=eq(n\\,${checkpoint.frame})`,
+        "-frames:v", "1", still], `extract checkpoint ${checkpoint.index}`);
+      if (!existsSync(still)) die(`could not extract checkpoint ${checkpoint.index} at frame ${checkpoint.frame}`);
+      return still;
+    });
+    storyboardLayout = layoutStoryboard(storyboard, { width: prepared.width, height: prepared.height }, measure);
+    renderStoryboard(storyboardLayout, stills, storyboardOut);
+  }
+  if (markdownOut) {
+    mkdirSync(dirname(markdownOut), { recursive: true });
+    writeFileSync(markdownOut, motionMarkdown({
+      title: spec.title, summary: spec.summary, video: linkFrom(out), events: annotations?.events,
+      storyboard: storyboard && { file: linkFrom(storyboardOut), checkpoints: storyboard.checkpoints },
+    }));
+  }
   const warnings = ["Frame count alone does not prove smooth capture. Review the complete output.",
     `Output timing is quantized to ${profile.fps} fps; brief intermediate states can be missed.`];
   if (expectedDuration > 20) warnings.push("This clip is longer than 20 seconds; keep it focused on the claim.");
@@ -567,6 +772,23 @@ try {
     holds,
     boundaryFrames: boundary,
     selectedProfile: { width: prepared.width, fps: selected.fps, size: selected.size, maxBytes: profile.maxBytes },
+    timeline: timeline.segments,
+    ...(annotations ? { annotations: { captions: annotations.captions, band, events: annotations.events.map((event) => ({
+      index: event.index, ...(event.step !== undefined ? { step: event.step } : {}),
+      ...(event.key ? { key: event.key.join("+") } : {}), ...(event.caption ? { caption: event.caption } : {}),
+      source: { start: event.start, end: event.end }, output: event.output, frames: event.frames,
+      clipped: event.clipped, holds: event.holds,
+      ...(event.region ? { region: [event.region.x, event.region.y, event.region.width, event.region.height] } : {}),
+    })) } } : {}),
+    ...(storyboard ? { storyboard: { out: storyboardOut, columns: storyboardLayout.columns,
+      size: [storyboardLayout.width, storyboardLayout.height], checkpoints: storyboard.checkpoints.map((checkpoint) => ({
+        index: checkpoint.index, label: checkpoint.label, source: checkpoint.at, output: checkpoint.output,
+        frame: checkpoint.frame, time: formatTime(checkpoint.output) })),
+      panels: storyboardLayout.panels.map((panel) => ({ index: panel.checkpoint.index,
+        image: [panel.image.x, panel.image.y, panel.image.width, panel.image.height],
+        text: [panel.text.x, panel.text.y, panel.text.width, panel.caption.height + storyboardLayout.chrome.gap + panel.timing.height],
+        labelHeight: panel.caption.height })) } } : {}),
+    ...(markdownOut ? { markdownOut } : {}),
     reviewTimes,
     reviewLastFrame: true,
     warnings,

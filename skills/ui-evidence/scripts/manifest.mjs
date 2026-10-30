@@ -12,7 +12,7 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { basename, extname, resolve } from "node:path";
 import { effectiveCapture, recipeHash, RecipeError } from "./recipe.mjs";
 import {
-  ProvenanceError, UNVERIFIABLE, assessCapture, assessManifest, assetsByHash, currentBasis, currentIdentity,
+  ProvenanceError, UNVERIFIABLE, assessCapture, assessManifest, assetLookup, currentBasis, currentIdentity,
   loadRecipeFor, readManifest, referenceMarkdown, sha256File, updateManifest,
 } from "./provenance.mjs";
 
@@ -151,7 +151,9 @@ function resultOutputs(path, prefix) {
     };
   }
   if (typeof result?.out === "string" && result?.prepared && typeof result.input === "string") {
-    return { kind: "motion", outputs: [{ id: prefix, file: result.out }], sources: [result.input], limitations: result.warnings ?? [] };
+    const storyboard = typeof result.storyboard?.out === "string" ? [{ id: `${prefix}.storyboard`, file: result.storyboard.out }] : [];
+    return { kind: "motion", outputs: [{ id: prefix, file: result.out }, ...storyboard], sources: [result.input],
+      limitations: result.warnings ?? [] };
   }
   fail("--result must be a compare.mjs result.json or a saved prepare-motion.mjs JSON report");
 }
@@ -159,7 +161,7 @@ function resultOutputs(path, prefix) {
 function add(options) {
   if (Boolean(options.result) === Boolean(options.asset)) fail("add needs exactly one of --result or --asset");
   const manifest = readManifest(options.manifest);
-  const byHash = assetsByHash(manifest);
+  const lookup = assetLookup(manifest);
   const file = resolve(options.result ?? options.asset);
   const prefix = slug(options.id ?? basename(options.result ? resolve(file, "..") : file, extname(file)));
   const plan = options.result ? resultOutputs(file, prefix)
@@ -171,7 +173,7 @@ function add(options) {
       unmatched.push(source);
       continue;
     }
-    const ids = byHash.get(sha256File(source)) ?? [];
+    const ids = lookup(source);
     if (!ids.length) unmatched.push(source);
     for (const id of ids) from.set(id, manifest.assets[id].sha256);
   }
