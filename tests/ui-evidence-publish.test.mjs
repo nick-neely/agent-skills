@@ -540,3 +540,52 @@ test("publishes an indented example without uploading its existing image file", 
   assert.deepEqual(result.github.uploads, []);
   assert.equal(result.github.calls.some((call) => call.includes("--attach")), false);
 });
+
+test("publishes a generated comparison section and replaces it on the next run", (t) => {
+  const magick = (process.platform === "win32" ? ["magick"] : ["magick", "convert"])
+    .find((binary) => spawnSync(binary, ["-version"], { stdio: "ignore" }).status === 0);
+  if (!magick) {
+    if (process.env.UI_EVIDENCE_REQUIRE_MEDIA === "1") throw new Error("ImageMagick is required for comparison publishing");
+    t.skip("ImageMagick is unavailable");
+    return;
+  }
+  const dir = mkdtempSync(join(temp, "compare-"));
+  for (const [name, x] of [["before", 40], ["after", 70]]) {
+    spawnSync(magick, ["-size", "300x200", "xc:white", "-fill", "#0969da", "-draw", `rectangle ${x},30 ${x + 59},69`, join(dir, `${name}.png`)]);
+  }
+  const specPath = join(dir, "compare.json");
+  writeFileSync(specPath, JSON.stringify({
+    title: "Card position",
+    before: { image: "before.png" }, after: { image: "after.png" },
+    callouts: [{ id: 1, text: "The card moved 30 px right.", before: [40, 30, 60, 40], after: [70, 30, 60, 40] }],
+    details: [{ callout: 1 }], flip: true, onion: true,
+  }));
+  const out = join(dir, "evidence");
+  const compare = join(repo, "skills", "ui-evidence", "scripts", "compare.mjs");
+  const generated = spawnSync(process.execPath, [compare, "--spec", specPath, "--out-dir", out], { encoding: "utf8" });
+  assert.equal(generated.status, 0, generated.stderr);
+  const statePath = join(dir, "github.json");
+  writeFileSync(statePath, JSON.stringify({ body: "Introduction.\n", kind: "pr", comments: [], nextId: 300, calls: [], uploads: [] }));
+  const f = { dir: out, sectionPath: join(out, "section.md"), statePath };
+
+  const dryRun = run(f, ["--dry-run"]);
+  assert.equal(dryRun.status, 0, dryRun.stderr);
+  const plan = JSON.parse(dryRun.stdout);
+  assert.deepEqual(plan.assets.map((asset) => asset.refs[0]).sort(),
+    ["comparison.png", "detail-callout-1.png", "flip.gif", "onion.png"]);
+
+  const published = run(f);
+  assert.equal(published.status, 0, published.stderr || published.stdout);
+  const output = JSON.parse(published.stdout);
+  assert.equal(output.readback.verified, true);
+  const body = published.github.body;
+  assert.match(body, /^Introduction\.\n\n<!-- ui-evidence:start -->\n\n#### Card position/);
+  assert.match(body, /- \*\*1\*\*: The card moved 30 px right\./);
+  assert.match(body, /<details><summary>Screenshot comparison aids<\/summary>/);
+  assert.equal((body.match(/\]\(https:\/\/github\.com\/user-attachments\/assets\/[^)]+\)/g) ?? []).length, 4);
+  assert.doesNotMatch(body, /\]\((?:comparison|detail-callout-1|onion)\.png\)|\]\(flip\.gif\)/);
+
+  const again = run(f);
+  assert.equal(again.status, 0, again.stderr || again.stdout);
+  assert.equal((again.github.body.match(/<!-- ui-evidence:start -->/g) ?? []).length, 1);
+});

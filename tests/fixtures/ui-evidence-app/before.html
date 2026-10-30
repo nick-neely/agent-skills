@@ -1,0 +1,48 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Notification settings</title>
+<!-- Sanitized fixture for ui-evidence comparison tests and dogfooding. -->
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.4 "DejaVu Sans", sans-serif; color: #1f2328; background: #f6f8fa; }
+  header { display: flex; align-items: center; gap: 16px; height: 56px; padding: 0 24px; background: #fff; border-bottom: 1px solid #d0d7de; }
+  header h1 { font-size: 17px; margin: 0; flex: 1; }
+  .account { color: #59636e; }
+  button { font: inherit; border: 0; border-radius: 6px; padding: 7px 14px; cursor: pointer; }
+  .save { background: #1f6feb; color: #fff; }
+  .cancel { background: #eaeef2; color: #1f2328; }
+  main { max-width: 600px; margin: 24px auto; display: grid; gap: 12px; }
+  .card { background: #fff; border: 1px solid #d0d7de; border-radius: 8px; padding: 16px 18px; }
+  .card h2 { font-size: 15px; margin: 0 0 6px; }
+  .row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-top: 1px solid #eaeef2; }
+  .row:first-of-type { border-top: 0; }
+  .toggle { width: 34px; height: 20px; border-radius: 10px; background: #8c959f; position: relative; }
+  .toggle.on { background: #1a7f37; }
+  .toggle::after { content: ""; position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; border-radius: 50%; background: #fff; }
+  .toggle.on::after { left: 17px; }
+  .hint { color: #59636e; font-size: 13px; }
+</style>
+<header>
+  <h1>Notification settings</h1>
+  <span class="account" data-testid="email">ada@example.com</span>
+  <button class="cancel">Cancel</button>
+  <button class="save" data-testid="save">Save</button>
+</header>
+<main>
+  <section class="card">
+    <h2>Email</h2>
+    <div class="row"><span>Weekly summary</span><span class="toggle on" data-testid="weekly"></span></div>
+    <div class="row"><span>Mentions</span><span class="toggle on"></span></div>
+    <div class="row"><span>Product updates</span><span class="toggle"></span></div>
+  </section>
+  <section class="card">
+    <h2>Push</h2>
+    <div class="row"><span>Direct messages</span><span class="toggle on"></span></div>
+    <div class="row"><span>Reminders</span><span class="toggle"></span></div>
+    <p class="hint">Push notifications follow your device settings.</p>
+  </section>
+  <section class="card">
+    <h2>Quiet hours</h2>
+    <div class="row"><span>Pause notifications overnight</span><span class="toggle"></span></div>
+  </section>
+</main>

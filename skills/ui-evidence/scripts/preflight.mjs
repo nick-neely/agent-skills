@@ -10,11 +10,13 @@ const FONT_PATH = join(resolve(dirname(fileURLToPath(import.meta.url)), ".."), "
 
 const HELP = `preflight.mjs - verify dependencies for the requested UI evidence operation
 
-  node preflight.mjs [--motion|--prepare|--publish|--annotate] [--format mp4|gif] [--json]
+  node preflight.mjs [--motion|--prepare|--publish|--annotate|--compare] [--format mp4|gif] [--json]
 
 Default: screenshot capture. --motion checks video capture. --prepare checks
 existing-media preparation. --publish checks publishing. --annotate checks
-screenshot annotation. Motion capture for GIF uses a WebM recording.
+screenshot annotation. --compare checks before/after comparison rendering,
+including its flip GIF and onion skin. Motion capture for GIF uses a WebM
+recording.
 `;
 
 const INSTALL = {
@@ -88,7 +90,7 @@ let formatSpecified = false;
 let selected = false;
 for (let index = 0; index < args.length; index += 1) {
   const arg = args[index];
-  if (["--motion", "--prepare", "--publish", "--annotate"].includes(arg)) {
+  if (["--motion", "--prepare", "--publish", "--annotate", "--compare"].includes(arg)) {
     if (selected) {
       writeSync(2, "preflight: select only one operation\n");
       process.exit(2);
@@ -189,14 +191,14 @@ if (mode === "prepare") {
   add("ImageMagick montage", hasMontage, hasMontage ? "installed" : failureDetail(montage.binary, montage.result),
     missingHint(montage.result, "imagemagick"));
 }
-if (mode === "annotate") {
+if (["annotate", "compare"].includes(mode)) {
   const candidates = process.platform === "win32" ? ["magick"] : ["magick", "convert"];
   const magick = findTool(candidates.map((binary) => [binary, ["-version"]]));
   const hasMagick = succeeded(magick.result);
   add("ImageMagick", hasMagick, hasMagick ? `found as ${magick.binary}` : failureDetail(magick.binary, magick.result),
     missingHint(magick.result, "imagemagick"));
 }
-if (["prepare", "annotate"].includes(mode)) {
+if (["prepare", "annotate", "compare"].includes(mode)) {
   const font = existsSync(FONT_PATH);
   add("bundled font", font, font ? "present" : "missing from the skill",
     font ? null : "reinstall the skill; the font ships with it");
