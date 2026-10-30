@@ -506,6 +506,11 @@ test("an unavailable pull request baseline is refused with the fetch that fixes 
     assert.match(created.stderr, /baseline unavailable: pull request #12 targets "release" at 1111111111/);
     assert.match(created.stderr, /git fetch origin release/);
     assert.match(created.stderr, /after-only evidence/);
+    project.git("remote", "set-url", "origin", "https://github.com/someone/fork.git");
+    const fork = withPullRequest(project, { number: 12, baseRefName: "release", baseRefOid: missing })(
+      "create", "--pr", "12", "--repo", "acme/demo");
+    assert.equal(fork.status, 1);
+    assert.match(fork.stderr, /git fetch https:\/\/github\.com\/acme\/demo\.git release/);
     assert.deepEqual(readdirSync(project.temporary), []);
     const unreadable = withPullRequest(project, "fail")("create", "--pr", "12", "--repo", "acme/demo");
     assert.equal(unreadable.status, 1);

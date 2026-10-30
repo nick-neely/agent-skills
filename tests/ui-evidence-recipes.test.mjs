@@ -7,13 +7,14 @@
 import assert from "node:assert/strict";
 import { execFileSync, execSync, spawnSync } from "node:child_process";
 import {
-  cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync,
+  cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, symlinkSync, writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { after, test } from "node:test";
 import { parseRecipe } from "../skills/ui-evidence/scripts/recipe.mjs";
+import { changedPaths, sourceIdentity } from "../skills/ui-evidence/scripts/provenance.mjs";
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const scripts = join(repo, "skills", "ui-evidence", "scripts");
@@ -432,6 +433,26 @@ test("freshness separates committed, dirty, and unrelated changes without trusti
   status = p.status();
   assert.equal(status["settings-profile.after"].status, "review");
   assert.match(reasons(status["settings-profile.after"]), /impact unknown: widget\.js/);
+});
+
+// Git for Windows may store symlinks as plain files (core.symlinks=false).
+test("symlinks are fingerprinted by link text, so committing the captured link stays unchanged",
+  { skip: process.platform === "win32" ? "symlink storage depends on core.symlinks on Windows" : false }, (t) => {
+  const p = project();
+  try {
+    symlinkSync("styles.css", join(p.app, "theme.css"));
+    symlinkSync(".", join(p.app, "here"));
+  } catch (error) {
+    t.skip(`symlinks unavailable: ${error.code}`);
+    return;
+  }
+  const dirty = sourceIdentity(p.app);
+  assert.equal(dirty.available, true, dirty.reason);
+  p.git("add", "theme.css", "here");
+  p.git("commit", "-qm", "add links");
+  const committed = sourceIdentity(p.app);
+  assert.equal(dirty.changes["theme.css"], p.git("rev-parse", "HEAD:theme.css"));
+  assert.deepEqual(changedPaths(dirty, committed), []);
 });
 
 test("recipe, fixture, and asset integrity changes are confirmed stale", () => {

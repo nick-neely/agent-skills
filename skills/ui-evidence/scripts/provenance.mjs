@@ -8,8 +8,8 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
-  closeSync, existsSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, realpathSync, renameSync, unlinkSync,
-  writeFileSync,
+  closeSync, existsSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, readlinkSync, realpathSync, renameSync,
+  unlinkSync, writeFileSync,
 } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { effectiveCapture, globMatcher, loadRecipe, recipeHash } from "./recipe.mjs";
@@ -157,6 +157,8 @@ export function sourceIdentity(path) {
     try { stat = lstatSync(absolute); } catch { stat = null; }
     if (!stat) changes[path] = "absent";
     else if (stat.isDirectory()) changes[path] = "directory";
+    // Git stores a symlink as its link text; hashing the path would follow it.
+    else if (stat.isSymbolicLink()) changes[path] = git(root, ["hash-object", "--stdin"], readlinkSync(absolute)).trim();
     else files.push(path);
   }
   if (files.some((path) => path.includes("\n"))) {

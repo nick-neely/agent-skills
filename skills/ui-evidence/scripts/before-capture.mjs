@@ -152,7 +152,9 @@ function pullRequestBase(repo, number) {
 // local copy is refused with the fetch that fixes it.
 function selectPullRequestBase(pr) {
   const remotes = matchingRemotes(pr.repo);
-  const remote = remotes[0] ?? "origin";
+  // Without a matching remote (a fork clone, for example), fetch from the
+  // pull request's repository itself.
+  const remote = remotes[0] ?? `https://github.com/${pr.repo}.git`;
   const tracking = remotes.map((name) => `${name}/${pr.baseRefName}`).find((ref) => revision(ref));
   const local = revision(pr.baseRefOid);
   const fetch = `git fetch ${remote} ${pr.baseRefName}`;
