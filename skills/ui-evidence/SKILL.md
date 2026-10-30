@@ -81,6 +81,10 @@ clip or a step sequence, its "Explain the action and result" section adds timed
 step numbers, captions, key indicators, and an optional storyboard in the same
 preparation run.
 
+For a complete run from capture to publication dry run, follow
+[example-comparison.md](references/example-comparison.md) or
+[example-recording.md](references/example-recording.md).
+
 Crop to the claim and redact unrelated identifying data before upload. Keep
 annotations purposeful. Add a final-state screenshot only when independently
 useful. Start with a soft budget of six assets and two clips; preserve requested
