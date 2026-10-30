@@ -182,7 +182,7 @@ read as a numbered step.
 
 | Annotation option | Meaning |
 | --- | --- |
-| `captions` | `below` (default) adds a caption band under the video so the UI stays visible; `overlay` draws captions over the bottom of the frame and is refused when that area would cover an outlined control |
+| `captions` | `below` (default) adds a caption band under the video so the UI stays visible; `overlay` draws captions over the bottom of the frame and is refused when that area would cover an outlined control or is taller than the cropped, scaled frame |
 | `displayWidth` | Width the clip is read at, default 880 (a GitHub PR body); sizes text and pins |
 
 Time maps to the output like this:
@@ -199,8 +199,9 @@ Time maps to the output like this:
 
 Preparation validates every event before encoding. An event outside the trim,
 an end that does not follow its start, geometry outside the source or crop, a
-caption too long to read at the display width, and two captions on the same
-frame each fail with the field to fix. The report's `annotations.events` gives
+caption too long to read at the display width, an overlay caption area taller
+than the cropped, scaled frame, and two captions on the same frame each fail
+with the field to fix. The report's `annotations.events` gives
 each event's output frames and times and says whether it was clipped or covers
 a hold. `timeline` lists each real-time segment and each `presentation-hold`
 with the source instant it shows.

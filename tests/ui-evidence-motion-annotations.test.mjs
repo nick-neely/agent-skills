@@ -131,6 +131,41 @@ test("every event is visible: steps without a control use the caption area, step
   assert.equal(layoutCaptions(keys("Enter"), narrow, measure).layouts.get(0).items.length, 1);
 });
 
+test("an overlay caption area taller than the final frame is refused; below captions and fitting overlays still work", () => {
+  const measure = (value, pointsize, wrap) => ({ width: Math.min(value.length * 9, wrap ?? Infinity),
+    height: 19 * Math.max(1, Math.ceil((value.length * 9) / (wrap ?? Infinity))) });
+  const sourceSize = { sourceWidth: 640, sourceHeight: 180 };
+  const layoutAt = (frameCrop, maxWidth, events, captions = "overlay") => {
+    const cropped = { x: 0, y: 0, ...frameCrop, ...sourceSize };
+    const frameSize = outputSize(cropped, maxWidth);
+    const planned = planEvents({ captions, events }, { source: { duration: 4 }, crop: cropped, size: frameSize, timeline });
+    return () => layoutCaptions(planned, frameSize, measure);
+  };
+  const tooTall = /needs a \d+px caption area, taller than the \d+x\d+ output frame.*use "captions": "below" or a taller crop/;
+  const twoLines = "A caption that wraps onto a second line here";
+  // Caption only: one 19px line sits in a pin-high row, a 42px area; two lines need 54px.
+  const captionFrame = { width: 320, height: 48 };
+  assert.equal(layoutAt(captionFrame, 320, [{ start: 1, end: 2, caption: "Saved" }])().box.height, 42);
+  assert.throws(layoutAt(captionFrame, 320, [{ start: 1, end: 2, caption: twoLines }]), /54px caption area, taller than the 320x48 output frame/);
+  // Step pins and keycaps size the area even without a caption: a pin needs 42px, a 29px keycap 46px.
+  assert.throws(layoutAt({ width: 320, height: 40 }, 320, [{ start: 1, end: 2, step: 1 }]), /42px caption area/);
+  const keyFrame = { width: 320, height: 44 };
+  assert.doesNotThrow(layoutAt(keyFrame, 320, [{ start: 1, end: 2, step: 1 }]));
+  assert.throws(layoutAt(keyFrame, 320, [{ start: 1, end: 2, step: 1, key: "Enter" }]), /46px caption area, taller than the 320x44/);
+  // The 29px reading pause badge grows the area the same way.
+  assert.doesNotThrow(layoutAt(keyFrame, 320, [{ start: 1.5, end: 2, caption: "Saved" }]));
+  assert.throws(layoutAt(keyFrame, 320, [{ start: 1.5, end: 2, caption: "Saved", hold: 1 }]),
+    /taller than the 320x44 output frame \(including the pause badge\)/);
+  // The final cropped and scaled frame decides: 640x96 fits a line, the same crop scaled to 200px wide does not.
+  assert.doesNotThrow(layoutAt({ width: 640, height: 96 }, 640, [{ start: 1, end: 2, caption: "Saved" }]));
+  assert.throws(layoutAt({ width: 640, height: 96 }, 200, [{ start: 1, end: 2, caption: "Saved" }]), tooTall);
+  assert.throws(layoutAt({ width: 640, height: 96 }, 200, [{ start: 1, end: 2, caption: "Saved" }]), /200x30 output frame/);
+  // Below captions add a band instead, so any frame height works.
+  const below = layoutAt(keyFrame, 320, [{ start: 1.5, end: 2, caption: twoLines }], "below")();
+  assert.equal(below.band, 54);
+  assert.equal(below.box.y, 44);
+});
+
 test("reading pauses freeze one frame, shift later frames, and are labelled presentation holds", () => {
   const paused = outputTimeline({ ...timeline, pauses: [{ tick: 15, frames: 10 }] });
   assert.deepEqual(paused.segments.map((segment) => [segment.kind, segment.frames, segment.source]), [
@@ -347,6 +382,25 @@ test("overlay captions and geometry follow crop and scale in the final output", 
   assert.ok(!reddish(frame(join(temp, "scaled.gif"), 2).at(36, 45)));
   assert.ok(during.count(0, 60, 160, 94, ([r, g, b]) => r < 60 && g < 60 && b < 70) > 400, "overlay caption box at the bottom");
   assert.equal(frame(join(temp, "scaled.gif"), 2).count(0, 60, 160, 94, ([r, g, b]) => r < 60 && g < 60 && b < 70), 0);
+});
+
+test("an overlay caption taller than a short crop stops before encoding; the default below band keeps it readable", { skip: skipMedia }, () => {
+  const input = join(temp, "toolbar-source.mp4");
+  ffmpeg(["-f", "lavfi", "-i", "color=c=gray:s=640x24:r=10:d=2", "-c:v", "libx264", "-pix_fmt", "yuv420p", input]);
+  const caption = "This explanatory caption wraps across two lines on a short toolbar recording and should remain completely readable.";
+  const spec = (captions) => ({ input, holds: { start: 0, end: 0 }, profile: { fps: 10 },
+    annotations: { ...(captions ? { captions } : {}), events: [{ start: 0, end: 1, caption }] } });
+  const overlay = runPrepare(spec("overlay"), { name: "toolbar-overlay" });
+  assert.notEqual(overlay.status, 0);
+  assert.match(overlay.stderr, /caption area, taller than the 640x24 output frame; use "captions": "below" or a taller crop/);
+  assert.equal(existsSync(join(temp, "toolbar-overlay.mp4")), false, "nothing is encoded");
+  const below = runPrepare(spec(), { name: "toolbar-below" });
+  assert.equal(below.status, 0, below.stderr);
+  const band = below.json.annotations.band;
+  assert.ok(band > 40, `two caption lines need a band taller than the frame, got ${band}px`);
+  assert.equal(below.json.prepared.height, 24 + band);
+  const text = frame(join(temp, "toolbar-below.mp4"), 3).count(0, 24, 640, 24 + band, bright);
+  assert.ok(text > 200, `caption text expected in the band, found ${text} bright pixels`);
 });
 
 test("redactions hold in the annotated video and every storyboard panel, which keep order and timestamps", { skip: skipMedia }, () => {
