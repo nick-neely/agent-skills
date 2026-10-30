@@ -316,6 +316,11 @@ export function layoutCaptions(plan, size, measure) {
   const band = tallest ? Math.ceil((tallest + pad * 2) / 2) * 2 : 0;
   const box = tallest ? { y: plan.captions === "below" ? size.height : size.height - band, height: band } : null;
   if (box && plan.captions === "overlay") {
+    // A box taller than the frame would start above it and clip its own text.
+    if (band > size.height) {
+      fail(`annotations.captions "overlay" needs a ${band}px caption area, taller than the ${size.width}x${size.height} ` +
+        `output frame${badge ? " (including the pause badge)" : ""}; use "captions": "below" or a taller crop`);
+    }
     // The overlay box shows only while a caption-area event or a pause is on screen.
     const covered = [...plan.events.filter(usesCaptionArea).map((event) => event.frames), ...(badge?.ranges ?? [])];
     for (const event of plan.events) {

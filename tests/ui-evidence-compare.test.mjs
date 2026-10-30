@@ -9,7 +9,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { after, test } from "node:test";
 import {
-  anchorToImageRect, chooseLayout, detailWindows, expectedScreenshotSize, planComparison, sectionMarkdown,
+  anchorToImageRect, chooseLayout, detailWindows, expectedScreenshotSize, pixelSurface, planComparison, sectionMarkdown,
   segmentCrosses, suggestCrops,
 } from "../skills/ui-evidence/scripts/comparison-layout.mjs";
 
@@ -44,6 +44,24 @@ const overlaps = (a, b) =>
   Math.min(a.x + a.width, b.x + b.width) > Math.max(a.x, b.x) &&
   Math.min(a.y + a.height, b.y + b.height) > Math.max(a.y, b.y);
 const pinRect = (pin) => ({ x: pin.cx - pin.radius, y: pin.cy - pin.radius, width: pin.radius * 2, height: pin.radius * 2 });
+
+// Panel pixels for layout tests: white, with optional filled rectangles. A
+// rectangle with `text` gets dark vertical strokes, like a rendered label.
+function paint(width, height, shapes = []) {
+  const data = Buffer.alloc(width * height * 3, 255);
+  const set = (x, y, [r, g, b]) => data.set([r, g, b], (y * width + x) * 3);
+  for (const { rect: [x0, y0, w, h], color, text } of shapes) {
+    for (let y = y0; y < y0 + h; y += 1) {
+      for (let x = x0; x < x0 + w; x += 1) {
+        const stroke = text && x >= x0 + 8 && x < x0 + w - 8 && y >= y0 + 10 && y < y0 + h - 10 && (x - x0) % 4 < 2;
+        set(x, y, stroke ? [0x1f, 0x23, 0x28] : color);
+      }
+    }
+  }
+  return pixelSurface({ width, height, data });
+}
+const blankPanels = (width, height) => ["before", "after"].map((key) =>
+  ({ key, label: key === "before" ? "Before" : "After", width, height, surface: paint(width, height) }));
 
 function caseDir() {
   return mkdtempSync(join(temp, "case-"));
@@ -142,10 +160,7 @@ test("crowded edge callouts keep every pin in bounds, apart, and off every chang
     id: index + 1, color: "#cf222e", text: `change ${index + 1}`,
     marks: { before: { rect: { x, y, width, height } }, after: { rect: { x, y, width, height } } },
   }));
-  const plan = planComparison({
-    panels: [{ key: "before", label: "Before", width: 80, height: 60 }, { key: "after", label: "After", width: 80, height: 60 }],
-    callouts, measure: fakeMeasure,
-  });
+  const plan = planComparison({ panels: blankPanels(80, 60), callouts, measure: fakeMeasure });
   assert.ok(plan.canvas.width >= 360, "a small canvas keeps a readable minimum width");
   for (const panel of plan.panels) {
     const marks = plan.marks.filter((mark) => mark.panel === panel.key);
@@ -177,11 +192,67 @@ test("crowded edge callouts keep every pin in bounds, apart, and off every chang
   }
 });
 
+test("crowded edge callouts over busy or unknown UI widen the gutters instead of covering it", () => {
+  const rects = [[0, 0, 8, 8], [10, 0, 8, 8], [0, 10, 8, 8], [20, 0, 8, 8], [0, 20, 8, 8], [72, 52, 8, 8], [36, 26, 8, 8]];
+  const callouts = rects.map(([x, y, width, height], index) => ({
+    id: index + 1, color: "#cf222e", text: `change ${index + 1}`, label: `label ${index + 1}`,
+    marks: { before: { rect: { x, y, width, height } }, after: { rect: { x, y, width, height } } },
+  }));
+  // Text strokes fill the panel's interior; only a thin frame at its edges is blank.
+  const busy = paint(80, 60, [{ rect: [0, 0, 80, 60], color: [255, 255, 255], text: true }]);
+  const crowded = (surface) => planComparison({
+    panels: ["before", "after"].map((key) => ({ key, label: key, width: 80, height: 60, surface })), callouts, measure: fakeMeasure });
+  const standard = planComparison({ panels: blankPanels(80, 60), callouts, measure: fakeMeasure });
+  for (const [name, surface] of [["busy", busy], ["unknown", undefined]]) {
+    const plan = crowded(surface);
+    for (const mark of plan.marks) {
+      const panel = plan.panels.find((item) => item.key === mark.panel);
+      const coversUi = (box) => {
+        const x = Math.max(box.x, panel.x);
+        const y = Math.max(box.y, panel.y);
+        const width = Math.min(box.x + box.width, panel.x + panel.width) - x;
+        const height = Math.min(box.y + box.height, panel.y + panel.height) - y;
+        return width > 0 && height > 0 && !(surface?.blank({ x: x - panel.x, y: y - panel.y, width, height }) ?? false);
+      };
+      assert.notEqual(mark.pin.placement, "overlap", `${name}: pin ${mark.id} fell back to covering in ${mark.panel}`);
+      assert.ok(!coversUi(pinRect(mark.pin)), `${name}: pin ${mark.id} covers UI in ${mark.panel}`);
+      if (mark.label) assert.ok(!coversUi(mark.label), `${name}: label ${mark.id} covers UI in ${mark.panel}`);
+      for (const other of plan.marks.filter((item) => item.panel === mark.panel && item !== mark)) {
+        assert.ok(!overlaps(pinRect(mark.pin), pinRect(other.pin)), `${name}: pins ${mark.id} and ${other.id} overlap`);
+      }
+    }
+    assert.ok(plan.panels[1].y > standard.panels[1].y, `${name}: the gutters widen to hold the extra pins`);
+  }
+});
+
+test("dozens of callouts on a small busy panel still keep every pin off its pixels", () => {
+  // 48 disjoint regions on an 80x60 checkerboard, so no screenshot pixel is blank.
+  const data = Buffer.alloc(80 * 60 * 3, 255);
+  for (let y = 0; y < 60; y += 1) for (let x = 0; x < 80; x += 1) if ((x + y) % 2) data.set([0, 0, 0], (y * 80 + x) * 3);
+  const checker = pixelSurface({ width: 80, height: 60, data });
+  const callouts = Array.from({ length: 48 }, (_, index) => {
+    const rect = { x: 5 + (index % 8) * 8, y: 5 + Math.floor(index / 8) * 8, width: 4, height: 4 };
+    return { id: index + 1, color: "#cf222e", text: `change ${index + 1}`, marks: { before: { rect }, after: { rect } } };
+  });
+  for (const surface of [checker, undefined]) {
+    const plan = planComparison({ panels: ["before", "after"].map((key) => ({ key, label: key, width: 80, height: 60, surface })),
+      callouts, measure: fakeMeasure });
+    for (const mark of plan.marks) {
+      const panel = plan.panels.find((item) => item.key === mark.panel);
+      assert.ok(!overlaps(pinRect(mark.pin), panel), `pin ${mark.id} covers screenshot pixels in ${mark.panel}`);
+      for (const other of plan.marks.filter((item) => item.panel === mark.panel && item.id > mark.id)) {
+        assert.ok(!overlaps(pinRect(mark.pin), pinRect(other.pin)), `pins ${mark.id} and ${other.id} overlap`);
+      }
+    }
+    assert.equal(plan.marks.length, 96);
+  }
+});
+
 test("a region nested inside another callout keeps its pin beside it", () => {
   const row = { x: 20, y: 100, width: 500, height: 40 };
   const badge = { x: 200, y: 110, width: 40, height: 20 };
   const plan = planComparison({
-    panels: [{ key: "before", label: "Before", width: 600, height: 400 }, { key: "after", label: "After", width: 600, height: 400 }],
+    panels: blankPanels(600, 400),
     callouts: [
       { id: 1, color: "#cf222e", text: "row", marks: { after: { rect: row } } },
       { id: 2, color: "#0969da", text: "badge", marks: { after: { rect: badge } } },
@@ -194,6 +265,77 @@ test("a region nested inside another callout keeps its pin beside it", () => {
   assert.ok(!overlaps(pinRect(inner.pin), inner.rect), "the pin never covers its own region");
   assert.ok(!overlaps(pinRect(outer.pin), outer.rect));
   assert.ok(!overlaps(pinRect(outer.pin), pinRect(inner.pin)));
+});
+
+test("marks keep unannotated neighbouring UI readable in both layouts and use gutters when pixels are unknown", () => {
+  // A toolbar: Save between unannotated account text and a Cancel button, and
+  // a badge just below an unannotated heading.
+  const account = { x: 100, y: 26, width: 86, height: 24 };
+  const cancel = { x: 300, y: 20, width: 80, height: 36 };
+  const heading = { x: 20, y: 70, width: 60, height: 22 };
+  const save = { x: 196, y: 20, width: 92, height: 36 };
+  const badge = { x: 24, y: 100, width: 30, height: 14 };
+  const shapes = [{ rect: [cancel.x, cancel.y, cancel.width, cancel.height], color: [0xea, 0xee, 0xf2], text: true },
+    { rect: [account.x, account.y, account.width, account.height], color: [255, 255, 255], text: true },
+    { rect: [heading.x, heading.y, heading.width, heading.height], color: [255, 255, 255], text: true },
+    { rect: [save.x, save.y, save.width, save.height], color: [0x1f, 0x6f, 0xeb] },
+    { rect: [badge.x, badge.y, badge.width, badge.height], color: [0xdd, 0xf4, 0xff] }];
+  const callouts = [
+    { id: 1, color: "#cf222e", text: "Save widened.", label: "Save action", measure: "width",
+      marks: { before: { rect: save, measureText: "92 px" }, after: { rect: save, measureText: "92 px" } } },
+    { id: 2, color: "#0969da", text: "New badge.", label: "A rather long label for the new badge", marks: { after: { rect: badge } } },
+  ];
+  const panelsWith = (surface) => ["before", "after"].map((key) => ({ key, label: key, width: 400, height: 130, surface }));
+  for (const layout of ["stacked", "side-by-side"]) {
+    const plan = planComparison({ panels: panelsWith(paint(400, 130, shapes)), callouts, layout, measure: fakeMeasure });
+    assert.equal(plan.layout, layout);
+    for (const panel of plan.panels) {
+      const neighbours = [account, cancel, heading].map((rect) => ({ ...rect, x: rect.x + panel.x, y: rect.y + panel.y }));
+      for (const mark of plan.marks.filter((item) => item.panel === panel.key)) {
+        const boxes = [pinRect(mark.pin), mark.label, mark.bracket?.label].filter(Boolean);
+        for (const box of boxes) {
+          for (const neighbour of neighbours) {
+            assert.ok(!overlaps(box, neighbour), `${layout} callout ${mark.id} mark covers unannotated UI in ${panel.key}`);
+          }
+        }
+        if (mark.pin.connector) {
+          for (const neighbour of neighbours) assert.ok(!segmentCrosses(mark.pin.connector, neighbour), `${layout} connector ${mark.id} crosses UI`);
+        }
+      }
+    }
+    assert.ok(plan.marks.every((mark) => mark.pin.placement !== "overlap"));
+    const badgeMark = plan.marks.find((mark) => mark.id === 2);
+    assert.equal(badgeMark.label, null, "a label that would cover the heading or leave the panel moves to the legend");
+    assert.match(plan.limitations.join("\n"), /Callout 2 label did not fit in after; the legend carries its text/);
+    assert.deepEqual(plan.legend.items.map((item) => item.id), [1, 2], "stable IDs stay in the legend");
+  }
+
+  // Without pixels, no screenshot pixel is known to be safe: every mark sits in a gutter.
+  const unknown = planComparison({ panels: panelsWith(undefined), callouts, measure: fakeMeasure });
+  for (const mark of unknown.marks) {
+    const panel = unknown.panels.find((item) => item.key === mark.panel);
+    for (const box of [pinRect(mark.pin), mark.label, mark.bracket?.label].filter(Boolean)) {
+      assert.ok(!overlaps(box, panel), `callout ${mark.id} covers unverified screenshot pixels in ${mark.panel}`);
+    }
+    assert.equal(mark.pin.placement, "margin");
+  }
+  // Blank pixels around a region still take an adjacent pin, label, and bracket.
+  const open = planComparison({ panels: blankPanels(400, 130), callouts: [callouts[0]], measure: fakeMeasure });
+  for (const mark of open.marks) {
+    assert.equal(mark.pin.placement, "adjacent");
+    assert.ok(mark.label && mark.bracket, "blank surroundings keep the optional label and bracket");
+  }
+  assert.deepEqual(open.limitations, []);
+});
+
+test("pixel surfaces treat flat colour as blank and edges, text, or unknown pixels as occupied", () => {
+  const surface = paint(40, 40, [{ rect: [20, 0, 20, 40], color: [0xf6, 0xf8, 0xfa] }, { rect: [0, 14, 24, 26], color: [255, 255, 255], text: true }]);
+  assert.equal(surface.blank({ x: 0, y: 0, width: 20, height: 12 }), true);
+  assert.equal(surface.blank({ x: 15, y: 0, width: 10, height: 10 }), true, "white beside #f6f8fa is within tolerance");
+  assert.equal(surface.blank({ x: 0, y: 25, width: 20, height: 10 }), false, "strokes are occupied");
+  assert.equal(surface.blank({ x: 30, y: 30, width: 20, height: 5 }), false, "pixels past the edge are unknown");
+  const edge = paint(10, 10, [{ rect: [5, 0, 5, 10], color: [0xd0, 0xd7, 0xde] }]);
+  assert.equal(edge.blank({ x: 0, y: 0, width: 10, height: 10 }), false, "a border line is occupied");
 });
 
 test("a measurement bracket that cannot fit is reported instead of silently dropped", () => {
@@ -217,7 +359,7 @@ test("connector clipping detects crossings and ignores segments that only pass n
 test("long labels fall back to the legend and long explanations wrap inside the canvas", () => {
   const long = "A long explanation that should never be squeezed onto the screenshot itself. ".repeat(4);
   const plan = planComparison({
-    panels: [{ key: "before", label: "Before", width: 120, height: 80 }, { key: "after", label: "After", width: 120, height: 80 }],
+    panels: blankPanels(120, 80),
     callouts: [
       { id: 1, color: "#cf222e", text: long, label: "far too long for a label inside a tiny panel",
         marks: { after: { rect: { x: 40, y: 30, width: 20, height: 10 } } } },
@@ -528,6 +670,100 @@ test("crowded edge callouts on a small canvas render with a legend for text that
   const legend = run.result.comparison.legend;
   assert.ok(legend[3] > rects.length * 3 * 16, "wrapped legend grows with its text");
   assert.ok(legend[1] + legend[3] <= canvas.height);
+});
+
+// Raw RGB pixels of a whole image.
+function pixels(path) {
+  const [width, height] = execFileSync(MAGICK, [path, "-format", "%w %h", "info:"], { encoding: "utf8" }).trim().split(" ").map(Number);
+  const data = execFileSync(MAGICK, [path, "-alpha", "off", "-depth", "8", "rgb:-"], { maxBuffer: 256 * 1024 * 1024 });
+  return { width, height, at: (x, y) => [...data.subarray((y * width + x) * 3, (y * width + x) * 3 + 3)] };
+}
+
+// The bounding box of non-white pixels inside a search window.
+function inkBox(image, [x0, y0, width, height]) {
+  let box = null;
+  for (let y = y0; y < y0 + height; y += 1) {
+    for (let x = x0; x < x0 + width; x += 1) {
+      if (image.at(x, y).every((value) => value > 245)) continue;
+      box = box ? { x0: Math.min(box.x0, x), y0: Math.min(box.y0, y), x1: Math.max(box.x1, x), y1: Math.max(box.y1, y) } : { x0: x, y0: y, x1: x, y1: y };
+    }
+  }
+  return [box.x0, box.y0, box.x1 - box.x0 + 1, box.y1 - box.y0 + 1];
+}
+
+test("rendered annotations leave neighbouring buttons and headings pixel-identical in overview and detail images", media, () => {
+  const dir = caseDir();
+  // A settings toolbar: account text, Save, and an unannotated Cancel button,
+  // then an unannotated heading with a new badge just below it in the after state.
+  const draw = (name, saveWidth, withBadge) => {
+    const save = [380 - 16 - saveWidth, 12, saveWidth, 34];
+    execFileSync(MAGICK, ["-size", "480x150", "xc:#f6f8fa", "-fill", "#ffffff", "-draw", "rectangle 0,0 479,57",
+      "-fill", "#d0d7de", "-draw", "line 0,58 479,58",
+      "-fill", "#eaeef2", "-draw", "roundrectangle 384,12 463,45 6,6",
+      "-fill", "#1f6feb", "-draw", `roundrectangle ${save[0]},12 ${save[0] + saveWidth - 1},45 6,6`,
+      "-font", font, "-pointsize", "14", "-fill", "#1f2328", "-annotate", "+400+34", "Cancel",
+      "-fill", "#59636e", "-annotate", "+96+34", "ada@example.com",
+      "-fill", "#ffffff", "-annotate", `+${save[0] + 12}+34`, saveWidth > 80 ? "Save changes" : "Save",
+      "-fill", "#ffffff", "-draw", "rectangle 16,72 300,140",
+      "-fill", "#1f2328", "-pointsize", "15", "-annotate", "+28+94", "Email",
+      ...(withBadge ? ["-fill", "#ddf4ff", "-draw", "roundrectangle 28,104 64,119 7,7"] : []),
+      join(dir, name)]);
+    return save;
+  };
+  const saveBefore = draw("before.png", 64, false);
+  const saveAfter = draw("after.png", 120, true);
+  const source = { before: pixels(join(dir, "before.png")), after: pixels(join(dir, "after.png")) };
+  const neighbours = {
+    cancel: [384, 12, 80, 34],
+    account: inkBox(source.after, [90, 14, 150, 30]),
+    heading: inkBox(source.after, [20, 76, 120, 22]),
+  };
+  for (const layout of ["stacked", "side-by-side"]) {
+    const run = compare(caseDir(), {
+      before: { image: join(dir, "before.png") }, after: { image: join(dir, "after.png") }, layout,
+      callouts: [
+        { id: 1, text: "Save reads Save changes and widened.", label: "Save action", measure: "width", before: saveBefore, after: saveAfter },
+        { id: 2, text: "Weekly summary gains a New badge.", label: "New badge", after: [28, 104, 37, 16] },
+      ],
+      details: [{ callout: 1 }, { callout: 2 }],
+    });
+    assert.equal(run.status, 0, run.stderr);
+    assert.equal(run.result.comparison.layout, layout);
+    const views = [{ path: run.result.outputs.comparison, panels: run.result.comparison.panels },
+      ...run.result.details.map((detail) => ({ path: detail.path, panels: detail.panels }))];
+    for (const view of views) {
+      const output = pixels(view.path);
+      for (const [key, panel] of Object.entries(view.panels)) {
+        const [cx, cy, cw, ch] = panel.canvas;
+        const [wx, wy] = panel.source;
+        for (const [name, [nx, ny, nw, nh]] of Object.entries(neighbours)) {
+          // Each output pixel inside the neighbour's visible part matches its
+          // source pixel, except the panel border's antialiased outer ring.
+          let compared = 0;
+          for (let y = cy + 1; y < cy + ch - 1; y += 1) {
+            for (let x = cx + 1; x < cx + cw - 1; x += 1) {
+              const sx = wx + Math.floor((x - cx) / panel.scale);
+              const sy = wy + Math.floor((y - cy) / panel.scale);
+              if (sx < nx || sx >= nx + nw || sy < ny || sy >= ny + nh) continue;
+              assert.deepEqual(output.at(x, y), source[key].at(sx, sy),
+                `${layout} ${view.path.split(/[\\/]/).pop()} ${key}: ${name} pixel ${sx},${sy} was covered`);
+              compared += 1;
+            }
+          }
+          if (view.path === run.result.outputs.comparison) assert.ok(compared > 100, `${name} is visible in the overview`);
+        }
+      }
+    }
+    const result = run.result;
+    assert.deepEqual(result.calloutIds, [1, 2]);
+    assert.ok(result.callouts.every((callout) => Object.values(callout.panels).every((panel) => !panel || panel.pin)), "every region keeps its pin");
+    for (const callout of result.callouts) {
+      for (const [key, panel] of Object.entries(callout.panels)) {
+        if (panel && !panel.label) assert.match(result.limitations.join("\n"), new RegExp(`Callout ${callout.id} label did not fit in ${key === "before" ? "Before" : "After"}`));
+      }
+    }
+    assert.match(readFileSync(result.outputs.markdown, "utf8"), /- \*\*1\*\*: Save reads Save changes and widened\. Measured width: Before 64 px, After 120 px\./);
+  }
 });
 
 test("text with ImageMagick escapes and file prefixes renders literally", media, () => {

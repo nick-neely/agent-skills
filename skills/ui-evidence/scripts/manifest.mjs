@@ -31,8 +31,9 @@ const HELP = `manifest.mjs - report and extend local evidence provenance
              and an unverified capture source must be recaptured
   add        Record derived files: a compare.mjs result.json, a saved
              prepare-motion.mjs report, or any file with --asset
-  reference  Compact capture reference Markdown for the evidence section; it
-             contains revisions and IDs, never local paths or base URLs
+  reference  Compact capture reference Markdown to append to the evidence section,
+             as its own paragraph; it contains revisions and IDs, never local
+             paths or base URLs
 `;
 
 class UsageError extends Error {}
@@ -210,7 +211,8 @@ function add(options) {
 function reference(options) {
   const result = referenceMarkdown(readManifest(options.manifest), { recipePath: options.recipe, captures: options.captures });
   if (options.json) console.log(JSON.stringify(result, null, 2));
-  else process.stdout.write(result.markdown);
+  // A leading blank line keeps appended output out of a section's last paragraph or list.
+  else process.stdout.write(`\n${result.markdown}`);
 }
 
 try {

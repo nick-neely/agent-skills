@@ -106,17 +106,24 @@ the same change in both versions; a region in only one panel marks an addition
 or removal. The pin number and legend carry the meaning, so colour is never the
 only cue.
 
-- `label`: a short on-image tag beside the pin. When it cannot fit without
-  covering another mark or leaving the panel, it is dropped and the legend keeps
-  the explanation; the result lists that limitation.
+- `label`: an optional short tag beside the pin. When it cannot fit without
+  covering another mark, surrounding UI, or leaving the panel, it is dropped and
+  the legend keeps the explanation; the result lists that limitation.
 - `spotlight: true` dims the rest of that panel around the region.
-- `measure: "width"` or `"height"` draws a bracket with the size in CSS pixels
-  and adds the before and after values to the legend. For a spacing claim, make
-  the region the gap itself.
+- `measure: "width"` or `"height"` adds the before and after values to the
+  legend and draws a bracket with the size in CSS pixels where it fits on blank
+  space. For a spacing claim, make the region the gap itself.
 
 Explanations always go to the legend under the panels and to the Markdown list,
-never onto the UI. Pins sit beside a region corner; when crowded they move into
-a reserved margin with a connector line.
+never onto the UI. Marks must not hide the unannotated UI around a change, such
+as a neighbouring button or heading. A pin, label, or bracket covers screenshot
+pixels only where the rendered panel is blank: one flat colour, with a small
+margin. Otherwise the pin moves into a reserved margin beside the panel, with a
+connector line that crosses no other mark and as little UI as possible; the
+margins widen when a crowded panel needs more room. The label and bracket are
+dropped, and the legend keeps their text. Placement is
+deterministic, so the same inputs give the same image. The result lists each
+dropped label or bracket and each connector that still crosses UI.
 
 ### Details
 
