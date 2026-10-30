@@ -1,14 +1,23 @@
 # Before and after
 
 ```bash
-node "<skill-root>/scripts/before-capture.mjs" create
+node "<skill-root>/scripts/before-capture.mjs" create --pr 123 --repo owner/project \
+  > "$EVIDENCE_DIR/baseline.json"
 ```
 
-This creates a detached checkout of the merge base with the remote default
-branch in a unique temporary location. It leaves the current checkout intact.
-Pass `--ref <branch>` to choose the comparison branch, or `--dir <path>` for an
-explicit unused location. Record the returned base and merge-base revision so
-the label identifies what was rendered.
+This creates a detached checkout of the merge base in a unique temporary
+location and leaves the current checkout intact. With `--pr` and `--repo`, the
+base is the branch that pull request actually targets, which may not be the
+default branch. Without them, the base is the remote default branch. An explicit
+`--ref <branch>` overrides both and is reported as such. Pass `--dir <path>`
+for an explicit unused location.
+
+The output records `base`, `baseSource` (`pull-request`, `explicit`, or
+`default`), `baseRevision`, and `mergeBase`. Label the evidence with what was
+rendered. A pull request base must exist locally at the revision GitHub reports.
+Otherwise creation is refused with the `git fetch` that fixes it. If you cannot
+fetch it, publish after-only evidence and state the limitation. Pass the saved
+JSON to `capture.mjs --baseline` when capturing from a recipe.
 
 Capture a base revision only when its comparison helps the reviewer. A new
 screen may need after-only evidence. A feature toggle in the changed code is

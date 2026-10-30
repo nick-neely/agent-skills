@@ -1,0 +1,45 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Pricing</title>
+<!-- Sanitized fixture for ui-evidence capture recipes and recordings. -->
+<link rel="stylesheet" href="styles.css">
+<style>
+  fieldset { border: 0; padding: 0; margin: 0 0 12px; display: flex; gap: 8px; }
+  fieldset label { padding: 6px 12px; border: 1px solid #d0d7de; border-radius: 6px; cursor: pointer; }
+  fieldset input { position: absolute; opacity: 0; }
+  fieldset input:checked + span { font-weight: bold; }
+  label:has(input:checked) { background: #ddf4ff; border-color: #0969da; }
+  .price { font-size: 32px; margin: 4px 0; }
+</style>
+<header>
+  <h1>Pricing</h1>
+  <nav><a href="settings.html">Settings</a><a href="pricing.html">Pricing</a></nav>
+</header>
+<main>
+  <section class="card" data-testid="plan">
+    <h2>Team plan</h2>
+    <fieldset>
+      <label><input type="radio" name="period" id="monthly" value="monthly" checked><span>Monthly</span></label>
+      <label><input type="radio" name="period" id="yearly" value="yearly"><span>Yearly</span></label>
+    </fieldset>
+    <p class="price" data-testid="price">$12 / month</p>
+    <p data-testid="note">Billed monthly.</p>
+  </section>
+</main>
+<script>
+  const prices = { monthly: ["$12 / month", "Billed monthly."], yearly: ["$120 / year", "Billed yearly. Two months free."] };
+  const show = (period) => {
+    document.getElementById(period).checked = true;
+    const [price, note] = prices[period];
+    document.querySelector("[data-testid=price]").textContent = price;
+    document.querySelector("[data-testid=note]").textContent = note;
+  };
+  for (const input of document.querySelectorAll("input[name=period]")) {
+    input.addEventListener("change", () => {
+      localStorage.setItem("fixture-period", input.value);
+      show(input.value);
+    });
+  }
+  show(localStorage.getItem("fixture-period") === "yearly" ? "yearly" : "monthly");
+  document.documentElement.dataset.ready = "true";
+</script>

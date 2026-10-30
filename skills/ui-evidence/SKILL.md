@@ -67,6 +67,11 @@ callouts on a single screenshot, use `regions.mjs` and read
 Browser `--annotate` numbers interactive refs for diagnostics; it does not
 replace reviewer callouts or redaction.
 
+When the same state will be captured more than once, such as before and after
+versions or a refresh after follow-up commits, write a capture recipe and run
+`capture.mjs`; read [recipes.md](references/recipes.md). Its local manifest
+reports which evidence is fresh, stale, or needs review.
+
 For any recording, read [motion.md](references/motion.md). It covers rehearsing
 direct actions, structured batches, assertions, native cursor feedback, raw
 inspection, MP4/GIF preparation, and final-output review. The supported recorder
@@ -108,6 +113,7 @@ intended hosted reference on the target. Saved references do not establish
 browser rendering. Qualify a new video publishing path through real playback
 when practical; signed-in browser inspection is not a routine publication gate.
 
-If later commits change the captured UI, refresh the affected assets and replace
-the managed block. Record the captured revision and dirty state in local notes
-or motion provenance when useful. Leave unaffected evidence intact.
+If later commits change the captured UI, run `manifest.mjs status` when a
+manifest exists, refresh only stale or unresolved evidence, and replace the
+managed block. Without a manifest, refresh the affected assets and note the
+captured revision and dirty state. Leave unaffected evidence intact.
