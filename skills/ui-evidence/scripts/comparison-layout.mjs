@@ -210,8 +210,8 @@ const BLANK_TOLERANCE = 16;
 // panel-local rectangle is within BLANK_TOLERANCE of one flat colour: empty
 // background a mark can sit on without hiding surrounding UI. Pixels past the
 // image edge are not known to be blank.
-export function pixelSurface({ width, height, data, channels = 3 }) {
-  if (data.length < width * height * channels) throw new Error(`pixel data is smaller than ${width}x${height}x${channels}`);
+export function pixelSurface({ width, height, data }) {
+  if (data.length < width * height * 3) throw new Error(`pixel data is smaller than ${width}x${height} RGB`);
   return {
     width, height,
     blank(rect) {
@@ -220,7 +220,7 @@ export function pixelSurface({ width, height, data, channels = 3 }) {
       const high = [0, 0, 0];
       for (let y = rect.y; y < bottom(rect); y += 1) {
         for (let x = rect.x; x < right(rect); x += 1) {
-          const at = (y * width + x) * channels;
+          const at = (y * width + x) * 3;
           for (let c = 0; c < 3; c += 1) {
             const value = data[at + c];
             if (value < low[c]) low[c] = value;
@@ -234,6 +234,12 @@ export function pixelSurface({ width, height, data, channels = 3 }) {
       return true;
     },
   };
+}
+
+// Lexicographic order of equal-length number arrays: is `a` before `b`?
+function ranksBefore(a, b) {
+  const index = a.findIndex((value, i) => value !== b[i]);
+  return index >= 0 && a[index] < b[index];
 }
 
 function nearestPoint(rect, x, y) {
@@ -422,34 +428,35 @@ class PanelPlacer {
           : { x: Math.round(start + offset), y: Math.round(fixed), width: d, height: d };
         if (!this.fits(box)) continue;
         const connector = this.connectorFor(box, rect);
-        const crossing = !this.connectorClear(connector);
-        const cost = this.connectorCost(connector, box, rect);
-        if (!crossing && !cost.crossings) return this.commitPin(box, "margin", rect);
-        const better = !fallback || crossing < fallback.crossing || (crossing === fallback.crossing &&
-          (cost.crossings < fallback.cost.crossings ||
-            (cost.crossings === fallback.cost.crossings && cost.length < fallback.cost.length)));
-        if (better) fallback = { box, crossing, cost };
+        const crossesMark = !this.connectorClear(connector);
+        const { crossings, length } = this.connectorCost(connector, box, rect);
+        if (!crossesMark && !crossings) return this.commitPin(box, "margin", rect);
+        const rank = [Number(crossesMark), crossings, length];
+        if (!fallback || ranksBefore(rank, fallback.rank)) {
+          fallback = { box, rank, covers: { mark: crossesMark, ui: crossings > 0 } };
+        }
       }
     }
-    if (fallback) {
-      return this.commitPin(fallback.box, fallback.crossing ? "margin-crossing" : "margin", rect, fallback.cost.crossings);
-    }
-    const last = this.leastOverlap(adjacent, true) ?? this.leastOverlap(adjacent) ??
+    if (fallback) return this.commitPin(fallback.box, "margin", rect, fallback.covers);
+    const crowded = this.leastOverlap(adjacent, true) ?? this.leastOverlap(adjacent) ??
       { box: fitWindow({ x: rect.x, y: rect.y, width: d, height: d }, { width: right(bounds), height: bottom(bounds) }) };
-    return this.commitPin(last.box, "overlap", rect);
+    return this.commitPin(crowded.box, "overlap", rect, {
+      mark: this.blocking().some((other) => intersect(other, crowded.box)), ui: !this.safe(crowded.box),
+    });
   }
 
-  commitPin(box, placement, rect, uiCost = 0) {
+  // `covers` says what the pin, or a margin pin's connector, still draws over.
+  commitPin(box, placement, rect, covers = { mark: false, ui: false }) {
     this.obstacles.push(box);
     const cx = box.x + this.chrome.radius;
     const cy = box.y + this.chrome.radius;
     let connector = null;
-    if (placement.startsWith("margin")) {
+    if (placement === "margin") {
       connector = this.connectorFor(box, rect);
       this.connectors.push(connector);
     }
-    return { cx, cy, radius: this.chrome.radius, placement: placement === "margin-crossing" ? "margin" : placement,
-      connector, crossing: placement === "margin-crossing", coversUi: uiCost > 0 };
+    return { cx, cy, radius: this.chrome.radius, placement, connector,
+      crossing: placement === "margin" && covers.mark, coversUi: covers.ui };
   }
 
   placeLabel(pin, text, measure) {
@@ -553,8 +560,10 @@ export function planComparison({ panels, callouts = [], layout = "auto", display
     local.forEach((item, index) => {
       placer.owner = item.rect;
       entries[index].pin = placer.placePin(item.rect);
-      if (entries[index].pin.placement === "overlap") {
-        limitations.push(`Callout ${item.callout.id} pin in ${panel.label} overlaps another mark; the panel is too crowded.`);
+      const { placement, coversUi } = entries[index].pin;
+      if (placement === "overlap") {
+        const covered = coversUi ? "covers surrounding UI" : "overlaps another mark";
+        limitations.push(`Callout ${item.callout.id} pin in ${panel.label} ${covered}; the panel is too crowded.`);
       } else if (entries[index].pin.crossing) {
         limitations.push(`Callout ${item.callout.id} connector in ${panel.label} crosses another mark; the panel is too crowded.`);
       } else if (entries[index].pin.coversUi) {

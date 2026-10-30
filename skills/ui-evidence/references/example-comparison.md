@@ -208,7 +208,7 @@ Append the compact capture reference as its own paragraph, then validate the
 section, its media, and the named target without uploading:
 
 ```bash
-{ echo; node "<skill-root>/scripts/manifest.mjs" reference --manifest "$EVIDENCE_DIR/manifest.json"; } \
+node "<skill-root>/scripts/manifest.mjs" reference --manifest "$EVIDENCE_DIR/manifest.json" \
   >> "$EVIDENCE_DIR/compare/section.md"
 node "<skill-root>/scripts/preflight.mjs" --publish
 node "<skill-root>/scripts/publish.mjs" --repo "$REPO" --target "pr:$PR" \

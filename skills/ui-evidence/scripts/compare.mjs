@@ -81,10 +81,11 @@ function resolveMagick() {
   die("ImageMagick not found. Install ImageMagick and retry; scripts/preflight.mjs --compare reports the fix.");
 }
 
-function magick(args) {
+// Text output by default; `{ encoding: null }` returns raw bytes.
+function magick(args, { encoding = "utf8", maxBuffer = 64 * 1024 * 1024 } = {}) {
   try {
     return execFileSync(magickBinary, args, {
-      encoding: "utf8", maxBuffer: 64 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"],
+      encoding, maxBuffer, stdio: ["ignore", "pipe", "pipe"],
     });
   } catch (error) {
     die(`ImageMagick failed: ${String(error.stderr || error.message).trim()}`);
@@ -94,14 +95,9 @@ function magick(args) {
 // Raw 8-bit RGB pixels of a rendered panel, so marks can avoid covering its UI.
 function surfaceOf(path) {
   const { width, height } = imageSize(path);
-  try {
-    const data = execFileSync(magickBinary, [`${path}[0]`, "-alpha", "off", "-depth", "8", "rgb:-"], {
-      maxBuffer: width * height * 3 + 1024 * 1024, stdio: ["ignore", "pipe", "pipe"],
-    });
-    return pixelSurface({ width, height, data });
-  } catch (error) {
-    die(`ImageMagick failed: ${String(error.stderr || error.message).trim()}`);
-  }
+  const data = magick([`${path}[0]`, "-alpha", "off", "-depth", "8", "rgb:-"],
+    { encoding: null, maxBuffer: width * height * 3 + 1024 * 1024 });
+  return pixelSurface({ width, height, data });
 }
 
 function imageSize(path) {

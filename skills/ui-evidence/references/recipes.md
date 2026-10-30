@@ -204,13 +204,12 @@ Review sheets and previews stay local and unrecorded.
 ## Publish with the record
 
 ```bash
-{ echo; node "<skill-root>/scripts/manifest.mjs" reference --manifest "$EVIDENCE_DIR/manifest.json"; } \
+node "<skill-root>/scripts/manifest.mjs" reference --manifest "$EVIDENCE_DIR/manifest.json" \
   >> "$EVIDENCE_DIR/section.md"
 node "<skill-root>/scripts/publish.mjs" --repo owner/project --target pr:123 \
   --section "$EVIDENCE_DIR/section.md" --manifest "$EVIDENCE_DIR/manifest.json" --dry-run
 ```
 
-The `echo` keeps the reference out of the section's last paragraph or list.
 `reference` writes a compact `<sub>` line per capture with revisions, the base
 branch, fixture, recipe identity, and freshness, and lists unresolved
 limitations. It never includes local paths, base URLs, or session names.

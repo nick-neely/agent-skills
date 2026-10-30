@@ -696,6 +696,7 @@ test("capture references are compact Markdown without local paths, URLs, or sess
   const result = p.manifest("reference");
   assert.equal(result.status, 0, result.stderr);
   const markdown = result.stdout;
+  assert.match(markdown, /^\n<sub>/, "appended output starts its own paragraph");
   const head = p.git("rev-parse", "HEAD");
   assert.ok(markdown.includes(`<code>${head.slice(0, 10)}</code>`));
   assert.match(markdown, /Capture <code>settings-profile<\/code>: after captured at .* on <code>main<\/code>, clean/);
