@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 import { after, test } from "node:test";
 import {
   AnnotationError, layoutCaptions, mapInstant, mapInterval, motionMarkdown, outputSize, outputTimeline, planEvents,
-  planStoryboard, toOutput,
+  planStoryboard, toOutput, usesCaptionArea,
 } from "../skills/ui-evidence/scripts/motion-annotations.mjs";
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -71,7 +71,7 @@ test("invalid intervals, fields, and overlapping captions fail with actionable e
     [[{ start: 0.1, end: 0.5, caption: "x" }], /shows on no output frame/],
     [[{ start: -1, end: 2, caption: "x" }], /0 or more/],
     [[{ start: "1", end: 2, caption: "x" }], /number of seconds/],
-    [[{ start: 1, end: 2 }], /caption, a step, or a key/],
+    [[{ start: 1, end: 2 }], /caption, a step, a key, or an "at" region/],
     [[{ start: 1, end: 2, step: 0 }], /step must be an integer/],
     [[{ start: 1, end: 2, key: "Control+" }], /joined by "\+"/],
     [[{ start: 1, end: 2, caption: "x", colour: "red" }], /unknown field "colour"/],
@@ -99,6 +99,25 @@ test("the caption band is even and sized for the tallest wrapped caption", () =>
   assert.throws(() => layoutCaptions(plan([{ start: 1, end: 2, caption: "word ".repeat(31) }]), size, measure), /needs \d+ lines/);
 });
 
+test("every event is visible: steps without a control use the caption area, stepless marks use a neutral colour", () => {
+  const events = plan([{ start: 1, end: 1.5, step: 1 }, { start: 1.5, end: 2, at: [10, 10, 20, 20] },
+    { start: 2, end: 2.5, step: 2, at: [40, 40, 20, 20] }]).events;
+  assert.deepEqual(events.map(usesCaptionArea), [true, false, false]);
+  assert.equal(events[1].color, "#59636e");
+  assert.equal(events[2].color, "#0969da");
+  assert.throws(() => plan([{ start: 1, end: 2, step: 1 }, { start: 1.5, end: 2.5, caption: "x" }]), /both show a caption/);
+  const measure = (value, pointsize, wrap) => ({ width: Math.min(value.length * 9, wrap ?? Infinity), height: 19 });
+  const layout = layoutCaptions(plan([{ start: 1, end: 1.5, step: 1 }, { start: 2, end: 2.5, step: 2, at: [40, 40, 20, 20] }]), size, measure);
+  assert.deepEqual(layout.layouts.get(0).items.map((item) => item.type), ["pin"]);
+  assert.equal(layout.layouts.get(1).items.length, 0);
+  assert.deepEqual(layout.layouts.get(1).marks.outline, { x: 36, y: 36, width: 28, height: 28 });
+  assert.ok(layout.band > 0);
+  const covered = plan([{ start: 1, end: 2, step: 1, caption: "Low control", at: [20, 150, 60, 20] }], { captions: "overlay" });
+  assert.throws(() => layoutCaptions(covered, size, measure), /under the overlay caption area; use "captions": "below"/);
+  const below = plan([{ start: 1, end: 2, step: 1, caption: "Low control", at: [20, 150, 60, 20] }]);
+  assert.equal(layoutCaptions(below, size, measure).band, 42);
+});
+
 test("storyboard checkpoints keep their order, labels, and resolved times", () => {
   const storyboard = planStoryboard({ checkpoints: [{ at: 1.2, label: "Before" }, { at: 2.6, label: "After" }] }, timeline, { duration: 4 });
   assert.deepEqual(storyboard.checkpoints.map((item) => [item.index, item.label, item.at, item.frame, item.output]),
@@ -110,6 +129,9 @@ test("storyboard checkpoints keep their order, labels, and resolved times", () =
     [{ checkpoints: Array.from({ length: 9 }, (_, index) => ({ at: 1 + index * 0.1, label: "x" })) }, /1 to 8/],
     [{ checkpoints: [{ at: 2, label: "x" }], columns: 5 }, /columns/],
   ]) assert.throws(() => planStoryboard(raw, timeline, { duration: 4 }), pattern);
+  const inherited = planStoryboard({ checkpoints: [{ at: 2, label: "x" }] }, timeline, { duration: 4 }, 600);
+  assert.equal(inherited.displayWidth, 600, "the storyboard follows annotations.displayWidth");
+  assert.equal(planStoryboard({ checkpoints: [{ at: 2, label: "x" }], displayWidth: 1000 }, timeline, { duration: 4 }, 600).displayWidth, 1000);
 });
 
 test("generated Markdown is publisher-compatible and keeps caption markup as text", () => {
@@ -123,6 +145,12 @@ test("generated Markdown is publisher-compatible and keeps caption markup as tex
   assert.doesNotMatch(markdown, /<img|!\[x\]/, "caption markup stays escaped text");
   assert.match(markdown, /!\[Storyboard of 1 moment from the clip: 1 Before \(draft\)\]\(storyboard\.png\)/);
   assert.match(markdown, /1\. \*\*0:00\.7\*\* \(source 1\.20s\): Before/);
+  const spaced = motionMarkdown({ summary: "Clip with spaces.", video: "pub dir/my clip.mp4",
+    storyboard: { file: "story (1).png", checkpoints: [{ index: 1, at: 1.2, output: 0.7, label: "One" }] } });
+  assert.match(spaced, /\n!\[\]\(<pub dir\/my clip\.mp4>\)\n/);
+  assert.match(spaced, /\]\(<story \(1\)\.png>\)/);
+  const gif = motionMarkdown({ summary: "The menu opens.", video: "menu.gif" });
+  assert.match(gif, /!\[Animated recording: The menu opens\.\]\(menu\.gif\)/);
 });
 
 const has = (binary, args = ["-version"]) => spawnSync(binary, args, { stdio: "ignore" }).status === 0;
@@ -173,7 +201,7 @@ function runPrepare(spec, outputs) {
     "--review-out", join(temp, `${outputs.name}-review.png`)];
   if (outputs.storyboard) args.push("--storyboard-out", join(temp, `${outputs.name}-storyboard.png`));
   if (outputs.markdown) args.push("--markdown-out", join(temp, `${outputs.name}.md`));
-  const result = spawnSync(process.execPath, args, { encoding: "utf8" });
+  const result = spawnSync(process.execPath, args, { encoding: "utf8", cwd: outputs.cwd });
   return { ...result, json: result.status === 0 ? JSON.parse(result.stdout) : null };
 }
 
@@ -204,8 +232,14 @@ test("captions, step pins, and key indicators appear only during their intervals
   const outline = (index) => frame(out, index).count(14, 30, 19, 50, reddish);
   assert.ok(outline(3) > 10, "step 1 outline during the start hold");
   assert.equal(outline(9), 0, "step 1 outline gone after its interval");
-  const key = frame(out, 13);
-  assert.ok(key.count(0, 180, 60, 180 + band, ([r, g, b]) => r > 230 && g > 230 && b > 230) > 40, "keycap drawn in the caption band");
+  // The step pin, keycap, and outline are each checked on their own frames.
+  const keycap = ([r, g, b]) => r > 230 && g > 230 && b > 230;
+  const keyIn = (index) => frame(out, index).count(10, 180, 40, 180 + band, keycap);
+  assert.ok(keyIn(13) > 40, "keycap drawn in the caption band");
+  for (const index of [11, 16]) assert.equal(keyIn(index), 0, `no keycap expected in frame ${index}`);
+  const bandPin = (index) => frame(out, index).count(8, 180, 34, 180 + band, reddish);
+  for (const index of [0, 7]) assert.ok(bandPin(index) > 40, `step 1 pin expected in the band in frame ${index}`);
+  for (const index of [8, 13]) assert.equal(bandPin(index), 0, `no step 1 pin expected in frame ${index}`);
   assert.ok(reddish(frame(out, 0).at(16, 40)) && !reddish(frame(out, 9).at(16, 40)));
 });
 
@@ -213,13 +247,18 @@ test("overlay captions and geometry follow crop and scale in the final output", 
   const input = source("scaled-source.mp4", [["gray", 2]], []);
   const result = runPrepare({
     input, crop: { x: 40, y: 20, width: 240, height: 140 }, holds: { start: 0, end: 0 }, profile: { fps: 10, maxWidth: 160 },
-    annotations: { captions: "overlay", events: [{ start: 0.5, end: 1.5, step: 1, at: [100, 60, 40, 30], caption: "Here" }] },
+    annotations: { captions: "overlay", events: [{ start: 0.5, end: 1.5, step: 1, at: [100, 60, 40, 30], caption: "Here" },
+      { start: 0.5, end: 1.5, at: [20, 10, 60, 40] }] },
   }, { name: "scaled", ext: "gif" });
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.json.prepared.width, 160);
   assert.equal(result.json.prepared.height, 94, "overlay captions add no band");
   // Source [100, 60, 40, 30] - crop origin (40, 20), scaled by 160/240.
   assert.deepEqual(result.json.annotations.events[0].region, [40, 27, 27, 20]);
+  assert.equal(result.json.annotations.events[0].regionClipped, false);
+  assert.deepEqual(result.json.annotations.events[1].region, [0, 0, 27, 20]);
+  assert.equal(result.json.annotations.events[1].regionClipped, true);
+  assert.ok(result.json.warnings.some((warning) => /events\[1\]\.at was clipped/.test(warning)));
   const during = frame(join(temp, "scaled.gif"), 10);
   assert.ok(reddish(during.at(36, 45)), `outline expected left of the transformed region, got ${during.at(36, 45)}`);
   assert.ok(!reddish(frame(join(temp, "scaled.gif"), 2).at(36, 45)));
@@ -268,6 +307,17 @@ test("redactions hold in the annotated video and every storyboard panel, which k
   assert.match(markdown, /^#### Private flow\n\nThe masked value never appears\.\n\n!\[\]\(private\.mp4\)\n\n/);
   assert.match(markdown, /!\[Storyboard of 3 moments[^\]]*\]\(private-storyboard\.png\)/);
   assert.doesNotMatch(markdown, /-review\.png|\.html/, "diagnostic artifacts stay out of the published section");
+});
+
+test("caption text starting with @ is drawn literally, never read from a file", { skip: skipMedia }, () => {
+  const input = source("literal-source.mp4", [["gray", 1]]);
+  // If ImageMagick read this file, the caption would need far more than three lines.
+  writeFileSync(join(temp, "secret-caption.txt"), "W".repeat(400));
+  const result = runPrepare({ input, holds: { start: 0, end: 0 }, profile: { fps: 10 },
+    annotations: { events: [{ start: 0.2, end: 0.8, caption: "@secret-caption.txt 100% done" }] } },
+  { name: "literal", cwd: temp });
+  assert.equal(result.status, 0, result.stderr);
+  assert.ok(result.json.annotations.band < 50, `a one-line caption band, got ${result.json.annotations.band}px`);
 });
 
 test("annotation errors stop before encoding and legacy specs produce the same output", { skip: skipMedia }, () => {

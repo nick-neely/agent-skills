@@ -193,7 +193,8 @@ node "<skill-root>/scripts/manifest.mjs" add --manifest "$EVIDENCE_DIR/manifest.
 ```
 
 `--result` reads a `compare.mjs` `result.json` or a saved `prepare-motion.mjs`
-report, including its storyboard. It links each output to the recorded captures with the same content.
+report, including its storyboard. It links each output to the recorded
+captures it was prepared from: by recorded path first, then by content.
 `--asset <file> --from <asset-id>` records any other file. An asset with no
 recorded source, such as an existing screenshot, is accepted but stays `review`.
 An input that matches no recorded capture is kept as an unrecorded source, so

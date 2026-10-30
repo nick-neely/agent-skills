@@ -16,10 +16,10 @@ import {
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { imText, numberedPinArgs } from "./comparison-layout.mjs";
+import { CHROME, composer, imText, numberedPinArgs, textMeasurer } from "./magick-args.mjs";
 import {
-  AnnotationError, formatTime, layoutCaptions, layoutStoryboard, motionMarkdown, outputSize, outputTimeline,
-  planEvents, planStoryboard,
+  AnnotationError, annotationReport, layoutCaptions, layoutStoryboard, motionMarkdown, outputSize, outputTimeline,
+  planEvents, planStoryboard, storyboardReport,
 } from "./motion-annotations.mjs";
 
 const SKILL_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -111,7 +111,7 @@ function ensureDistinct(paths) {
     const stat = existsSync(path) ? statSync(path) : null;
     if (seen.some((entry) => entry.canonical === canonical ||
       (stat?.ino && entry.stat?.ino && stat.ino === entry.stat.ino && stat.dev === entry.stat.dev))) {
-      die("input, spec, output, review, and preview paths must be distinct to avoid overwriting evidence");
+      die("input, spec, and every output path must be distinct to avoid overwriting evidence");
     }
     seen.push({ canonical, stat });
   }
@@ -147,88 +147,56 @@ function resolveMontage() {
   die("ImageMagick montage not found. Run scripts/preflight.mjs --prepare.");
 }
 
-// ImageMagick for measuring and drawing annotations and storyboards.
+// ImageMagick for measuring and drawing annotations and storyboards. Like
+// resolveMontage, try every candidate before reporting a failed probe.
 let drawBinary;
 function draw(args, label) {
   if (!drawBinary) {
     const candidates = process.platform === "win32" ? ["magick"] : ["magick", "convert"];
-    for (const binary of candidates) {
-      const probe = probeCommand(binary);
-      if (probe.available) {
-        drawBinary = binary;
-        break;
-      }
-      if (probe.error) failProbe(binary, probe.error);
+    const probes = candidates.map((binary) => ({ binary, probe: probeCommand(binary) }));
+    drawBinary = probes.find((item) => item.probe.available)?.binary;
+    if (!drawBinary) {
+      const failed = probes.find((item) => item.probe.error);
+      if (failed) failProbe(failed.binary, failed.probe.error);
+      die("ImageMagick not found; annotations and storyboards need it. Run scripts/preflight.mjs --prepare --annotations.");
     }
-    if (!drawBinary) die("ImageMagick not found; annotations and storyboards need it. Run scripts/preflight.mjs --prepare --annotations.");
   }
   return run(drawBinary, args, label);
 }
 
-function makeMeasure() {
-  const cache = new Map();
-  return (text, pointsize, wrapWidth) => {
-    const key = JSON.stringify([text, pointsize, wrapWidth ?? null]);
-    if (!cache.has(key)) {
-      const args = ["-font", FONT_PATH, "-pointsize", String(pointsize)];
-      if (wrapWidth) args.push("-size", `${Math.floor(wrapWidth)}x`, `caption:${imText(text)}`);
-      else args.push(`label:${imText(text)}`);
-      const [width, height] = draw([...args, "-format", "%w %h", "info:"], "ImageMagick text measurement")
-        .split(/\s+/).map(Number);
-      cache.set(key, { width, height });
-    }
-    return cache.get(key);
-  };
-}
+const makeMeasure = () => textMeasurer((args) => draw(args, "ImageMagick text measurement"), FONT_PATH);
 
-const geometry = (x, y) => `${x < 0 ? "-" : "+"}${Math.abs(Math.round(x))}${y < 0 ? "-" : "+"}${Math.abs(Math.round(y))}`;
-const BAND = "#24292f";
-const CHECKPOINT = "#59636e";
-
-// One transparent overlay per event at the final output size: an outlined
-// control with its step pin, and the caption area's pin, keys, and text.
+// One transparent overlay per event at the final output size: the planned
+// outline and pin around a control, and the caption area's pin, keys, and text.
 function renderEvent(event, layout, size, out) {
   const { chrome } = layout;
-  const height = size.height + layout.band;
-  const args = ["-size", `${size.width}x${height}`, "xc:none"];
-  const place = (sub, x, y) => args.push("(", ...sub, ")", "-gravity", "NorthWest", "-compose", "Over",
-    "-geometry", geometry(x, y), "-composite");
-  if (event.region) {
-    // Draw the outline just outside the control so it never covers it.
-    const gap = Math.ceil(chrome.stroke / 2) + 2;
-    const left = Math.max(0, event.region.x - gap);
-    const top = Math.max(0, event.region.y - gap);
-    const r = { x: left, y: top,
-      width: Math.min(size.width, event.region.x + event.region.width + gap) - left,
-      height: Math.min(size.height, event.region.y + event.region.height + gap) - top };
-    const corner = Math.max(3, chrome.radius / 3);
+  const args = ["-size", `${size.width}x${size.height + layout.band}`, "xc:none"];
+  const place = composer(args);
+  const planned = layout.layouts.get(event.index);
+  if (planned.marks) {
+    const { outline: o, corner, pin } = planned.marks;
     args.push("-fill", "none", "-stroke", event.color, "-strokewidth", String(chrome.stroke),
-      "-draw", `roundrectangle ${r.x},${r.y} ${r.x + r.width - 1},${r.y + r.height - 1} ${corner},${corner}`);
-    if (event.step !== undefined) {
-      const cx = Math.min(Math.max(r.x, chrome.radius), size.width - chrome.radius);
-      const cy = Math.min(Math.max(r.y, chrome.radius), size.height - chrome.radius);
-      place(numberedPinArgs(event.step, event.color, chrome, FONT_PATH), cx - chrome.radius, cy - chrome.radius);
-    }
+      "-draw", `roundrectangle ${o.x},${o.y} ${o.x + o.width - 1},${o.y + o.height - 1} ${corner},${corner}`);
+    if (pin) place(numberedPinArgs(event.step, event.color, chrome, FONT_PATH), pin.cx - chrome.radius, pin.cy - chrome.radius);
   }
-  const caption = layout.layouts.get(event.index);
-  if (caption && layout.box) {
+  if (planned.items.length || planned.text) {
     const { y: top, height: boxHeight } = layout.box;
-    if (!layout.band) args.push("-fill", BAND, "-stroke", "none", "-draw", `rectangle 0,${top} ${size.width - 1},${top + boxHeight - 1}`);
+    if (!layout.band) args.push("-fill", CHROME.header, "-stroke", "none", "-draw", `rectangle 0,${top} ${size.width - 1},${top + boxHeight - 1}`);
     const middle = (itemHeight) => top + Math.floor((boxHeight - itemHeight) / 2);
-    for (const item of caption.items) {
+    for (const item of planned.items) {
       if (item.type === "pin") place(numberedPinArgs(event.step, event.color, chrome, FONT_PATH), item.x, middle(item.size));
       else {
         const y = middle(item.height);
-        args.push("-fill", "#f6f8fa", "-stroke", "#d0d7de", "-strokewidth", String(Math.max(1, chrome.ring)),
+        args.push("-fill", CHROME.panel, "-stroke", CHROME.border, "-strokewidth", String(Math.max(1, chrome.ring)),
           "-draw", `roundrectangle ${item.x},${y} ${item.x + item.width - 1},${y + item.height - 1} 4,4`);
-        place(["-background", "none", "-fill", "#1f2328", "-stroke", "none", "+size", "-font", FONT_PATH,
+        place(["-background", "none", "-fill", CHROME.text, "-stroke", "none", "+size", "-font", FONT_PATH,
           "-pointsize", String(layout.keyFont), `label:${imText(item.text)}`], item.x + chrome.labelPad, y + chrome.labelPad);
       }
     }
-    if (caption.text) {
+    if (planned.text) {
       place(["-background", "none", "-fill", "#ffffff", "-stroke", "none", "-font", FONT_PATH,
-        "-pointsize", String(layout.font), "-size", `${Math.floor(caption.text.width)}x`, `caption:${imText(event.caption)}`],
-      caption.text.x, middle(caption.text.height));
+        "-pointsize", String(layout.font), "-size", `${Math.floor(planned.text.width)}x`, `caption:${imText(event.caption)}`],
+      planned.text.x, middle(planned.text.height));
     }
   }
   draw([...args, "-strip", `PNG32:${out}`], `ImageMagick annotation overlay ${event.index}`);
@@ -238,21 +206,20 @@ function renderEvent(event, layout, size, out) {
 function renderStoryboard(layout, frames, out) {
   const { chrome } = layout;
   const args = ["-size", `${layout.width}x${layout.height}`, "xc:#ffffff"];
-  const place = (sub, x, y) => args.push("(", ...sub, ")", "-gravity", "NorthWest", "-compose", "Over",
-    "-geometry", geometry(x, y), "-composite");
+  const place = composer(args);
   layout.panels.forEach((panel, index) => {
     const { image } = panel;
     place([frames[index], "-resize", `${image.width}x${image.height}!`], image.x, image.y);
-    args.push("-fill", "none", "-stroke", "#d0d7de", "-strokewidth", "2",
+    args.push("-fill", "none", "-stroke", CHROME.border, "-strokewidth", "2",
       "-draw", `rectangle ${image.x - 1},${image.y - 1} ${image.x + image.width},${image.y + image.height}`);
     // Neutral checkpoint pins, so checkpoint numbers are not read as step numbers.
-    place(numberedPinArgs(panel.checkpoint.index, CHECKPOINT, chrome, FONT_PATH), panel.pin.cx - chrome.radius, panel.pin.cy - chrome.radius);
-    place(["-background", "none", "-fill", "#1f2328", "-stroke", "none", "-font", FONT_PATH,
+    place(numberedPinArgs(panel.checkpoint.index, CHROME.muted, chrome, FONT_PATH), panel.pin.cx - chrome.radius, panel.pin.cy - chrome.radius);
+    place(["-background", "none", "-fill", CHROME.text, "-stroke", "none", "-font", FONT_PATH,
       "-pointsize", String(chrome.legendFont), "-size", `${Math.floor(panel.text.width)}x`, `caption:${imText(panel.checkpoint.label)}`],
     panel.text.x, panel.text.y);
-    place(["-background", "none", "-fill", "#59636e", "-stroke", "none", "-font", FONT_PATH,
+    place(["-background", "none", "-fill", CHROME.muted, "-stroke", "none", "-font", FONT_PATH,
       "-pointsize", String(chrome.labelFont), "-size", `${Math.floor(panel.text.width)}x`, `caption:${imText(panel.time)}`],
-    panel.text.x, panel.text.y + panel.caption.height + chrome.gap);
+    panel.text.x, panel.timeY);
   });
   mkdirSync(dirname(out), { recursive: true });
   draw([...args, "-strip", out], "ImageMagick storyboard");
@@ -448,7 +415,7 @@ function buildFilter({ crop, redactions, holds, profile, format, firstThrough, l
     `scale=w=trunc(min(iw\\,${profile.width})/2)*2:h=-2:flags=lanczos`,
   );
   // A caption band below the video keeps captions off the UI under test.
-  if (band) finish.push(`pad=w=${size.width}:h=${size.height + band}:x=0:y=0:color=0x${BAND.slice(1)}`);
+  if (band) finish.push(`pad=w=${size.width}:h=${size.height + band}:x=0:y=0:color=0x${CHROME.header.slice(1)}`);
   let annotated = `[bounded]${finish.join(",")}`;
   overlays.forEach((overlay, index) => {
     annotated += `[a${index}];[a${index}][${3 + index}:v]overlay=0:0:format=auto:shortest=1:` +
@@ -659,17 +626,13 @@ try {
   const sourceBounds = { duration: source.videoDuration };
   let annotations;
   let storyboard;
+  let measure = null;
+  let captionLayout = null;
   try {
     annotations = planEvents(spec.annotations, { source: sourceBounds, size, timeline,
       crop: { ...crop, sourceWidth: source.width, sourceHeight: source.height } });
-    storyboard = planStoryboard(spec.storyboard, timeline, sourceBounds);
-  } catch (error) {
-    if (error instanceof AnnotationError) die(error.message);
-    throw error;
-  }
-  const measure = annotations || storyboard ? makeMeasure() : null;
-  let captionLayout = null;
-  try {
+    storyboard = planStoryboard(spec.storyboard, timeline, sourceBounds, annotations?.displayWidth);
+    measure = annotations || storyboard ? makeMeasure() : null;
     captionLayout = annotations ? layoutCaptions(annotations, size, measure) : null;
   } catch (error) {
     if (error instanceof AnnotationError) die(error.message);
@@ -758,6 +721,9 @@ try {
   if (profile.targetBytes !== null && selected.size > profile.targetBytes) {
     warnings.push(`output is below the limit but above the ${(profile.targetBytes / MIB).toFixed(2)} MiB target`);
   }
+  for (const event of annotations?.events ?? []) {
+    if (event.region?.clipped) warnings.push(`annotations.events[${event.index}].at was clipped to the crop; check that the outline still marks the control`);
+  }
 
   console.log(JSON.stringify({
     input,
@@ -773,21 +739,8 @@ try {
     boundaryFrames: boundary,
     selectedProfile: { width: prepared.width, fps: selected.fps, size: selected.size, maxBytes: profile.maxBytes },
     timeline: timeline.segments,
-    ...(annotations ? { annotations: { captions: annotations.captions, band, events: annotations.events.map((event) => ({
-      index: event.index, ...(event.step !== undefined ? { step: event.step } : {}),
-      ...(event.key ? { key: event.key.join("+") } : {}), ...(event.caption ? { caption: event.caption } : {}),
-      source: { start: event.start, end: event.end }, output: event.output, frames: event.frames,
-      clipped: event.clipped, holds: event.holds,
-      ...(event.region ? { region: [event.region.x, event.region.y, event.region.width, event.region.height] } : {}),
-    })) } } : {}),
-    ...(storyboard ? { storyboard: { out: storyboardOut, columns: storyboardLayout.columns,
-      size: [storyboardLayout.width, storyboardLayout.height], checkpoints: storyboard.checkpoints.map((checkpoint) => ({
-        index: checkpoint.index, label: checkpoint.label, source: checkpoint.at, output: checkpoint.output,
-        frame: checkpoint.frame, time: formatTime(checkpoint.output) })),
-      panels: storyboardLayout.panels.map((panel) => ({ index: panel.checkpoint.index,
-        image: [panel.image.x, panel.image.y, panel.image.width, panel.image.height],
-        text: [panel.text.x, panel.text.y, panel.text.width, panel.caption.height + storyboardLayout.chrome.gap + panel.timing.height],
-        labelHeight: panel.caption.height })) } } : {}),
+    ...(annotations ? { annotations: annotationReport(annotations, captionLayout) } : {}),
+    ...(storyboard ? { storyboard: storyboardReport(storyboard, storyboardLayout, storyboardOut) } : {}),
     ...(markdownOut ? { markdownOut } : {}),
     reviewTimes,
     reviewLastFrame: true,

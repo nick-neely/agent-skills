@@ -175,9 +175,13 @@ node "<skill-root>/scripts/prepare-motion.mjs" \
 | `key` | Keys actually pressed, joined by `+`, such as `Control+K`; drawn as keycaps |
 | `at` | `[x, y, width, height]` source rectangle around the control; outlined just outside it |
 
+Each event needs at least one of these. A step without `at` shows its pin in
+the caption area. An outline without a step uses a neutral grey, so it is never
+read as a numbered step.
+
 | Annotation option | Meaning |
 | --- | --- |
-| `captions` | `below` (default) adds a caption band under the video so the UI stays visible; `overlay` draws captions over the bottom of the frame |
+| `captions` | `below` (default) adds a caption band under the video so the UI stays visible; `overlay` draws captions over the bottom of the frame and is refused when that area would cover an outlined control |
 | `displayWidth` | Width the clip is read at, default 880 (a GitHub PR body); sizes text and pins |
 
 Time maps to the output like this:
@@ -190,7 +194,7 @@ Time maps to the output like this:
 - Between the holds, output time is source time minus `trim.start` plus the
   start hold, quantized to the frame rate.
 - Coordinates follow the crop and scale. A region partly outside the crop is
-  clipped and reported.
+  clipped; the event reports `regionClipped` and the result adds a warning.
 
 Preparation validates every event before encoding. An event outside the trim,
 an end that does not follow its start, geometry outside the source or crop, a
@@ -210,15 +214,18 @@ The storyboard is an opt-in reviewer image. Use it when a few still moments
 explain the claim alongside the MP4. Each checkpoint is a source time and a
 label of up to 160 characters, in increasing order, with at most eight
 checkpoints. Panels are extracted from the final prepared output, so they carry
-its redactions and annotations. The image is drawn at twice `displayWidth`.
-Columns default to what keeps each panel readable, and `columns` (1-4)
-overrides that. The report lists each checkpoint's frame, output time, source
-time, and panel geometry.
+its redactions and annotations. `storyboard.displayWidth` defaults to
+`annotations.displayWidth`, or 880, and the image is drawn at twice that width.
+Columns default to what keeps each panel readable, and `storyboard.columns`
+(1-4) overrides that. The report lists each checkpoint's frame, output time,
+source time, and panel geometry.
 
 `--markdown-out` writes a publisher-compatible section: the optional `title`
 and `summary`, the standalone video, the timed steps, and the storyboard with
 its numbered labels. It must sit in a directory that contains the video and
-storyboard. Review sheets and previews are never referenced. Inspect the
+storyboard; paths with spaces are written in the `<path>` form the publisher
+accepts. A GIF gets descriptive alt text from `summary` or `title`. Review
+sheets and previews are never referenced. Inspect the
 complete clip, frames around each annotation boundary, and the storyboard at
 the display width before publishing.
 

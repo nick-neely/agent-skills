@@ -74,6 +74,7 @@ test("help returns before running dependency checks", () => {
     const result = tools.run("--help");
     assert.equal(result.status, 0);
     assert.match(result.stdout, /--prepare/);
+    assert.match(result.stdout, /--annotations/);
     assert.equal(tools.noCalls(), true);
   } finally {
     tools.cleanup();

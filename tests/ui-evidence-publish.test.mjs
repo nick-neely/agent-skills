@@ -2,7 +2,7 @@ import { after, test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdtempSync, readFileSync, rmSync, symlinkSync, truncateSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, truncateSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, parse, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -707,4 +707,14 @@ test("publishes a generated motion section with a playable video and a storyboar
   assert.doesNotMatch(result.github.body, /\]\((?:interaction\.mp4|storyboard\.png)\)|^!\[\]\(interaction/m);
   const edit = result.github.calls.find((call) => call[0] === "pr" && call[1] === "edit" && !call.includes("--help"));
   assert.equal(edit.filter((arg) => arg === "--attach").length, 2, "escaped label markup is not uploaded");
+
+  // Generated links to paths with spaces and parentheses use the form the publisher accepts.
+  const spaced = fixture(motionMarkdown({ summary: "A clip in a folder with spaces.", video: "clips/my clip.mp4",
+    storyboard: { file: "story (1).png", checkpoints: [{ index: 1, at: 1, output: 0.5, label: "One" }] } }));
+  mkdirSync(join(spaced.dir, "clips"));
+  writeFileSync(join(spaced.dir, "clips", "my clip.mp4"), "video");
+  writeFileSync(join(spaced.dir, "story (1).png"), "storyboard");
+  const plan = run(spaced, ["--dry-run"]);
+  assert.equal(plan.status, 0, plan.stderr);
+  assert.deepEqual(JSON.parse(plan.stdout).assets.map((asset) => asset.refs[0]), ["clips/my clip.mp4", "story (1).png"]);
 });

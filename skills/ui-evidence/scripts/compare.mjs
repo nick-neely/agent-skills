@@ -17,8 +17,9 @@ import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   DEFAULT_DISPLAY_WIDTH, PALETTE, anchorToImageRect, asArray, chooseLayout, chromeFor, contains,
-  detailWindows, imText, intersect, numberedPinArgs, planComparison, rectFrom, sectionMarkdown, snapOut,
+  detailWindows, intersect, planComparison, rectFrom, sectionMarkdown, snapOut,
 } from "./comparison-layout.mjs";
+import { CHROME, geometry, imText, numberedPinArgs, textMeasurer } from "./magick-args.mjs";
 
 const SKILL_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const FONT_PATH = join(SKILL_ROOT, "assets", "DejaVuSans.ttf");
@@ -36,10 +37,10 @@ Prints the structured result as JSON. Run scripts/preflight.mjs --compare to
 verify dependencies first.
 `;
 
-const HEADER_BACKGROUND = "#24292f";
-const LEGEND_BACKGROUND = "#f6f8fa";
-const PANEL_BORDER = "#d0d7de";
-const TEXT = "#1f2328";
+const HEADER_BACKGROUND = CHROME.header;
+const LEGEND_BACKGROUND = CHROME.panel;
+const PANEL_BORDER = CHROME.border;
+const TEXT = CHROME.text;
 const REDACTION_BLOCK = "#111827";
 
 function die(message) {
@@ -95,22 +96,7 @@ function imageSize(path) {
   return { width, height };
 }
 
-function makeMeasure() {
-  const cache = new Map();
-  return (text, pointsize, wrapWidth) => {
-    const key = JSON.stringify([text, pointsize, wrapWidth ?? null]);
-    if (!cache.has(key)) {
-      const args = ["-font", FONT_PATH, "-pointsize", String(pointsize)];
-      if (wrapWidth) args.push("-size", `${Math.floor(wrapWidth)}x`, `caption:${imText(text)}`);
-      else args.push(`label:${imText(text)}`);
-      const [width, height] = magick([...args, "-format", "%w %h", "info:"]).trim().split(/\s+/).map(Number);
-      cache.set(key, { width, height });
-    }
-    return cache.get(key);
-  };
-}
-
-const geometry = (x, y) => `${x < 0 ? "-" : "+"}${Math.abs(Math.round(x))}${y < 0 ? "-" : "+"}${Math.abs(Math.round(y))}`;
+const makeMeasure = () => textMeasurer(magick, FONT_PATH);
 const sameSize = (a, b) => a.width === b.width && a.height === b.height;
 const formatPx = (value) => `${Math.round(value * 10) / 10} px`;
 

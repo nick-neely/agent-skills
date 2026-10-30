@@ -12,6 +12,8 @@ export class AnnotationError extends Error {}
 const EPSILON = 1e-9;
 const MAX_CAPTION_LINES = 3;
 const CAPTION_MODES = ["below", "overlay"];
+// Outline colour for a mark without a step, distinct from every step colour.
+const UNNUMBERED = "#59636e";
 
 function fail(message) {
   throw new AnnotationError(message);
@@ -30,6 +32,16 @@ function seconds(value, name) {
   if (typeof value !== "number" || !Number.isFinite(value) || value < 0) fail(`${name} must be a number of seconds, 0 or more`);
   return value;
 }
+
+function displayWidthOf(value, name) {
+  const width = value ?? DEFAULT_DISPLAY_WIDTH;
+  if (!Number.isInteger(width) || width < 200 || width > 4000) fail(`${name} must be an integer from 200 to 4000`);
+  return width;
+}
+
+// Captions, keys, and steps without a marked control are shown in the caption
+// area, so at most one such event may be visible on any frame.
+export const usesCaptionArea = (event) => Boolean(event.caption || event.key || (event.step !== undefined && !event.region));
 
 function text(value, name, max) {
   if (typeof value !== "string" || !value.trim()) fail(`${name} must be non-empty text`);
@@ -143,10 +155,7 @@ export function planEvents(raw, { source, crop, size, timeline }) {
   onlyKeys(spec, ["captions", "displayWidth", "events"], "annotations");
   const captions = spec.captions ?? "below";
   if (!CAPTION_MODES.includes(captions)) fail(`annotations.captions must be "below" or "overlay"`);
-  const displayWidth = spec.displayWidth ?? DEFAULT_DISPLAY_WIDTH;
-  if (!Number.isInteger(displayWidth) || displayWidth < 200 || displayWidth > 4000) {
-    fail("annotations.displayWidth must be an integer from 200 to 4000");
-  }
+  const displayWidth = displayWidthOf(spec.displayWidth, "annotations.displayWidth");
   if (!Array.isArray(spec.events) || !spec.events.length) fail("annotations.events must list at least one event");
   const events = spec.events.map((item, index) => {
     const name = `annotations.events[${index}]`;
@@ -159,8 +168,8 @@ export function planEvents(raw, { source, crop, size, timeline }) {
     if (item.step !== undefined && (!Number.isInteger(item.step) || item.step < 1 || item.step > 99)) {
       fail(`${name}.step must be an integer from 1 to 99`);
     }
-    if (item.caption === undefined && item.step === undefined && item.key === undefined) {
-      fail(`${name} needs a caption, a step, or a key`);
+    if (item.caption === undefined && item.step === undefined && item.key === undefined && item.at === undefined) {
+      fail(`${name} needs a caption, a step, a key, or an "at" region to outline`);
     }
     const mapped = mapInterval(start, end, timeline);
     if (!mapped) {
@@ -173,11 +182,11 @@ export function planEvents(raw, { source, crop, size, timeline }) {
       ...(item.caption !== undefined ? { caption: text(item.caption, `${name}.caption`, 160) } : {}),
       ...(item.key !== undefined ? { key: keycaps(item.key, `${name}.key`) } : {}),
       ...(item.at !== undefined ? { at: item.at, region: toOutput(item.at, crop, size, `${name}.at`) } : {}),
-      color: PALETTE[((item.step ?? 1) - 1) % PALETTE.length],
+      color: item.step === undefined ? UNNUMBERED : PALETTE[(item.step - 1) % PALETTE.length],
       ...mapped,
     };
   });
-  const captioned = events.filter((event) => event.caption || event.key);
+  const captioned = events.filter(usesCaptionArea);
   for (let a = 0; a < captioned.length; a += 1) {
     for (let b = a + 1; b < captioned.length; b += 1) {
       const [x, y] = [captioned[a], captioned[b]];
@@ -190,8 +199,9 @@ export function planEvents(raw, { source, crop, size, timeline }) {
   return { captions, displayWidth, events };
 }
 
-// Caption area layout at the output size. measure(text, pointsize, wrapWidth)
-// returns rendered { width, height }.
+// Layout at the output size: each marked control's outline and pin, and each
+// caption-area event's pin, keycaps, and wrapped text. measure(text,
+// pointsize, wrapWidth) returns rendered { width, height }.
 export function layoutCaptions(plan, size, measure) {
   const chrome = chromeFor(size.width, plan.displayWidth);
   const pad = chrome.headerPad;
@@ -201,54 +211,90 @@ export function layoutCaptions(plan, size, measure) {
   const layouts = new Map();
   let tallest = 0;
   for (const event of plan.events) {
-    if (!event.caption && !event.key) continue;
-    let x = pad;
-    const items = [];
-    if (event.step !== undefined) {
-      items.push({ type: "pin", x, size: chrome.radius * 2 });
-      x += chrome.radius * 2 + chrome.gap * 2;
+    const layout = { marks: null, items: [], text: null, height: 0 };
+    if (event.region) {
+      // The outline sits just outside the control so it never covers it.
+      const gap = Math.ceil(chrome.stroke / 2) + 2;
+      const left = Math.max(0, event.region.x - gap);
+      const top = Math.max(0, event.region.y - gap);
+      const outline = { x: left, y: top,
+        width: Math.min(size.width, event.region.x + event.region.width + gap) - left,
+        height: Math.min(size.height, event.region.y + event.region.height + gap) - top };
+      const pin = event.step === undefined ? null : {
+        cx: Math.min(Math.max(outline.x, chrome.radius), size.width - chrome.radius),
+        cy: Math.min(Math.max(outline.y, chrome.radius), size.height - chrome.radius),
+      };
+      layout.marks = { outline, corner: Math.max(3, chrome.radius / 3), pin };
     }
-    for (const part of event.key ?? []) {
-      const measured = measure(part, keyFont);
-      const width = measured.width + chrome.labelPad * 2;
-      items.push({ type: "key", x, text: part, width, height: measured.height + chrome.labelPad * 2 });
-      x += width + chrome.gap;
-    }
-    if (event.key) x += chrome.gap;
-    let textBlock = null;
-    if (event.caption) {
-      const wrap = size.width - x - pad;
-      if (wrap < font * 4) fail(`annotations.events[${event.index}] leaves no room for its caption at ${size.width}px; shorten the key or widen the output`);
-      const measured = measure(event.caption, font, wrap);
-      const lines = Math.round(measured.height / line);
-      if (lines > MAX_CAPTION_LINES) {
-        fail(`annotations.events[${event.index}].caption needs ${lines} lines at the ${plan.displayWidth}px display width; ` +
-          `shorten it to ${MAX_CAPTION_LINES} lines or fewer`);
+    if (usesCaptionArea(event)) {
+      let x = pad;
+      if (event.step !== undefined) {
+        layout.items.push({ type: "pin", x, size: chrome.radius * 2 });
+        x += chrome.radius * 2 + chrome.gap * 2;
       }
-      textBlock = { x, width: wrap, height: measured.height };
+      for (const part of event.key ?? []) {
+        const measured = measure(part, keyFont);
+        const width = measured.width + chrome.labelPad * 2;
+        layout.items.push({ type: "key", x, text: part, width, height: measured.height + chrome.labelPad * 2 });
+        x += width + chrome.gap;
+      }
+      if (event.key) x += chrome.gap;
+      if (event.caption) {
+        const wrap = size.width - x - pad;
+        if (wrap < font * 4) fail(`annotations.events[${event.index}] leaves no room for its caption at ${size.width}px; shorten the key or widen the output`);
+        const measured = measure(event.caption, font, wrap);
+        const lines = Math.round(measured.height / line);
+        if (lines > MAX_CAPTION_LINES) {
+          fail(`annotations.events[${event.index}].caption needs ${lines} lines at the ${plan.displayWidth}px display width; ` +
+            `shorten it to ${MAX_CAPTION_LINES} lines or fewer`);
+        }
+        layout.text = { x, width: wrap, height: measured.height };
+      }
+      layout.height = Math.max(chrome.radius * 2, layout.text?.height ?? 0, ...layout.items.map((item) => item.height ?? 0));
+      tallest = Math.max(tallest, layout.height);
     }
-    const height = Math.max(chrome.radius * 2, textBlock?.height ?? 0, ...items.map((item) => item.height ?? 0));
-    tallest = Math.max(tallest, height);
-    layouts.set(event.index, { items, text: textBlock, height });
+    layouts.set(event.index, layout);
   }
   // Even, because H.264 with yuv420p needs even frame dimensions.
   const band = tallest ? Math.ceil((tallest + pad * 2) / 2) * 2 : 0;
-  const top = plan.captions === "below" ? size.height : size.height - band;
-  return { chrome, pad, font, keyFont, band: plan.captions === "below" ? band : 0, box: tallest ? { y: top, height: band } : null, layouts };
+  const box = tallest ? { y: plan.captions === "below" ? size.height : size.height - band, height: band } : null;
+  if (box && plan.captions === "overlay") {
+    for (const event of plan.events) {
+      const mark = layouts.get(event.index).marks;
+      if (mark && mark.outline.y + mark.outline.height > box.y) {
+        fail(`annotations.events[${event.index}].at lies under the overlay caption area; ` +
+          'use "captions": "below" so the caption does not cover the control');
+      }
+    }
+  }
+  return { chrome, pad, font, keyFont, band: plan.captions === "below" ? band : 0, box, layouts };
+}
+
+// The report's view of planned events: what shows, when, and where.
+export function annotationReport(plan, layout) {
+  return {
+    captions: plan.captions, band: layout.band, displayWidth: plan.displayWidth,
+    events: plan.events.map((event) => ({
+      index: event.index, ...(event.step !== undefined ? { step: event.step } : {}),
+      ...(event.key ? { key: event.key.join("+") } : {}), ...(event.caption ? { caption: event.caption } : {}),
+      source: { start: event.start, end: event.end }, output: event.output, frames: event.frames,
+      clipped: event.clipped, holds: event.holds,
+      ...(event.region ? { region: [event.region.x, event.region.y, event.region.width, event.region.height],
+        regionClipped: event.region.clipped } : {}),
+    })),
+  };
 }
 
 // Storyboard checkpoints in source time, strictly ordered.
-export function planStoryboard(raw, timeline, source) {
+// Without its own displayWidth, the storyboard uses the annotations' width.
+export function planStoryboard(raw, timeline, source, defaultWidth = DEFAULT_DISPLAY_WIDTH) {
   if (raw === undefined) return null;
   const spec = object(raw, "storyboard");
   onlyKeys(spec, ["checkpoints", "columns", "displayWidth"], "storyboard");
   if (!Array.isArray(spec.checkpoints) || !spec.checkpoints.length || spec.checkpoints.length > 8) {
     fail("storyboard.checkpoints must list 1 to 8 meaningful moments");
   }
-  const displayWidth = spec.displayWidth ?? DEFAULT_DISPLAY_WIDTH;
-  if (!Number.isInteger(displayWidth) || displayWidth < 200 || displayWidth > 4000) {
-    fail("storyboard.displayWidth must be an integer from 200 to 4000");
-  }
+  const displayWidth = displayWidthOf(spec.displayWidth ?? defaultWidth, "storyboard.displayWidth");
   if (spec.columns !== undefined && (!Number.isInteger(spec.columns) || spec.columns < 1 || spec.columns > 4)) {
     fail("storyboard.columns must be an integer from 1 to 4");
   }
@@ -295,14 +341,32 @@ export function layoutStoryboard(plan, frameSize, measure) {
     const textHeight = Math.max(...row.map((panel) => panel.caption.height + chrome.gap + panel.timing.height), chrome.radius * 2);
     row.forEach((panel, column) => {
       const x = gap + column * (panelWidth + gap);
+      const textY = y + image.height + chrome.gap * 2;
       placed.push({ ...panel, x, y, image: { ...image, x: x + Math.floor((panelWidth - image.width) / 2), y },
-        text: { x: x + textX, y: y + image.height + chrome.gap * 2, width: panelWidth - textX },
-        pin: { cx: x + chrome.radius, cy: y + image.height + chrome.gap * 2 + chrome.radius } });
+        text: { x: x + textX, y: textY, width: panelWidth - textX,
+          height: panel.caption.height + chrome.gap + panel.timing.height },
+        timeY: textY + panel.caption.height + chrome.gap,
+        pin: { cx: x + chrome.radius, cy: textY + chrome.radius } });
     });
     y += image.height + chrome.gap * 2 + textHeight + gap;
   }
   return { width, height: y, columns, chrome, panels: placed, scale };
 }
+
+export function storyboardReport(plan, layout, out) {
+  return {
+    out, columns: layout.columns, displayWidth: plan.displayWidth, size: [layout.width, layout.height],
+    checkpoints: plan.checkpoints.map((checkpoint) => ({ index: checkpoint.index, label: checkpoint.label,
+      source: checkpoint.at, output: checkpoint.output, frame: checkpoint.frame, time: formatTime(checkpoint.output) })),
+    panels: layout.panels.map((panel) => ({ index: panel.checkpoint.index,
+      image: [panel.image.x, panel.image.y, panel.image.width, panel.image.height],
+      text: [panel.text.x, panel.text.y, panel.text.width, panel.text.height], labelHeight: panel.caption.height })),
+  };
+}
+
+// The publisher reads `![alt](path)`; a path with spaces or parentheses needs
+// the angle-bracket form.
+const link = (path) => (/[\s()<>]/.test(path) ? `<${path}>` : path);
 
 // Publisher-compatible Markdown for the prepared clip: optional heading and
 // prose, the standalone video, the timed steps, and the optional storyboard.
@@ -310,8 +374,11 @@ export function motionMarkdown({ title, summary, video, events, storyboard }) {
   const lines = [];
   if (title) lines.push(`#### ${escapeMarkdown(title)}`, "");
   if (summary) lines.push(escapeMarkdown(summary), "");
-  lines.push(`![](${video})`, "");
-  const captioned = (events ?? []).filter((event) => event.caption || event.key);
+  // A video is a standalone empty-alt reference; a GIF is an image and needs
+  // descriptive alt text.
+  const alt = /\.gif$/i.test(video) ? escapeAlt(`Animated recording: ${summary ?? title ?? "the interaction"}`) : "";
+  lines.push(`![${alt}](${link(video)})`, "");
+  const captioned = (events ?? []).filter(usesCaptionArea);
   if (captioned.length) {
     for (const event of captioned) {
       const label = [event.step !== undefined ? `Step ${event.step}` : null, event.key ? `Key ${event.key.join("+")}` : null]
@@ -323,9 +390,9 @@ export function motionMarkdown({ title, summary, video, events, storyboard }) {
   }
   if (storyboard) {
     const count = storyboard.checkpoints.length;
-    const alt = `Storyboard of ${count} moment${count === 1 ? "" : "s"} from the clip: ` +
+    const boardAlt = `Storyboard of ${count} moment${count === 1 ? "" : "s"} from the clip: ` +
       storyboard.checkpoints.map((checkpoint) => `${checkpoint.index} ${checkpoint.label}`).join("; ");
-    lines.push(`![${escapeAlt(alt)}](${storyboard.file})`, "");
+    lines.push(`![${escapeAlt(boardAlt)}](${link(storyboard.file)})`, "");
     for (const checkpoint of storyboard.checkpoints) {
       lines.push(`${checkpoint.index}. **${formatTime(checkpoint.output)}** (source ${checkpoint.at.toFixed(2)}s): ` +
         escapeMarkdown(checkpoint.label));
