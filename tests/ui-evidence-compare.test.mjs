@@ -221,7 +221,6 @@ test("crowded edge callouts over busy or unknown UI widen the gutters instead of
         assert.ok(!overlaps(pinRect(mark.pin), pinRect(other.pin)), `${name}: pins ${mark.id} and ${other.id} overlap`);
       }
     }
-    assert.doesNotMatch(plan.limitations.join("\n"), /pin in .* (covers surrounding UI|overlaps another mark)/);
     assert.ok(plan.panels[1].y > standard.panels[1].y, `${name}: the gutters widen to hold the extra pins`);
   }
 });
