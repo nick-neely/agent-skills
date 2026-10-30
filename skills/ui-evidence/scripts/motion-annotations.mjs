@@ -238,6 +238,11 @@ export function layoutCaptions(plan, size, measure) {
         layout.items.push({ type: "key", x, text: part, width, height: measured.height + chrome.labelPad * 2 });
         x += width + chrome.gap;
       }
+      // Keycaps never wrap, so the row itself must fit, with or without a caption.
+      if (x - chrome.gap > size.width - pad) {
+        fail(`annotations.events[${event.index}].key "${event.key.join("+")}" does not fit in the ${size.width}px output; ` +
+          "shorten it or widen the output");
+      }
       if (event.key) x += chrome.gap;
       if (event.caption) {
         const wrap = size.width - x - pad;

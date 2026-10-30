@@ -116,6 +116,12 @@ test("every event is visible: steps without a control use the caption area, step
   assert.throws(() => layoutCaptions(covered, size, measure), /under the overlay caption area; use "captions": "below"/);
   const below = plan([{ start: 1, end: 2, step: 1, caption: "Low control", at: [20, 150, 60, 20] }]);
   assert.equal(layoutCaptions(below, size, measure).band, 42);
+  // A key-only event must fit too; keycaps never wrap.
+  const narrowCrop = { x: 0, y: 0, width: 160, height: 90, sourceWidth: 320, sourceHeight: 180 };
+  const narrow = outputSize(narrowCrop, 160);
+  const keys = (key) => planEvents({ events: [{ start: 1, end: 2, key }] }, { source: { duration: 4 }, crop: narrowCrop, size: narrow, timeline });
+  assert.throws(() => layoutCaptions(keys("Control+Shift+Alt+PageDown"), narrow, measure), /does not fit in the 160px output/);
+  assert.equal(layoutCaptions(keys("Enter"), narrow, measure).layouts.get(0).items.length, 1);
 });
 
 test("storyboard checkpoints keep their order, labels, and resolved times", () => {
