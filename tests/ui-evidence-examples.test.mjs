@@ -148,6 +148,14 @@ test("the static comparison example runs from capture to a verified publication"
   assertFresh(evidence, ["notification-toolbar.after", "notification-toolbar.before", "compare.comparison", "compare.detail-callout-1"]);
   const result = json(join(evidence, "compare", "result.json"));
   assert.deepEqual(result.calloutIds, [1, 2]);
+  for (const callout of result.callouts) {
+    assert.deepEqual([callout.outline, callout.label, callout.measure, callout.spotlight], [false, null, null, false],
+      `callout ${callout.id} is pin-only`);
+    for (const panel of Object.values(callout.panels).filter(Boolean)) {
+      assert.ok(panel.pin, `callout ${callout.id} keeps its pin`);
+      assert.deepEqual([panel.outline, panel.label, panel.bracket], [null, null, null], `callout ${callout.id} adds no box, tag, or bracket`);
+    }
+  }
   assertPublished(evidence, github, join(evidence, "compare", "section.md"),
     [["comparison.png", "image"], ["detail-callout-1.png", "image"]]);
   const baseline = json(join(evidence, "baseline.json"));

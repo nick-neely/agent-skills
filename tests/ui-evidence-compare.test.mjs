@@ -174,9 +174,12 @@ test("crowded edge callouts keep every pin in bounds, apart, and off every chang
         if (other !== mark) assert.ok(!overlaps(pin, pinRect(other.pin)), `pins ${mark.id} and ${other.id} overlap`);
       }
       if (mark.pin.placement === "margin") {
+        // The connector stops just outside its region, not on it.
         const { x2, y2 } = mark.pin.connector;
-        assert.ok(x2 >= mark.outline.x && x2 <= mark.outline.x + mark.outline.width);
-        assert.ok(y2 >= mark.outline.y && y2 <= mark.outline.y + mark.outline.height);
+        const reach = plan.chrome.stroke + 1;
+        assert.ok(x2 >= mark.rect.x - reach && x2 <= mark.rect.x + mark.rect.width + reach);
+        assert.ok(y2 >= mark.rect.y - reach && y2 <= mark.rect.y + mark.rect.height + reach);
+        assert.ok(!overlaps({ x: x2, y: y2, width: 1, height: 1 }, mark.rect), `connector ${mark.id} ends on its target`);
         if (mark.pin.crossing) {
           assert.match(plan.limitations.join("\n"), new RegExp(`Callout ${mark.id} connector in ${panel.label} crosses`));
         } else {
@@ -190,6 +193,24 @@ test("crowded edge callouts keep every pin in bounds, apart, and off every chang
     assert.ok(marks.some((mark) => mark.pin.placement === "margin"), "crowding falls back to the reserved margin");
     assert.ok(marks.some((mark) => mark.pin.placement === "margin" && !mark.pin.crossing), "most connectors find a clear path");
   }
+});
+
+test("a callout outlines its region only on request and places the same marks either way", () => {
+  const rects = [{ x: 40, y: 30, width: 60, height: 40 }, { x: 180, y: 120, width: 30, height: 14 }];
+  const plan = (outline) => planComparison({
+    panels: blankPanels(300, 200),
+    callouts: rects.map((rect, index) => ({ id: index + 1, color: "#cf222e", text: `change ${index + 1}`,
+      outline: outline && index === 1, marks: { after: { rect } } })),
+    measure: fakeMeasure,
+  });
+  const quiet = plan(false);
+  const emphasised = plan(true);
+  assert.deepEqual(quiet.marks.map((mark) => mark.outline), [null, null], "a region alone requests no box");
+  assert.equal(emphasised.marks[0].outline, null);
+  const [, outlined] = emphasised.marks;
+  assert.ok(outlined.outline.x < outlined.rect.x && outlined.outline.width > outlined.rect.width, "the outline sits outside its region");
+  assert.deepEqual(emphasised.marks.map((mark) => mark.pin), quiet.marks.map((mark) => mark.pin), "pins do not move");
+  assert.deepEqual(emphasised.legend, quiet.legend);
 });
 
 test("crowded edge callouts over busy or unknown UI widen the gutters instead of covering it", () => {
@@ -691,10 +712,32 @@ function inkBox(image, [x0, y0, width, height]) {
   return [box.x0, box.y0, box.x1 - box.x0 + 1, box.y1 - box.y0 + 1];
 }
 
-test("rendered annotations leave neighbouring buttons and headings pixel-identical in overview and detail images", media, () => {
+// Output pixels of a source rectangle, mapped through one rendered view panel.
+function viewRect(panel, [x, y, width, height]) {
+  const [cx, cy] = panel.canvas;
+  const [wx, wy] = panel.source;
+  return { x: cx + (x - wx) * panel.scale, y: cy + (y - wy) * panel.scale, width: width * panel.scale, height: height * panel.scale };
+}
+
+// The output pixels `by` pixels outside a canvas rectangle, as [x, y] pairs.
+function ring(rect, by) {
+  const x0 = Math.round(rect.x) - by;
+  const y0 = Math.round(rect.y) - by;
+  const x1 = Math.round(rect.x + rect.width) - 1 + by;
+  const y1 = Math.round(rect.y + rect.height) - 1 + by;
+  const points = [];
+  for (let x = x0; x <= x1; x += 1) points.push([x, y0], [x, y1]);
+  for (let y = y0 + 1; y < y1; y += 1) points.push([x0, y], [x1, y]);
+  return points;
+}
+
+const hex = (color) => [1, 3, 5].map((index) => parseInt(color.slice(index, index + 2), 16));
+
+test("clean, pin-only, and emphasised comparisons keep targets, neighbours, and redaction intact in both layouts", media, () => {
   const dir = caseDir();
   // A settings toolbar: account text, Save, and an unannotated Cancel button,
-  // then an unannotated heading with a new badge just below it in the after state.
+  // then an unannotated heading with a new badge just below it in the after
+  // state, and a secret in an unrelated corner that must be redacted.
   const draw = (name, saveWidth, withBadge) => {
     const save = [380 - 16 - saveWidth, 12, saveWidth, 34];
     execFileSync(MAGICK, ["-size", "480x150", "xc:#f6f8fa", "-fill", "#ffffff", "-draw", "rectangle 0,0 479,57",
@@ -707,63 +750,170 @@ test("rendered annotations leave neighbouring buttons and headings pixel-identic
       "-fill", "#ffffff", "-draw", "rectangle 16,72 300,140",
       "-fill", "#1f2328", "-pointsize", "15", "-annotate", "+28+94", "Email",
       ...(withBadge ? ["-fill", "#ddf4ff", "-draw", "roundrectangle 28,104 64,119 7,7"] : []),
+      "-fill", "#00ff00", "-pointsize", "14", "-annotate", "+330+128", "SECRET",
       join(dir, name)]);
     return save;
   };
   const saveBefore = draw("before.png", 64, false);
   const saveAfter = draw("after.png", 120, true);
+  const badge = [28, 104, 37, 16];
+  assert.ok(greenPixels(join(dir, "before.png")) > 50, "the fixture carries a visible secret");
   const source = { before: pixels(join(dir, "before.png")), after: pixels(join(dir, "after.png")) };
   const neighbours = {
     cancel: [384, 12, 80, 34],
     account: inkBox(source.after, [90, 14, 150, 30]),
     heading: inkBox(source.after, [20, 76, 120, 22]),
   };
-  for (const layout of ["stacked", "side-by-side"]) {
-    const run = compare(caseDir(), {
-      before: { image: join(dir, "before.png") }, after: { image: join(dir, "after.png") }, layout,
-      callouts: [
-        { id: 1, text: "Save reads Save changes and widened.", label: "Save action", measure: "width", before: saveBefore, after: saveAfter },
-        { id: 2, text: "Weekly summary gains a New badge.", label: "New badge", after: [28, 104, 37, 16] },
-      ],
-      details: [{ callout: 1 }, { callout: 2 }],
-    });
-    assert.equal(run.status, 0, run.stderr);
-    assert.equal(run.result.comparison.layout, layout);
-    const views = [{ path: run.result.outputs.comparison, panels: run.result.comparison.panels },
-      ...run.result.details.map((detail) => ({ path: detail.path, panels: detail.panels }))];
-    for (const view of views) {
-      const output = pixels(view.path);
-      for (const [key, panel] of Object.entries(view.panels)) {
-        const [cx, cy, cw, ch] = panel.canvas;
-        const [wx, wy] = panel.source;
-        for (const [name, [nx, ny, nw, nh]] of Object.entries(neighbours)) {
-          // Each output pixel inside the neighbour's visible part matches its
-          // source pixel, except the panel border's antialiased outer ring.
-          let compared = 0;
-          for (let y = cy + 1; y < cy + ch - 1; y += 1) {
-            for (let x = cx + 1; x < cx + cw - 1; x += 1) {
-              const sx = wx + Math.floor((x - cx) / panel.scale);
-              const sy = wy + Math.floor((y - cy) / panel.scale);
-              if (sx < nx || sx >= nx + nw || sy < ny || sy >= ny + nh) continue;
-              assert.deepEqual(output.at(x, y), source[key].at(sx, sy),
-                `${layout} ${view.path.split(/[\\/]/).pop()} ${key}: ${name} pixel ${sx},${sy} was covered`);
-              compared += 1;
+  const targets = { before: { save: saveBefore }, after: { save: saveAfter, badge } };
+  const modes = {
+    clean: [],
+    pins: [
+      { id: 1, text: "Save reads Save changes and moved left.", before: saveBefore, after: saveAfter },
+      { id: 2, text: "Weekly summary gains a New badge.", after: badge },
+    ],
+    emphasis: [
+      { id: 1, text: "Save reads Save changes and widened.", label: "Save action", measure: "width", outline: true,
+        before: saveBefore, after: saveAfter },
+      { id: 2, text: "The badge is easy to miss at PR width.", outline: true, after: badge },
+    ],
+  };
+  for (const [mode, callouts] of Object.entries(modes)) {
+    for (const layout of ["stacked", "side-by-side"]) {
+      const where = `${mode} ${layout}`;
+      const run = compare(caseDir(), {
+        before: { image: join(dir, "before.png") }, after: { image: join(dir, "after.png") }, layout, callouts,
+        redact: [{ at: [326, 112, 70, 22], style: "block" }],
+        details: [{ id: "save", before: saveBefore, after: saveAfter }, { id: "badge", region: badge }],
+      });
+      assert.equal(run.status, 0, run.stderr);
+      const result = run.result;
+      assert.equal(result.comparison.layout, layout);
+      const outputs = [result.outputs.comparison, ...result.outputs.details];
+      for (const output of outputs) assert.equal(greenPixels(output), 0, `${where}: redaction leaked into ${output}`);
+
+      const views = [{ path: result.outputs.comparison, panels: result.comparison.panels },
+        ...result.details.map((detail) => ({ path: detail.path, panels: detail.panels }))];
+      for (const view of views) {
+        const name = `${where} ${view.path.split(/[\\/]/).pop()}`;
+        const output = pixels(view.path);
+        for (const [key, panel] of Object.entries(view.panels)) {
+          const [cx, cy, cw, ch] = panel.canvas;
+          const [wx, wy] = panel.source;
+          const sourceAt = (x, y) => source[key].at(wx + Math.floor((x - cx) / panel.scale), wy + Math.floor((y - cy) / panel.scale));
+          // Each output pixel inside a neighbour's or target's visible part
+          // matches its source pixel, except the panel border's antialiased
+          // outer ring. A clean comparison leaves the whole panel untouched.
+          const kept = mode === "clean" ? { panel: [wx, wy, cw / panel.scale, ch / panel.scale] }
+            : { ...neighbours, ...targets[key] };
+          // An explicit outline's rounded, antialiased corners may tint the
+          // outermost corner pixels of its target's box; compare inside them.
+          const outlined = new Set(callouts.filter((item) => item.outline && item[key]).map((item) => item[key]));
+          for (const [part, rect] of Object.entries(kept)) {
+            const inset = outlined.has(rect) ? 1 : 0;
+            const [nx, ny, nw, nh] = [rect[0] + inset, rect[1] + inset, rect[2] - inset * 2, rect[3] - inset * 2];
+            let compared = 0;
+            for (let y = cy + 1; y < cy + ch - 1; y += 1) {
+              for (let x = cx + 1; x < cx + cw - 1; x += 1) {
+                const sx = wx + Math.floor((x - cx) / panel.scale);
+                const sy = wy + Math.floor((y - cy) / panel.scale);
+                if (sx < nx || sx >= nx + nw || sy < ny || sy >= ny + nh) continue;
+                if (sx >= 326 && sx < 396 && sy >= 112 && sy < 134) continue; // redacted
+                assert.deepEqual(output.at(x, y), sourceAt(x, y), `${name} ${key}: ${part} pixel ${sx},${sy} was covered`);
+                compared += 1;
+              }
+            }
+            if (view.path === result.outputs.comparison && part in neighbours) assert.ok(compared > 100, `${part} is visible in the overview`);
+          }
+          // An outline is drawn only on request: just outside an emphasised
+          // target in its callout colour, never around a pin-only target.
+          for (const [part, rect] of Object.entries(targets[key])) {
+            const canvasRect = viewRect(panel, rect);
+            if (canvasRect.x < cx || canvasRect.y < cy || canvasRect.x + canvasRect.width > cx + cw ||
+              canvasRect.y + canvasRect.height > cy + ch) continue;
+            const points = [2, 3, 4].flatMap((by) => ring(canvasRect, by));
+            const callout = callouts.find((item) => item[key] === rect);
+            const color = callout && hex(result.callouts.find((item) => item.id === callout.id).color);
+            const near = (a, b) => a.every((value, index) => Math.abs(value - b[index]) <= 40);
+            if (callout?.outline) {
+              const drawn = points.filter(([x, y]) => near(output.at(x, y), color)).length;
+              assert.ok(drawn > points.length * 0.25, `${name} ${key}: ${part} outline drawn on ${drawn}/${points.length} ring pixels`);
+            } else {
+              const changed = points.filter(([x, y]) => !near(output.at(x, y), sourceAt(x, y))).length;
+              assert.ok(changed < points.length * 0.06, `${name} ${key}: ${part} looks boxed, ${changed}/${points.length} ring pixels changed`);
             }
           }
-          if (view.path === run.result.outputs.comparison) assert.ok(compared > 100, `${name} is visible in the overview`);
         }
       }
-    }
-    const result = run.result;
-    assert.deepEqual(result.calloutIds, [1, 2]);
-    assert.ok(result.callouts.every((callout) => Object.values(callout.panels).every((panel) => !panel || panel.pin)), "every region keeps its pin");
-    for (const callout of result.callouts) {
-      for (const [key, panel] of Object.entries(callout.panels)) {
-        if (panel && !panel.label) assert.match(result.limitations.join("\n"), new RegExp(`Callout ${callout.id} label did not fit in ${key === "before" ? "Before" : "After"}`));
+
+      assert.deepEqual(result.calloutIds, callouts.map((callout) => callout.id));
+      const markdown = readFileSync(result.outputs.markdown, "utf8");
+      if (mode === "clean") {
+        assert.equal(result.comparison.legend, null, `${where}: no empty legend`);
+        assert.doesNotMatch(markdown, /^- /m, `${where}: no empty callout list`);
+        assert.deepEqual(result.limitations, []);
+        continue;
+      }
+      assert.ok(result.comparison.legend, `${where}: callouts keep their legend`);
+      assert.ok(result.callouts.every((callout) => Object.values(callout.panels).every((panel) => !panel || panel.pin)), "every region keeps its pin");
+      for (const callout of result.callouts) {
+        const requested = callouts.find((item) => item.id === callout.id);
+        assert.equal(callout.outline, requested.outline === true);
+        for (const [key, panel] of Object.entries(callout.panels)) {
+          if (!panel) continue;
+          assert.equal(Boolean(panel.outline), requested.outline === true, `${where}: callout ${callout.id} outline in ${key}`);
+          if (requested.label && !panel.label) {
+            assert.match(result.limitations.join("\n"), new RegExp(`Callout ${callout.id} label did not fit in ${key === "before" ? "Before" : "After"}`));
+          }
+          if (!requested.label) assert.equal(panel.label, null);
+          if (!requested.measure) assert.equal(panel.bracket, null);
+        }
+      }
+      if (mode === "emphasis") {
+        assert.match(markdown, /- \*\*1\*\*: Save reads Save changes and widened\. Measured width: Before 64 px, After 120 px\./);
+      } else {
+        assert.match(markdown, /- \*\*2\*\*: Weekly summary gains a New badge\./);
       }
     }
-    assert.match(readFileSync(result.outputs.markdown, "utf8"), /- \*\*1\*\*: Save reads Save changes and widened\. Measured width: Before 64 px, After 120 px\./);
   }
+});
+
+test("explicit measurements and outlines render in matched detail crops", media, () => {
+  const dir = caseDir();
+  // A 60x40 card widens to 90 px on blank space, so a bracket fits beside it.
+  image(join(dir, "before.png"), 300, 200, [{ color: "#1f6feb", rect: [100, 80, 60, 40] }]);
+  image(join(dir, "after.png"), 300, 200, [{ color: "#1f6feb", rect: [100, 80, 90, 40] }]);
+  const run = compare(dir, {
+    before: { image: "before.png" }, after: { image: "after.png" },
+    callouts: [{ id: 1, text: "The card widens.", before: [100, 80, 60, 40], after: [100, 80, 90, 40], measure: "width", outline: true }],
+    details: [{ callout: 1, context: 40, zoom: 2 }],
+  });
+  assert.equal(run.status, 0, run.stderr);
+  const [detail] = run.result.details;
+  assert.equal(detail.zoom, 2);
+  assert.deepEqual(run.result.limitations, [], "blank space keeps every bracket");
+  for (const [key, width] of [["before", 60], ["after", 90]]) {
+    const panel = run.result.callouts[0].panels[key];
+    assert.ok(panel.outline && panel.bracket, `the overview ${key} panel keeps its outline and bracket`);
+    // The detail view draws its own marks around the enlarged target.
+    const view = detail.panels[key];
+    const target = viewRect(view, [100, 80, width, 40]);
+    const output = pixels(detail.path);
+    const red = hex(run.result.callouts[0].color);
+    const outlined = ring(target, 3).filter(([x, y]) => output.at(x, y).every((value, index) => Math.abs(value - red[index]) <= 40));
+    assert.ok(outlined.length > ring(target, 3).length * 0.5, `the detail ${key} panel outlines the target`);
+  }
+  assert.match(run.result.callouts[0].legend, /Measured width: Before 60 px, After 90 px\./);
+});
+
+test("callout outlines must be true or false", media, () => {
+  const dir = caseDir();
+  cardPair(dir);
+  const run = compare(dir, {
+    before: { image: "before.png" }, after: { image: "after.png" },
+    callouts: [{ id: 1, text: "Card moved.", before: [40, 30, 60, 40], after: [70, 30, 60, 40], outline: "yes" }],
+  });
+  assert.notEqual(run.status, 0);
+  assert.match(run.stderr, /callout 1 outline must be true or false/);
 });
 
 test("text with ImageMagick escapes and file prefixes renders literally", media, () => {
@@ -784,10 +934,20 @@ test("the documented example prepares every asset and Markdown in one invocation
   assert.ok(example, "comparisons.md carries a JSON example");
   const spec = JSON.parse(example[1]);
   const dir = caseDir();
-  image(join(dir, spec.before.image), 1280, 800, [{ color: "#1f6feb", rect: [1040, 24, 120, 36] }]);
-  image(join(dir, spec.after.image), 1280, 800, [{ color: "#1f6feb", rect: [1000, 24, 160, 36] }]);
+  for (const key of ["before", "after"]) {
+    const shapes = spec.callouts.filter((callout) => !callout.measure).map((callout) => callout[key] ?? callout.region)
+      .filter(Boolean).map((rect) => ({ color: "#1f6feb", rect }));
+    image(join(dir, spec[key].image), 1280, 800, shapes);
+  }
   const run = compare(dir, spec);
   assert.equal(run.status, 0, run.stderr);
+  // The example walks the annotation hierarchy: a pin-only note, an outlined
+  // subtle target, and a measured gap, each only as emphatic as requested.
+  const [note, subtle, gap] = run.result.callouts;
+  for (const panel of Object.values(note.panels)) assert.deepEqual([panel.outline, panel.label, panel.bracket], [null, null, null]);
+  assert.ok(Object.values(subtle.panels).every((panel) => panel.outline), "the subtle target is outlined in both panels");
+  assert.equal(gap.measure, "width");
+  assert.match(gap.legend, /Measured width: Before \(main\) 16 px, After \(this PR\) 8 px\./);
   const { outputs } = run.result;
   for (const path of [outputs.comparison, ...outputs.details, outputs.flip, outputs.onion, outputs.markdown, outputs.result]) {
     if (path) assert.ok(existsSync(path), `${path} exists`);

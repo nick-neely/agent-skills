@@ -85,10 +85,12 @@ For a complete run from capture to publication dry run, follow
 [example-comparison.md](references/example-comparison.md) or
 [example-recording.md](references/example-recording.md).
 
-Crop to the claim and redact unrelated identifying data before upload. Keep
-annotations purposeful. Add a final-state screenshot only when independently
-useful. Start with a soft budget of six assets and two clips; preserve requested
-coverage and collapse secondary evidence when more is needed.
+Crop to the claim and redact unrelated identifying data before upload. Start
+clean and annotate only what helps a reviewer find or understand a change; an
+image with no callouts is a complete result, and comparisons.md ranks the marks
+from pin to outline to measurement. Add a final-state screenshot only when
+independently useful. Start with a soft budget of six assets and two clips;
+preserve requested coverage and collapse secondary evidence when more is needed.
 
 ## Review and publish
 

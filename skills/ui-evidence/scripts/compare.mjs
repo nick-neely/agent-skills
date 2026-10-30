@@ -254,6 +254,7 @@ function drawPlan(plan, images, out) {
   const corner = Math.max(3, chrome.radius / 3);
   for (const mark of plan.marks) {
     const o = mark.outline;
+    if (!o) continue;
     args.push("-fill", "none", "-stroke", mark.color, "-strokewidth", String(chrome.stroke),
       "-draw", `roundrectangle ${o.x},${o.y} ${o.x + o.width - 1},${o.y + o.height - 1} ${corner},${corner}`);
   }
@@ -318,6 +319,7 @@ function validateCallouts(spec, panels) {
     seen.add(id);
     if (typeof raw.text !== "string" || !raw.text.trim()) die(`callout ${id} needs "text" explaining the change`);
     if (raw.label !== undefined && (typeof raw.label !== "string" || !raw.label.trim())) die(`callout ${id} label must be short text`);
+    if (raw.outline !== undefined && typeof raw.outline !== "boolean") die(`callout ${id} outline must be true or false`);
     if (raw.measure !== undefined && !["width", "height"].includes(raw.measure)) {
       die(`callout ${id} measure must be "width" or "height"`);
     }
@@ -325,7 +327,7 @@ function validateCallouts(spec, panels) {
     if (!regions.before && !regions.after) die(`callout ${id} needs a region in at least one panel`);
     return {
       id, text: raw.text.trim(), label: raw.label?.trim(), measure: raw.measure,
-      spotlight: raw.spotlight === true, regions,
+      outline: raw.outline === true, spotlight: raw.spotlight === true, regions,
     };
   }).sort((a, b) => a.id - b.id);
   callouts.forEach((callout, index) => {
@@ -653,13 +655,14 @@ function main() {
       }])),
       callouts: callouts.map((callout) => ({
         id: callout.id, text: callout.text, legend: callout.legend, label: callout.label ?? null, color: callout.color,
-        measure: callout.measure ?? null, spotlight: callout.spotlight,
+        measure: callout.measure ?? null, outline: callout.outline, spotlight: callout.spotlight,
         panels: Object.fromEntries(Object.keys(panels).map((key) => {
           const mark = overview.plan.marks.find((item) => item.id === callout.id && item.panel === key);
           const source = callout.regions[key];
           return [key, source ? {
             source: asArray(source),
             canvas: mark ? asArray(mark.rect) : null,
+            outline: mark?.outline ? asArray(mark.outline) : null,
             pin: mark ? { center: [mark.pin.cx, mark.pin.cy], radius: mark.pin.radius, placement: mark.pin.placement } : null,
             label: mark?.label ? asArray(mark.label) : null,
             bracket: mark?.bracket ? { side: mark.bracket.side, label: asArray(mark.bracket.label) } : null,

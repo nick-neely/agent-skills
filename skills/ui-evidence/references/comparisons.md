@@ -15,6 +15,26 @@ You still choose the claims, prove the two captures show comparable states
 (see [before-after.md](before-after.md)), and review every output. The script
 owns layout, scaling, pin placement, legends, and file naming.
 
+## Choose the annotation
+
+Start clean and add the lightest mark that helps the reviewer find or
+understand a change, so the panels keep the app's real appearance:
+
+| Need | Treatment |
+| --- | --- |
+| The before/after already explains the change | Clean labelled comparison: no `callouts` |
+| A note adds useful context | Callout with `id`, a region, and `text`: a small numbered pin, with the note in the legend below |
+| A subtle or ambiguous target needs emphasis | Add `outline: true`, or `spotlight: true` to dim the rest of the panel |
+| Dimensions or spacing are the claim | Add `measure` |
+
+A comparison with no callouts is a complete result. Give a callout only a note
+the pixels do not already say: where a small change is, which element moved,
+or a reason or consequence the task or verified behaviour supports. Write
+`label` only when the pin needs a name the reviewer could not read off the UI;
+a visibly new badge needs no "New badge" tag. Reserve outlines for targets a
+reviewer would otherwise miss, such as a one-pixel border or a slight colour
+shift, and pair them with a detail view when the target is tiny.
+
 ## Capture anchors with the screenshots
 
 Selectors give stable regions that survive small layout changes. Resolve them in
@@ -56,7 +76,7 @@ in source screenshot pixels, or `{ "anchor": "<name>" }`.
 
 ```json
 {
-  "title": "Toolbar save action",
+  "title": "Notification settings toolbar",
   "before": { "image": "before.png", "label": "Before (main)" },
   "after": { "image": "after.png", "label": "After (this PR)" },
   "crop": [0, 0, 1280, 400],
@@ -64,20 +84,25 @@ in source screenshot pixels, or `{ "anchor": "<name>" }`.
   "callouts": [
     {
       "id": 1,
-      "text": "Save moved left and widened to fit its new label.",
-      "label": "Save",
-      "before": [1040, 24, 120, 36],
-      "after": [1000, 24, 160, 36],
-      "measure": "width"
+      "text": "Save now sits before Cancel.",
+      "before": [1140, 24, 80, 36],
+      "after": [1040, 24, 80, 36]
     },
     {
       "id": 2,
-      "text": "The unsaved-changes hint now appears beside the toolbar.",
-      "after": [760, 30, 220, 24],
-      "spotlight": true
+      "text": "The unsaved-changes dot turns amber instead of grey.",
+      "region": [1010, 38, 8, 8],
+      "outline": true
+    },
+    {
+      "id": 3,
+      "text": "The gap between Save and Cancel narrows to 8 px.",
+      "before": [1124, 24, 16, 36],
+      "after": [1120, 24, 8, 36],
+      "measure": "width"
     }
   ],
-  "details": [{ "callout": 1 }],
+  "details": [{ "callout": 2, "zoom": 4 }, { "callout": 3 }],
   "flip": { "holdMs": 1500 },
   "onion": { "opacity": 0.5 }
 }
@@ -90,7 +115,7 @@ in source screenshot pixels, or `{ "anchor": "<name>" }`.
 | `layout` | `auto` (default), `side-by-side`, or `stacked` |
 | `crop` | One source rectangle applied to both panels |
 | `redact` | `at` or `anchor`, optional `panel` (`both`, `before`, `after`) and `style` (`pixelate`, `block`) |
-| `callouts` | Paired numbered pins; see below |
+| `callouts` | Optional paired numbered pins; see below |
 | `details` | Enlarged matched crops; see below |
 | `flip` | `true` or `{ "holdMs": 500-10000 }`; opt-in screenshot flip GIF |
 | `onion` | `true` or `{ "opacity": 0-1 }`; opt-in overlay of after on before |
@@ -103,9 +128,15 @@ in source screenshot pixels, or `{ "anchor": "<name>" }`.
 Each callout has a stable integer `id`, a `text` explanation, and a region in
 one or both panels: `before`, `after`, or `region` for both. Reuse one ID for
 the same change in both versions; a region in only one panel marks an addition
-or removal. The pin number and legend carry the meaning, so colour is never the
-only cue.
+or removal. A region says where the change is. By default it gets a pin beside
+it and its text in the legend, and the target's pixels stay exactly as
+captured. The pin number and legend carry the meaning, so colour is never the
+only cue. Each option below is explicit emphasis; pick it for a purpose from
+[Choose the annotation](#choose-the-annotation).
 
+- `outline: true` draws a box in the callout colour just outside the region.
+  Until this option existed every callout was outlined; existing specs still
+  render, now without the box, so add `outline: true` where it helped.
 - `label`: an optional short tag beside the pin. When it cannot fit without
   covering another mark, surrounding UI, or leaving the panel, it is dropped and
   the legend keeps the explanation; the result lists that limitation.
@@ -146,11 +177,11 @@ the region or 24 CSS pixels), `zoom` (`auto` or 1 to 8), and `layout`.
 `onion.png`, `section.md`, and `result.json`; stdout repeats the result. The
 result lists every output, the canvas and per-panel geometry (`canvas` and
 `source` rectangles plus `scale`), callout IDs with source rectangles, pin
-placement, labels, and brackets, detail windows, and `limitations` to mention in
-the PR when relevant.
+placement, outlines, labels, and brackets, detail windows, and `limitations` to
+mention in the PR when relevant.
 
-The combined image stands on its own: labelled panels at one scale, pins, and a
-legend. Chrome scales with the canvas so it reads at the rendered PR width. Wide
+The combined image stands on its own: labelled panels at one scale, plus pins
+and a legend when there are callouts. Without callouts it has neither. Chrome scales with the canvas so it reads at the rendered PR width. Wide
 captures stack and tall captures sit side by side; crop or add a detail when the
 change is still too small to read at that width.
 
