@@ -137,6 +137,12 @@ anchors captured with the screenshots (see comparisons.md), for each callout.
 The rectangles below are the sample app's at 1280x800. Image paths resolve
 relative to the spec, so the captures are referenced by name.
 
+Each callout is pin-only, following comparisons.md's "Choose the annotation".
+Callout 1 pairs the moved Save button across both panels, and callout 2 points
+to a badge small enough to overlook at PR width. Both are plain once a pin
+points at them, so neither needs an outline or a label, and the button's width
+is not the claim, so it carries no measurement.
+
 ```bash
 cat > "$EVIDENCE_DIR/compare.json" <<'JSON'
 {
@@ -149,8 +155,7 @@ cat > "$EVIDENCE_DIR/compare.json" <<'JSON'
       "id": 1,
       "text": "Save now reads Save changes and sits before Cancel.",
       "before": [1191, 10, 65, 35],
-      "after": [1028, 10, 134, 35],
-      "measure": "width"
+      "after": [1028, 10, 134, 35]
     },
     {
       "id": 2,
@@ -177,17 +182,18 @@ node "<skill-root>/scripts/compare.mjs" --spec "$EVIDENCE_DIR/compare.json" \
 
 Open `compare/comparison.png` at original size and at about 880 pixels wide,
 the PR body width, then `compare/detail-callout-1.png`. Check that each panel
-shows its intended state, every pin sits beside its region, and neighbouring
-controls stay readable. Print the limitations to mention in the PR:
+shows its intended state, every pin sits beside its region, the badge and
+button look exactly as the app draws them, and neighbouring controls stay
+readable. Print the limitations to mention in the PR:
 
 ```bash
 node -p 'require(process.argv[1]).limitations.join("\n") || "No limitations."' \
   "$EVIDENCE_DIR/compare/result.json"
 ```
 
-In the sample, the toolbar leaves no blank space for the width brackets, so they
-are dropped and the legend carries both measurements. A margin pin whose
-connector crosses UI is reported too.
+With real captures of the sample, the After panel's Save pin sits in the
+margin, and its connector crosses the toolbar on the way; the result reports
+that limitation.
 
 ## 8. Register the derived files and check freshness
 

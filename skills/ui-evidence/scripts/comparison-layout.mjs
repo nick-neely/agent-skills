@@ -268,7 +268,8 @@ class PanelPlacer {
     // marked: a badge inside a highlighted row still gets a pin beside it.
     this.regions = [];
     this.owner = null;
-    // Outlines sit just outside their region; marks keep clear of the stroke.
+    // An outline, when requested, sits just outside its region. Marks keep
+    // clear of that stroke either way, so placement does not depend on it.
     this.outlineBy = Math.ceil(chrome.stroke / 2) + 1;
     this.clearance = this.outlineBy + chrome.stroke;
   }
@@ -559,7 +560,7 @@ function planWithLanes({ panels, callouts = [], layout = "auto", displayWidth = 
       color: item.callout.color,
       panel: panel.key,
       rect: item.rect,
-      outline: expand(item.rect, placer.outlineBy),
+      outline: item.callout.outline ? expand(item.rect, placer.outlineBy) : null,
       bracket: null,
       pin: null,
       label: null,
