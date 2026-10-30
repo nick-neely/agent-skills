@@ -10,7 +10,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { after, test } from "node:test";
 import {
-  AnnotationError, layoutCaptions, mapInstant, mapInterval, motionMarkdown, outputSize, outputTimeline, planEvents,
+  AnnotationError, formatTime, layoutCaptions, mapInstant, mapInterval, motionMarkdown, outputSize, outputTimeline, planEvents,
   planStoryboard, toOutput, usesCaptionArea,
 } from "../skills/ui-evidence/scripts/motion-annotations.mjs";
 
@@ -49,6 +49,11 @@ test("source intervals map to output frames through trim and presentation holds"
   assert.deepEqual(mapInstant(2.05, timeline), { frame: 15, output: 1.5 });
   assert.deepEqual(mapInstant(3, timeline), { frame: 24, output: 2.4 });
   assert.equal(mapInstant(3.2, timeline), null);
+});
+
+test("clip times round to tenths before splitting minutes", () => {
+  assert.deepEqual([0, 0.04, 9.96, 59.94, 59.97, 61.25, 600].map(formatTime),
+    ["0:00.0", "0:00.0", "0:10.0", "0:59.9", "1:00.0", "1:01.3", "10:00.0"]);
 });
 
 test("geometry maps through crop and scale and is validated against the source and crop", () => {

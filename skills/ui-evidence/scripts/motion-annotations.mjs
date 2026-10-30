@@ -53,10 +53,11 @@ function text(value, name, max) {
   return trimmed;
 }
 
+// m:ss.s, rounded to tenths before splitting so 59.97 reads 1:00.0.
 export const formatTime = (value) => {
-  const total = Math.max(0, value);
-  const minutes = Math.floor(total / 60);
-  return `${minutes}:${(total - minutes * 60).toFixed(1).padStart(4, "0")}`;
+  const tenths = Math.round(Math.max(0, value) * 10);
+  const minutes = Math.floor(tenths / 600);
+  return `${minutes}:${((tenths - minutes * 600) / 10).toFixed(1).padStart(4, "0")}`;
 };
 
 // FFmpeg's `scale=w=trunc(min(iw,W)/2)*2:h=-2`, computed here so overlays are
