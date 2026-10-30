@@ -396,7 +396,9 @@ export function assessCapture(manifest, recipe, captureId, version, cache = new 
   };
 }
 
-function assessAsset(manifest, id, captureStatus, seen = new Set()) {
+// ancestors holds only the current derivation chain, so two assets that share
+// a source (a diamond) are not mistaken for a cycle.
+function assessAsset(manifest, id, captureStatus, ancestors = new Set()) {
   const asset = manifest.assets[id];
   if (!asset) return { asset: id, status: "stale", reasons: [{ level: "stale", text: "asset record is missing" }] };
   if (asset.capture) {
@@ -407,8 +409,8 @@ function assessAsset(manifest, id, captureStatus, seen = new Set()) {
   if (!asset.derivedFrom?.length) {
     reasons.push({ level: "review", text: "recorded without capture provenance; inspect it before reuse" });
   }
-  if (seen.has(id)) return { asset: id, status: "review", reasons: [{ level: "review", text: "derivation cycle" }] };
-  seen.add(id);
+  if (ancestors.has(id)) return { asset: id, status: "review", reasons: [{ level: "review", text: "derivation cycle" }] };
+  const chain = new Set(ancestors).add(id);
   for (const source of asset.derivedFrom ?? []) {
     const current = manifest.assets[source.id];
     if (!current) {
@@ -419,9 +421,10 @@ function assessAsset(manifest, id, captureStatus, seen = new Set()) {
       reasons.push({ level: "stale", text: `source asset ${source.id} was refreshed after this was derived; regenerate it` });
       continue;
     }
-    const upstream = assessAsset(manifest, source.id, captureStatus, seen);
+    const upstream = assessAsset(manifest, source.id, captureStatus, chain);
     if (upstream.status !== "fresh") {
-      reasons.push({ level: upstream.status, text: `source asset ${source.id} is ${upstream.status}` });
+      const cause = upstream.reasons.find((reason) => reason.level === upstream.status)?.text;
+      reasons.push({ level: upstream.status, text: `source asset ${source.id} is ${upstream.status}${cause ? `: ${cause}` : ""}` });
     }
   }
   if (asset.inputs) {

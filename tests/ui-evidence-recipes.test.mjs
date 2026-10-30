@@ -600,6 +600,19 @@ test("derived outputs from compare and motion reports link to their recorded sou
   const clash = p.manifest("add", "--asset", prepared, "--id", "pricing-toggle.after");
   assert.notEqual(clash.status, 0);
   assert.match(clash.stderr, /belongs to a capture/);
+
+  // A diamond: two prepared assets share one derived intermediate.
+  for (const [id, from] of [["shared", "settings-profile.after"], ["left", "shared"], ["right", "shared"], ["final", "left,right"]]) {
+    const file = join(p.evidence, `${id}.png`);
+    writeFileSync(file, id);
+    const added = p.manifest("add", "--asset", file, "--id", id, "--from", from);
+    assert.equal(added.status, 0, added.stderr);
+  }
+  assert.equal(p.status().final.status, "fresh", reasons(p.status().final));
+  const cyclic = p.stored();
+  cyclic.assets.shared.derivedFrom = [{ id: "final", sha256: cyclic.assets.final.sha256 }];
+  writeFileSync(p.manifestPath, JSON.stringify(cyclic));
+  assert.match(reasons(p.status().final), /derivation cycle/);
 });
 
 test("capture references are compact Markdown without local paths, URLs, or sessions", () => {
