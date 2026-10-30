@@ -113,7 +113,9 @@ test("every event is visible: steps without a control use the caption area, step
   assert.deepEqual(layout.layouts.get(1).marks.outline, { x: 36, y: 36, width: 28, height: 28 });
   assert.ok(layout.band > 0);
   const covered = plan([{ start: 1, end: 2, step: 1, caption: "Low control", at: [20, 150, 60, 20] }], { captions: "overlay" });
-  assert.throws(() => layoutCaptions(covered, size, measure), /under the overlay caption area; use "captions": "below"/);
+  assert.throws(() => layoutCaptions(covered, size, measure), /under the overlay caption area while a caption shows; use "captions": "below"/);
+  const sequential = plan([{ start: 1, end: 1.5, step: 1, at: [20, 150, 60, 20] }, { start: 2, end: 2.5, caption: "Later" }], { captions: "overlay" });
+  assert.doesNotThrow(() => layoutCaptions(sequential, size, measure), "an outline and a later caption do not overlap in time");
   const below = plan([{ start: 1, end: 2, step: 1, caption: "Low control", at: [20, 150, 60, 20] }]);
   assert.equal(layoutCaptions(below, size, measure).band, 42);
   // A key-only event must fit too; keycaps never wrap.
@@ -122,6 +124,38 @@ test("every event is visible: steps without a control use the caption area, step
   const keys = (key) => planEvents({ events: [{ start: 1, end: 2, key }] }, { source: { duration: 4 }, crop: narrowCrop, size: narrow, timeline });
   assert.throws(() => layoutCaptions(keys("Control+Shift+Alt+PageDown"), narrow, measure), /does not fit in the 160px output/);
   assert.equal(layoutCaptions(keys("Enter"), narrow, measure).layouts.get(0).items.length, 1);
+});
+
+test("reading pauses freeze one frame, shift later frames, and are labelled presentation holds", () => {
+  const paused = outputTimeline({ ...timeline, pauses: [{ tick: 15, frames: 10 }] });
+  assert.deepEqual(paused.segments.map((segment) => [segment.kind, segment.frames, segment.source]), [
+    ["presentation-hold", [0, 4], 1], ["real-time", [5, 10], [1, 1.6]], ["presentation-hold", [11, 20], 1.5],
+    ["real-time", [21, 34], [1.6, 3]], ["presentation-hold", [35, 39], 3],
+  ]);
+  assert.equal(paused.segments[2].inserted, true);
+  assert.deepEqual([paused.total, paused.pauseFrames, paused.lastRealFrame], [40, 10, 34]);
+  assert.deepEqual(mapInterval(1.5, 2, paused).frames, [10, 24], "an event from the paused tick covers the pause");
+  assert.deepEqual(mapInterval(1, 1.5, paused).frames, [0, 9], "an event ending at the paused tick does not");
+  assert.deepEqual(mapInstant(2, paused), { frame: 25, output: 2.5 });
+
+  const held = plan([{ start: 1.5, end: 2, step: 1, caption: "Read me", hold: 1 }, { start: 2.5, end: 9, caption: "Later" }]);
+  assert.deepEqual(held.events.map((event) => event.frames), [[10, 24], [30, 39]]);
+  assert.deepEqual(held.events[0].hold, { seconds: 1, tick: 15, frames: 10 });
+  assert.equal(held.timeline.total, 40);
+  for (const [events, pattern] of [
+    [[{ start: 1.5, end: 2, caption: "x", hold: 0.1 }], /0\.2 to 10 seconds/],
+    [[{ start: 0.5, end: 2, caption: "x", hold: 1 }], /start inside the trim/],
+    [[{ start: 1.5, end: 1.8, caption: "x", hold: 1 }, { start: 1.5, end: 2, at: [10, 10, 10, 10], hold: 1 }], /both hold the same frame/],
+  ]) assert.throws(() => plan(events), pattern);
+
+  const measure = (value, pointsize, wrap) => ({ width: Math.min(value.length * 9, wrap ?? Infinity), height: 19 });
+  const layout = layoutCaptions(held, size, measure);
+  assert.deepEqual(layout.badge.ranges, [[11, 20]]);
+  assert.equal(layout.badge.x + layout.badge.width, size.width - layout.pad);
+  assert.ok(layout.layouts.get(0).text.width < size.width - layout.badge.width, "captions leave room for the badge");
+  const markdown = motionMarkdown({ video: "clip.mp4", events: held.events });
+  assert.match(markdown, /\(Step 1, paused 1s for reading\): Read me/);
+  assert.match(markdown, /Frames marked "Paused for reading" are added presentation holds/);
 });
 
 test("storyboard checkpoints keep their order, labels, and resolved times", () => {
@@ -134,6 +168,7 @@ test("storyboard checkpoints keep their order, labels, and resolved times", () =
     [{ checkpoints: [{ at: 2 }] }, /label must be non-empty/],
     [{ checkpoints: Array.from({ length: 9 }, (_, index) => ({ at: 1 + index * 0.1, label: "x" })) }, /1 to 8/],
     [{ checkpoints: [{ at: 2, label: "x" }], columns: 5 }, /columns/],
+    [{ checkpoints: [{ at: 2, label: "x" }], columns: 4, displayWidth: 200 }, /leaves no room for labels/],
   ]) assert.throws(() => planStoryboard(raw, timeline, { duration: 4 }), pattern);
   const inherited = planStoryboard({ checkpoints: [{ at: 2, label: "x" }] }, timeline, { duration: 4 }, 600);
   assert.equal(inherited.displayWidth, 600, "the storyboard follows annotations.displayWidth");
@@ -247,6 +282,34 @@ test("captions, step pins, and key indicators appear only during their intervals
   for (const index of [0, 7]) assert.ok(bandPin(index) > 40, `step 1 pin expected in the band in frame ${index}`);
   for (const index of [8, 13]) assert.equal(bandPin(index), 0, `no step 1 pin expected in frame ${index}`);
   assert.ok(reddish(frame(out, 0).at(16, 40)) && !reddish(frame(out, 9).at(16, 40)));
+});
+
+test("a reading pause freezes the frame, shows the pause badge, and adds exactly its frames", { skip: skipMedia }, () => {
+  const input = source("pause-source.mp4", [["gray", 1], ["white", 1], ["black", 1]]);
+  const result = runPrepare({
+    input, trim: { start: 0.5, end: 2.5 }, holds: { start: 0, end: 0 }, profile: { fps: 10 },
+    annotations: { events: [{ start: 1.2, end: 1.6, step: 1, caption: "Read the white state", hold: 1 }] },
+  }, { name: "pause" });
+  assert.equal(result.status, 0, result.stderr);
+  const report = result.json;
+  assert.equal(report.prepared.frames, 30, "20 real-time frames plus 10 paused frames");
+  assert.ok(Math.abs(report.prepared.duration - 3) < 0.15);
+  const inserted = report.timeline.find((segment) => segment.inserted);
+  assert.deepEqual([inserted.kind, inserted.frames, inserted.source], ["presentation-hold", [8, 17], 1.2]);
+  // Tick 12 is frame 7, its pause is frames 8-17, and ticks 13-15 follow as frames 18-20.
+  assert.deepEqual(report.annotations.events[0].frames, [7, 20]);
+  assert.equal(report.annotations.events[0].hold, 1);
+  assert.ok(report.warnings.some((warning) => /reading pause add 1\.0s.*Paused for reading/.test(warning)));
+  const out = join(temp, "pause.mp4");
+  const band = report.annotations.band;
+  const amber = ([r, g, b]) => r > 120 && g > 80 && g < 140 && b < 60;
+  const badge = (index) => frame(out, index).count(200, 180, 320, 180 + band, amber);
+  for (const index of [8, 12, 17]) assert.ok(badge(index) > 40, `pause badge expected in frame ${index}`);
+  for (const index of [7, 18]) assert.equal(badge(index), 0, `no pause badge in frame ${index}`);
+  const video = (index) => frame(out, index).at(160, 90);
+  assert.ok(video(12)[0] > 230, "the paused frame shows the white state");
+  assert.deepEqual(video(8), video(17), "the paused frames are frozen");
+  assert.ok(frame(out, 29).at(160, 90)[0] < 40, "real time continues to the black state after the pause");
 });
 
 test("overlay captions and geometry follow crop and scale in the final output", { skip: skipMedia }, () => {

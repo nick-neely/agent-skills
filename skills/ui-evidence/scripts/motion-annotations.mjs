@@ -14,6 +14,9 @@ const MAX_CAPTION_LINES = 3;
 const CAPTION_MODES = ["below", "overlay"];
 // Outline colour for a mark without a step, distinct from every step colour.
 const UNNUMBERED = "#59636e";
+// Shown in the caption area on every inserted reading pause, so a frozen frame
+// is never mistaken for the app's real timing.
+export const PAUSE_LABEL = "Paused for reading";
 
 function fail(message) {
   throw new AnnotationError(message);
@@ -65,37 +68,54 @@ export function outputSize(crop, maxWidth) {
 }
 
 // Frame bookkeeping for the prepared clip: a frozen start hold showing the
-// source at trim.start, real-time frames at ticks startTick..endTick-1, and a
-// frozen end hold showing the source just before trim.end.
-export function outputTimeline({ trim, fps, startTick, endTick, startFrames, endFrames }) {
-  const actionFrames = endTick - startTick;
-  const total = startFrames + actionFrames + endFrames;
-  const range = (first, count) => ({ frames: [first, first + count - 1], output: [first / fps, (first + count) / fps] });
+// source at trim.start, real-time frames at ticks startTick..endTick-1, any
+// inserted reading pauses that freeze one tick, and a frozen end hold showing
+// the source just before trim.end. Every hold is a labelled presentation hold.
+export function outputTimeline({ trim, fps, startTick, endTick, startFrames, endFrames, pauses = [] }) {
   const segments = [];
-  if (startFrames) segments.push({ kind: "presentation-hold", source: trim.start, ...range(0, startFrames) });
-  segments.push({ kind: "real-time", source: [trim.start, trim.end], ...range(startFrames, actionFrames) });
-  if (endFrames) segments.push({ kind: "presentation-hold", source: trim.end, ...range(startFrames + actionFrames, endFrames) });
-  return { fps, total, startTick, endTick, startFrames, actionFrames, endFrames, trim, segments };
+  let frame = 0;
+  const push = (segment, count) => {
+    segments.push({ ...segment, frames: [frame, frame + count - 1], output: [frame / fps, (frame + count) / fps] });
+    frame += count;
+  };
+  if (startFrames) push({ kind: "presentation-hold", boundary: "start", source: trim.start }, startFrames);
+  let tick = startTick;
+  const real = (to) => push({ kind: "real-time", ticks: [tick, to - 1],
+    source: [tick === startTick ? trim.start : tick / fps, to === endTick ? trim.end : to / fps] }, to - tick);
+  for (const pause of [...pauses].sort((a, b) => a.tick - b.tick)) {
+    real(pause.tick + 1);
+    push({ kind: "presentation-hold", inserted: true, tick: pause.tick, source: pause.tick / fps }, pause.frames);
+    tick = pause.tick + 1;
+  }
+  if (tick < endTick) real(endTick);
+  if (endFrames) push({ kind: "presentation-hold", boundary: "end", source: trim.end }, endFrames);
+  const pauseFrames = pauses.reduce((sum, pause) => sum + pause.frames, 0);
+  return { fps, total: frame, startTick, endTick, startFrames, actionFrames: endTick - startTick, endFrames, pauseFrames,
+    trim, segments, lastRealFrame: segments.filter((segment) => segment.ticks).at(-1).frames[1] };
 }
 
-// Output frames that show any source instant in [start, end). A hold shows its
-// boundary instant, so an event active at trim.start covers the start hold and
-// one still active at trim.end covers the end hold.
+// Output frames that show any source instant in [start, end). A real-time or
+// inserted-pause frame shows its tick; the start hold shows trim.start and the
+// end hold shows the source just before trim.end.
 export function mapInterval(start, end, timeline) {
-  const { fps, trim, startTick, endTick, startFrames, actionFrames, endFrames, total } = timeline;
-  const first = Math.max(Math.ceil(start * fps - EPSILON), startTick);
-  const stop = Math.min(Math.ceil(end * fps - EPSILON), endTick);
-  let from = stop > first ? startFrames + first - startTick : null;
-  let to = stop > first ? startFrames + stop - 1 - startTick : null;
-  const startHold = startFrames > 0 && start <= trim.start + EPSILON && end > trim.start + EPSILON;
-  const endHold = endFrames > 0 && start < trim.end - EPSILON && end >= trim.end - EPSILON;
-  if (startHold) {
-    from = 0;
-    to ??= startFrames - 1;
-  }
-  if (endHold) {
-    to = total - 1;
-    from ??= startFrames + actionFrames;
+  const { fps, trim } = timeline;
+  const first = Math.ceil(start * fps - EPSILON);
+  const stop = Math.ceil(end * fps - EPSILON);
+  const startHold = timeline.startFrames > 0 && start <= trim.start + EPSILON && end > trim.start + EPSILON;
+  const endHold = timeline.endFrames > 0 && start < trim.end - EPSILON && end >= trim.end - EPSILON;
+  let from = null;
+  let to = null;
+  const add = (a, b) => {
+    from = from === null ? a : Math.min(from, a);
+    to = to === null ? b : Math.max(to, b);
+  };
+  for (const segment of timeline.segments) {
+    if (segment.ticks) {
+      const a = Math.max(segment.ticks[0], first);
+      const b = Math.min(segment.ticks[1], stop - 1);
+      if (b >= a) add(segment.frames[0] + a - segment.ticks[0], segment.frames[0] + b - segment.ticks[0]);
+    } else if (segment.inserted ? segment.tick >= first && segment.tick < stop
+      : segment.boundary === "start" ? startHold : endHold) add(...segment.frames);
   }
   if (from === null) return null;
   return {
@@ -105,13 +125,13 @@ export function mapInterval(start, end, timeline) {
   };
 }
 
-// The output frame that shows source instant `at`.
+// The real-time output frame that shows source instant `at`.
 export function mapInstant(at, timeline) {
-  const { fps, trim, startTick, endTick, startFrames, actionFrames } = timeline;
+  const { fps, trim, startTick, endTick } = timeline;
   if (at < trim.start - EPSILON || at > trim.end + EPSILON) return null;
-  const tick = Math.floor(at * fps + EPSILON);
-  const frame = tick < startTick ? startFrames : tick >= endTick ? startFrames + actionFrames - 1
-    : startFrames + tick - startTick;
+  const tick = Math.min(Math.max(Math.floor(at * fps + EPSILON), startTick), endTick - 1);
+  const segment = timeline.segments.find((item) => item.ticks && tick >= item.ticks[0] && tick <= item.ticks[1]);
+  const frame = segment.frames[0] + tick - segment.ticks[0];
   return { frame, output: frame / fps };
 }
 
@@ -149,7 +169,8 @@ function keycaps(value, name) {
 }
 
 // Validate events against the source and crop, then map them to output frames.
-export function planEvents(raw, { source, crop, size, timeline }) {
+// `timing` is the timeline without pauses; reading pauses come from event holds.
+export function planEvents(raw, { source, crop, size, timeline: timing }) {
   if (raw === undefined) return null;
   const spec = object(raw, "annotations");
   onlyKeys(spec, ["captions", "displayWidth", "events"], "annotations");
@@ -160,7 +181,7 @@ export function planEvents(raw, { source, crop, size, timeline }) {
   const events = spec.events.map((item, index) => {
     const name = `annotations.events[${index}]`;
     object(item, name);
-    onlyKeys(item, ["start", "end", "step", "caption", "key", "at"], name);
+    onlyKeys(item, ["start", "end", "step", "caption", "key", "at", "hold"], name);
     const start = seconds(item.start, `${name}.start`);
     const end = seconds(item.end, `${name}.end`);
     if (end <= start) fail(`${name} ends at ${end}s, not after its start at ${start}s`);
@@ -171,21 +192,41 @@ export function planEvents(raw, { source, crop, size, timeline }) {
     if (item.caption === undefined && item.step === undefined && item.key === undefined && item.at === undefined) {
       fail(`${name} needs a caption, a step, a key, or an "at" region to outline`);
     }
-    const mapped = mapInterval(start, end, timeline);
-    if (!mapped) {
-      fail(`${name} (${start}-${end}s) shows on no output frame: it lies outside the trim ` +
-        `${timeline.trim.start}-${timeline.trim.end}s or is shorter than one frame at ${timeline.fps} fps`);
+    let hold = null;
+    if (item.hold !== undefined) {
+      if (typeof item.hold !== "number" || !Number.isFinite(item.hold) || item.hold < 0.2 || item.hold > 10) {
+        fail(`${name}.hold must be 0.2 to 10 seconds of added reading time`);
+      }
+      // The pause freezes the first frame that shows the event.
+      const tick = Math.ceil(start * timing.fps - EPSILON);
+      if (tick < timing.startTick || tick >= timing.endTick) {
+        fail(`${name}.hold needs the event to start inside the trim ${timing.trim.start}-${timing.trim.end}s`);
+      }
+      hold = { seconds: item.hold, tick, frames: Math.max(1, Math.round(item.hold * timing.fps)) };
     }
     return {
-      index, start, end,
+      index, start, end, ...(hold ? { hold } : {}),
       ...(item.step !== undefined ? { step: item.step } : {}),
       ...(item.caption !== undefined ? { caption: text(item.caption, `${name}.caption`, 160) } : {}),
       ...(item.key !== undefined ? { key: keycaps(item.key, `${name}.key`) } : {}),
       ...(item.at !== undefined ? { at: item.at, region: toOutput(item.at, crop, size, `${name}.at`) } : {}),
       color: item.step === undefined ? UNNUMBERED : PALETTE[(item.step - 1) % PALETTE.length],
-      ...mapped,
     };
   });
+  const pauses = events.filter((event) => event.hold).map((event) => ({ tick: event.hold.tick, frames: event.hold.frames, index: event.index }));
+  for (let index = 1; index < pauses.length; index += 1) {
+    const clash = pauses.slice(0, index).find((pause) => pause.tick === pauses[index].tick);
+    if (clash) fail(`annotations.events[${clash.index}] and [${pauses[index].index}] both hold the same frame; keep one hold`);
+  }
+  const timeline = outputTimeline({ ...timing, pauses });
+  for (const event of events) {
+    const mapped = mapInterval(event.start, event.end, timeline);
+    if (!mapped) {
+      fail(`annotations.events[${event.index}] (${event.start}-${event.end}s) shows on no output frame: it lies outside the trim ` +
+        `${timing.trim.start}-${timing.trim.end}s or is shorter than one frame at ${timing.fps} fps`);
+    }
+    Object.assign(event, mapped);
+  }
   const captioned = events.filter(usesCaptionArea);
   for (let a = 0; a < captioned.length; a += 1) {
     for (let b = a + 1; b < captioned.length; b += 1) {
@@ -196,7 +237,7 @@ export function planEvents(raw, { source, crop, size, timeline }) {
       }
     }
   }
-  return { captions, displayWidth, events };
+  return { captions, displayWidth, events, timeline };
 }
 
 // Layout at the output size: each marked control's outline and pin, and each
@@ -209,7 +250,17 @@ export function layoutCaptions(plan, size, measure) {
   const line = measure("Ag", font).height;
   const keyFont = chrome.labelFont;
   const layouts = new Map();
-  let tallest = 0;
+  const pauses = plan.timeline.segments.filter((segment) => segment.inserted);
+  let badge = null;
+  if (pauses.length) {
+    const measured = measure(PAUSE_LABEL, keyFont);
+    badge = { text: PAUSE_LABEL, width: measured.width + chrome.labelPad * 2, height: measured.height + chrome.labelPad * 2,
+      ranges: pauses.map((segment) => segment.frames) };
+    badge.x = size.width - pad - badge.width;
+  }
+  // Captions leave room for the pause badge at the right of the caption area.
+  const right = badge ? badge.width + chrome.gap * 2 : 0;
+  let tallest = badge ? Math.max(badge.height, chrome.radius * 2) : 0;
   for (const event of plan.events) {
     const layout = { marks: null, items: [], text: null, height: 0 };
     if (event.region) {
@@ -239,13 +290,13 @@ export function layoutCaptions(plan, size, measure) {
         x += width + chrome.gap;
       }
       // Keycaps never wrap, so the row itself must fit, with or without a caption.
-      if (x - chrome.gap > size.width - pad) {
+      if (x - chrome.gap > size.width - pad - right) {
         fail(`annotations.events[${event.index}].key "${event.key.join("+")}" does not fit in the ${size.width}px output; ` +
           "shorten it or widen the output");
       }
       if (event.key) x += chrome.gap;
       if (event.caption) {
-        const wrap = size.width - x - pad;
+        const wrap = size.width - x - pad - right;
         if (wrap < font * 4) fail(`annotations.events[${event.index}] leaves no room for its caption at ${size.width}px; shorten the key or widen the output`);
         const measured = measure(event.caption, font, wrap);
         const lines = Math.round(measured.height / line);
@@ -264,15 +315,18 @@ export function layoutCaptions(plan, size, measure) {
   const band = tallest ? Math.ceil((tallest + pad * 2) / 2) * 2 : 0;
   const box = tallest ? { y: plan.captions === "below" ? size.height : size.height - band, height: band } : null;
   if (box && plan.captions === "overlay") {
+    // The overlay box shows only while a caption-area event or a pause is on screen.
+    const covered = [...plan.events.filter(usesCaptionArea).map((event) => event.frames), ...(badge?.ranges ?? [])];
     for (const event of plan.events) {
       const mark = layouts.get(event.index).marks;
-      if (mark && mark.outline.y + mark.outline.height > box.y) {
-        fail(`annotations.events[${event.index}].at lies under the overlay caption area; ` +
+      if (mark && mark.outline.y + mark.outline.height > box.y &&
+          covered.some(([a, b]) => a <= event.frames[1] && event.frames[0] <= b)) {
+        fail(`annotations.events[${event.index}].at lies under the overlay caption area while a caption shows; ` +
           'use "captions": "below" so the caption does not cover the control');
       }
     }
   }
-  return { chrome, pad, font, keyFont, band: plan.captions === "below" ? band : 0, box, layouts };
+  return { chrome, pad, font, keyFont, band: plan.captions === "below" ? band : 0, box, layouts, badge };
 }
 
 // The report's view of planned events: what shows, when, and where.
@@ -283,7 +337,7 @@ export function annotationReport(plan, layout) {
       index: event.index, ...(event.step !== undefined ? { step: event.step } : {}),
       ...(event.key ? { key: event.key.join("+") } : {}), ...(event.caption ? { caption: event.caption } : {}),
       source: { start: event.start, end: event.end }, output: event.output, frames: event.frames,
-      clipped: event.clipped, holds: event.holds,
+      clipped: event.clipped, holds: event.holds, ...(event.hold ? { hold: event.hold.seconds } : {}),
       ...(event.region ? { region: [event.region.x, event.region.y, event.region.width, event.region.height],
         regionClipped: event.region.clipped } : {}),
     })),
@@ -303,6 +357,9 @@ export function planStoryboard(raw, timeline, source, defaultWidth = DEFAULT_DIS
   if (spec.columns !== undefined && (!Number.isInteger(spec.columns) || spec.columns < 1 || spec.columns > 4)) {
     fail("storyboard.columns must be an integer from 1 to 4");
   }
+  if (spec.columns !== undefined && storyboardGrid(displayWidth, spec.columns).textWidth < storyboardGrid(displayWidth, 1).chrome.legendFont * 6) {
+    fail(`storyboard.columns ${spec.columns} leaves no room for labels at displayWidth ${displayWidth}; use fewer columns or a wider displayWidth`);
+  }
   let previous = -Infinity;
   const checkpoints = spec.checkpoints.map((item, index) => {
     const name = `storyboard.checkpoints[${index}]`;
@@ -319,19 +376,27 @@ export function planStoryboard(raw, timeline, source, defaultWidth = DEFAULT_DIS
   return { checkpoints, displayWidth, columns: spec.columns ?? null };
 }
 
+// Panel and label widths for a storyboard drawn at twice the display width.
+function storyboardGrid(displayWidth, columns) {
+  const scale = 2;
+  const width = displayWidth * scale;
+  const chrome = chromeFor(width, width / scale);
+  const gap = chrome.gap * 3;
+  const panelWidth = Math.floor((width - gap * (columns + 1)) / columns);
+  const textX = chrome.radius * 2 + chrome.gap * 2;
+  return { scale, width, chrome, gap, panelWidth, textX, textWidth: panelWidth - textX };
+}
+
 // Grid for the storyboard PNG, drawn at twice the display width so text and
 // panels stay sharp when GitHub scales the image down.
 export function layoutStoryboard(plan, frameSize, measure) {
-  const scale = 2;
-  const width = plan.displayWidth * scale;
-  const chrome = chromeFor(width, width / scale);
-  const gap = chrome.gap * 3;
-  const fit = Math.floor((plan.displayWidth + gap / scale) / (Math.min(frameSize.width, 360) + gap / scale));
+  const base = storyboardGrid(plan.displayWidth, 1);
+  const fit = Math.floor((plan.displayWidth + base.gap / base.scale) / (Math.min(frameSize.width, 360) + base.gap / base.scale));
   const columns = plan.columns ?? Math.max(1, Math.min(plan.checkpoints.length, 4, fit));
-  const panelWidth = Math.floor((width - gap * (columns + 1)) / columns);
+  const { scale, width, chrome, gap, panelWidth } = storyboardGrid(plan.displayWidth, columns);
   const imageScale = Math.min(panelWidth / frameSize.width, scale * 2);
   const image = { width: Math.round(frameSize.width * imageScale), height: Math.round(frameSize.height * imageScale) };
-  const textX = chrome.radius * 2 + chrome.gap * 2;
+  const { textX } = storyboardGrid(plan.displayWidth, columns);
   const panels = plan.checkpoints.map((checkpoint) => {
     const caption = measure(checkpoint.label, chrome.legendFont, panelWidth - textX);
     const time = `${formatTime(checkpoint.output)} in the clip, source ${checkpoint.at.toFixed(2)}s`;
@@ -386,12 +451,15 @@ export function motionMarkdown({ title, summary, video, events, storyboard }) {
   const captioned = (events ?? []).filter(usesCaptionArea);
   if (captioned.length) {
     for (const event of captioned) {
-      const label = [event.step !== undefined ? `Step ${event.step}` : null, event.key ? `Key ${event.key.join("+")}` : null]
-        .filter(Boolean).join(", ");
+      const label = [event.step !== undefined ? `Step ${event.step}` : null, event.key ? `Key ${event.key.join("+")}` : null,
+        event.hold ? `paused ${event.hold.seconds}s for reading` : null].filter(Boolean).join(", ");
       lines.push(`- **${formatTime(event.output.start)}-${formatTime(event.output.end)}**` +
         `${label ? ` (${escapeMarkdown(label)})` : ""}${event.caption ? `: ${escapeMarkdown(event.caption)}` : ""}`);
     }
     lines.push("");
+    if ((events ?? []).some((event) => event.hold)) {
+      lines.push(`Frames marked "${PAUSE_LABEL}" are added presentation holds; the rest of the clip runs in real time.`, "");
+    }
   }
   if (storyboard) {
     const count = storyboard.checkpoints.length;

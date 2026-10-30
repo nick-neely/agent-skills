@@ -141,8 +141,8 @@ are seconds on the source recording, the same timeline as `trim` and the
   "summary": "Choosing Yearly with the keyboard shows the yearly price, and the choice survives a reload.",
   "annotations": {
     "events": [
-      { "start": 0.9, "end": 1.6, "step": 1, "key": "ArrowRight", "caption": "Move the plan choice to Yearly", "at": [152, 126, 80, 35] },
-      { "start": 1.6, "end": 2.8, "step": 2, "caption": "The price changes to $120 / year", "at": [58, 172, 190, 46] },
+      { "start": 0.9, "end": 1.6, "step": 1, "key": "ArrowRight", "caption": "Move the plan choice to Yearly", "at": [152, 126, 80, 35], "hold": 1.5 },
+      { "start": 1.6, "end": 2.8, "step": 2, "caption": "The price changes to $120 / year", "at": [58, 172, 190, 46], "hold": 1.5 },
       { "start": 2.8, "end": 3.4, "caption": "The page reloads" },
       { "start": 3.4, "end": 99, "step": 3, "caption": "Yearly is still selected after the reload", "at": [152, 126, 80, 35] }
     ]
@@ -174,8 +174,9 @@ node "<skill-root>/scripts/prepare-motion.mjs" \
 | `caption` | Up to 160 characters stating what the recording shows; wrapped, at most three lines |
 | `key` | Keys actually pressed, joined by `+`, such as `Control+K`; drawn as keycaps |
 | `at` | `[x, y, width, height]` source rectangle around the control; outlined just outside it |
+| `hold` | Optional 0.2-10 seconds of added reading time; freezes the event's first frame |
 
-Each event needs at least one of these. A step without `at` shows its pin in
+Each event needs at least one of `step`, `caption`, `key`, or `at`. A step without `at` shows its pin in
 the caption area. An outline without a step uses a neutral grey, so it is never
 read as a numbered step.
 
@@ -201,9 +202,17 @@ an end that does not follow its start, geometry outside the source or crop, a
 caption too long to read at the display width, and two captions on the same
 frame each fail with the field to fix. The report's `annotations.events` gives
 each event's output frames and times and says whether it was clipped or covers
-a hold. `timeline` lists the real-time segment and each `presentation-hold` with
-the source instant it shows. Annotations never insert pauses or change speed;
-let the holds and the storyboard provide reading time.
+a hold. `timeline` lists each real-time segment and each `presentation-hold`
+with the source instant it shows.
+
+Steps that follow each other quickly are hard to read in real time. Give such
+an event a `hold` to freeze its first frame for that many seconds, with its
+annotations on screen. A held frame shows a "Paused for reading" badge in the
+caption area, `timeline` lists it as an `inserted` presentation hold at its
+source instant, and the generated Markdown says so. Everything else keeps its
+real timing; preparation never changes speed. Do not add holds when timing,
+loading, latency, or animation is the claim. Two holds cannot freeze the same
+frame, and a hold needs its event to start inside the trim.
 
 Captions state what you verified with an assertion or by inspecting the take.
 Do not caption an outcome the recording does not show. Use `key` only for keys

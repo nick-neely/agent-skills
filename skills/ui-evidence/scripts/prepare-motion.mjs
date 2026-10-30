@@ -203,6 +203,19 @@ function renderEvent(event, layout, size, out) {
   return out;
 }
 
+// The pause badge, shown on every inserted reading pause.
+function renderBadge(layout, size, out) {
+  const { chrome, badge } = layout;
+  const args = ["-size", `${size.width}x${size.height + layout.band}`, "xc:none"];
+  const top = layout.box.y + Math.floor((layout.box.height - badge.height) / 2);
+  args.push("-fill", "#9a6700", "-stroke", "none",
+    "-draw", `roundrectangle ${badge.x},${top} ${badge.x + badge.width - 1},${top + badge.height - 1} 6,6`);
+  composer(args)(["-background", "none", "-fill", "#ffffff", "-stroke", "none", "+size", "-font", FONT_PATH,
+    "-pointsize", String(layout.keyFont), `label:${imText(badge.text)}`], badge.x + chrome.labelPad, top + chrome.labelPad);
+  draw([...args, "-strip", `PNG32:${out}`], "ImageMagick pause badge");
+  return out;
+}
+
 function renderStoryboard(layout, frames, out) {
   const { chrome } = layout;
   const args = ["-size", `${layout.width}x${layout.height}`, "xc:#ffffff"];
@@ -394,15 +407,22 @@ function ffmpegColor(hex) {
 }
 
 function buildFilter({ crop, redactions, holds, profile, format, firstThrough, lastFrom, startTick, endTick,
-  size, band = 0, overlays = [] }) {
-  const chain = [
-    "setpts=PTS-STARTPTS",
-    `fps=${profile.fps}:round=up`,
-    `trim=start_pts=${startTick}:end_pts=${endTick}`,
-    "setpts=PTS-STARTPTS",
-    `tpad=start_mode=clone:start_duration=${holds.start}` +
-      `:stop_mode=clone:stop_duration=${holds.end}`,
-  ];
+  size, band = 0, overlays = [], pauses = [] }) {
+  const sample = ["setpts=PTS-STARTPTS", `fps=${profile.fps}:round=up`,
+    `trim=start_pts=${startTick}:end_pts=${endTick}`, "setpts=PTS-STARTPTS"];
+  const boundaryHolds = `tpad=start_mode=clone:start_duration=${holds.start}:stop_mode=clone:stop_duration=${holds.end}`;
+  // A reading pause splits the real-time frames after its tick and clones that
+  // frame; every other frame keeps its real timing.
+  let timed = `[0:v]${[...sample, boundaryHolds].join(",")}[timed];`;
+  if (pauses.length) {
+    const cuts = [0, ...pauses.map((pause) => pause.tick - startTick + 1), endTick - startTick];
+    const pieces = cuts.slice(0, -1).map((from, index) => ({ from, to: cuts[index + 1], pause: pauses[index] }))
+      .filter((piece) => piece.to > piece.from);
+    timed = `[0:v]${sample.join(",")},split=${pieces.length}${pieces.map((_, index) => `[s${index}]`).join("")};` +
+      pieces.map((piece, index) => `[s${index}]trim=start_frame=${piece.from}:end_frame=${piece.to},setpts=PTS-STARTPTS` +
+        `${piece.pause ? `,tpad=stop_mode=clone:stop=${piece.pause.frames}` : ""}[p${index}];`).join("") +
+      `${pieces.map((_, index) => `[p${index}]`).join("")}concat=n=${pieces.length}:v=1:a=0,${boundaryHolds}[timed];`;
+  }
   const finish = [];
   if (crop.explicit) finish.push(`crop=${crop.width}:${crop.height}:${crop.x}:${crop.y}:exact=1`);
   for (const redaction of redactions) {
@@ -418,10 +438,10 @@ function buildFilter({ crop, redactions, holds, profile, format, firstThrough, l
   if (band) finish.push(`pad=w=${size.width}:h=${size.height + band}:x=0:y=0:color=0x${CHROME.header.slice(1)}`);
   let annotated = `[bounded]${finish.join(",")}`;
   overlays.forEach((overlay, index) => {
-    annotated += `[a${index}];[a${index}][${3 + index}:v]overlay=0:0:format=auto:shortest=1:` +
-      `enable='between(n\\,${overlay.frames[0]}\\,${overlay.frames[1]})'`;
+    const enable = overlay.ranges.map(([from, to]) => `between(n\\,${from}\\,${to})`).join("+");
+    annotated += `[a${index}];[a${index}][${3 + index}:v]overlay=0:0:format=auto:shortest=1:enable='${enable}'`;
   });
-  const boundaries = `[0:v]${chain.join(",")}[timed];` +
+  const boundaries = timed +
     `[timed][1:v]overlay=0:0:format=auto:shortest=1:enable='lt(n\\,${firstThrough})'[begin];` +
     `[begin][2:v]overlay=0:0:format=auto:shortest=1:enable='gte(n\\,${lastFrom})'[bounded];`;
   if (format === "mp4") return `${boundaries}${annotated}[out]`;
@@ -631,7 +651,7 @@ try {
   try {
     annotations = planEvents(spec.annotations, { source: sourceBounds, size, timeline,
       crop: { ...crop, sourceWidth: source.width, sourceHeight: source.height } });
-    storyboard = planStoryboard(spec.storyboard, timeline, sourceBounds, annotations?.displayWidth);
+    storyboard = planStoryboard(spec.storyboard, annotations?.timeline ?? timeline, sourceBounds, annotations?.displayWidth);
     measure = annotations || storyboard ? makeMeasure() : null;
     captionLayout = annotations ? layoutCaptions(annotations, size, measure) : null;
   } catch (error) {
@@ -650,10 +670,18 @@ try {
     linkFrom(resolve(options.out));
     if (options.storyboardOut) linkFrom(resolve(options.storyboardOut));
   }
+  const final = annotations?.timeline ?? timeline;
+  const pauses = final.segments.filter((segment) => segment.inserted);
   const overlays = annotations ? annotations.events.map((event) => ({
-    frames: event.frames, path: renderEvent(event, captionLayout, size, join(temp, `event-${event.index}.png`)),
+    ranges: [event.frames], path: renderEvent(event, captionLayout, size, join(temp, `event-${event.index}.png`)),
   })) : [];
+  if (captionLayout?.badge) overlays.push({ ranges: captionLayout.badge.ranges, path: renderBadge(captionLayout, size, join(temp, "pause.png")) });
   const band = captionLayout?.band ?? 0;
+  const pauseSeconds = final.pauseFrames / profile.fps;
+  if (maxDuration !== null && expectedDuration + pauseSeconds > maxDuration + 1e-9) {
+    die(`prepared duration would be ${(expectedDuration + pauseSeconds).toFixed(2)}s with reading pauses, above ${maxDuration}s; ` +
+      "shorten the holds or tighten the trim");
+  }
   const firstImage = join(temp, "first-boundary.png");
   const lastImage = boundary.first === boundary.last ? firstImage : join(temp, "last-boundary.png");
   extractBoundary(input, boundary.first, firstImage);
@@ -662,14 +690,15 @@ try {
   // CFR quantizes event times. Retain the exact source states at both trim
   // boundaries even when neither one lands on the output frame grid.
   let firstThrough = startFrames + 1;
-  let lastFrom = startFrames + actionFrames - 1;
+  let lastFrom = final.lastRealFrame;
   if (actionFrames === 1 && differentBoundaries) {
     if (startFrames > 0) firstThrough = startFrames;
     else if (endFrames > 0) lastFrom = 1;
     else die("trim contains distinct boundary states but only one output frame; increase profile.fps, widen the trim, or add a hold");
   }
   selected.size = encode(input, selected.path, { trim, crop, redactions, holds, profile: selected, format,
-    firstImage, lastImage, firstThrough, lastFrom, startTick, endTick, size, band, overlays });
+    firstImage, lastImage, firstThrough, lastFrom, startTick, endTick, size, band, overlays,
+    pauses: pauses.map((segment) => ({ tick: segment.tick, frames: segment.frames[1] - segment.frames[0] + 1 })) });
   if (selected.size >= profile.maxBytes) {
     die(`output is ${selected.size} bytes, at or above the exclusive ${profile.maxBytes} byte limit; crop more tightly, reduce duration only if it preserves the claim, or set an allowed higher profile.maxBytes`);
   }
@@ -678,12 +707,12 @@ try {
   if (prepared.width !== size.width || prepared.height !== size.height + band) {
     die(`encoded ${prepared.width}x${prepared.height}, expected ${size.width}x${size.height + band}; annotations would be misplaced`);
   }
-  if (prepared.frames !== startFrames + actionFrames + endFrames) {
-    die(`duration mismatch: expected ${startFrames + actionFrames + endFrames} normalized frames, encoded ${prepared.frames}; inspect the source and trim`);
+  if (prepared.frames !== final.total) {
+    die(`duration mismatch: expected ${final.total} normalized frames, encoded ${prepared.frames}; inspect the source and trim`);
   }
   const tolerance = 1.5 / profile.fps + 0.02;
-  if (Math.abs(prepared.duration - expectedDuration) > tolerance) {
-    die(`duration mismatch: expected ${expectedDuration.toFixed(2)}s, encoded ${prepared.duration.toFixed(2)}s (tolerance ${tolerance.toFixed(2)}s); inspect the source and trim`);
+  if (Math.abs(prepared.duration - expectedDuration - pauseSeconds) > tolerance) {
+    die(`duration mismatch: expected ${(expectedDuration + pauseSeconds).toFixed(2)}s, encoded ${prepared.duration.toFixed(2)}s (tolerance ${tolerance.toFixed(2)}s); inspect the source and trim`);
   }
 
   const out = resolve(options.out);
@@ -717,7 +746,11 @@ try {
   }
   const warnings = ["Frame count alone does not prove smooth capture. Review the complete output.",
     `Output timing is quantized to ${profile.fps} fps; brief intermediate states can be missed.`];
-  if (expectedDuration > 20) warnings.push("This clip is longer than 20 seconds; keep it focused on the claim.");
+  if (expectedDuration + pauseSeconds > 20) warnings.push("This clip is longer than 20 seconds; keep it focused on the claim.");
+  if (pauses.length) {
+    warnings.push(`${pauses.length} reading pause${pauses.length === 1 ? "" : "s"} add ${pauseSeconds.toFixed(1)}s and are marked "Paused for reading"; ` +
+      "do not use them when timing or latency is the claim");
+  }
   if (profile.targetBytes !== null && selected.size > profile.targetBytes) {
     warnings.push(`output is below the limit but above the ${(profile.targetBytes / MIB).toFixed(2)} MiB target`);
   }
@@ -738,7 +771,7 @@ try {
     holds,
     boundaryFrames: boundary,
     selectedProfile: { width: prepared.width, fps: selected.fps, size: selected.size, maxBytes: profile.maxBytes },
-    timeline: timeline.segments,
+    timeline: final.segments.map(({ ticks, ...segment }) => segment),
     ...(annotations ? { annotations: annotationReport(annotations, captionLayout) } : {}),
     ...(storyboard ? { storyboard: storyboardReport(storyboard, storyboardLayout, storyboardOut) } : {}),
     ...(markdownOut ? { markdownOut } : {}),
