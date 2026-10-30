@@ -124,18 +124,22 @@ export function fitWindow(rect, bounds) {
 }
 
 // Shared mode uses the same source coordinates for both panels, so movement
-// stays visible. Separate mode centres an equal-size window on each panel's own
+// stays visible. With padded sizes the window may extend past the smaller
+// screenshot; the renderer fills that area rather than moving the window. Separate mode centres an equal-size window on each panel's own
 // region, for elements that moved too far for one window to show both.
 export function detailWindows({ before, after, sizes, context, separate = false }) {
+  if (!separate || !before || !after) {
+    const region = before && after ? union(before, after) : before ?? after;
+    const window = fitWindow(expand(region, context), {
+      width: Math.max(sizes.before.width, sizes.after.width),
+      height: Math.max(sizes.before.height, sizes.after.height),
+    });
+    return { mode: "shared", before: window, after: window };
+  }
   const bounds = {
     width: Math.min(sizes.before.width, sizes.after.width),
     height: Math.min(sizes.before.height, sizes.after.height),
   };
-  if (!separate || !before || !after) {
-    const region = before && after ? union(before, after) : before ?? after;
-    const window = fitWindow(expand(region, context), bounds);
-    return { mode: "shared", before: window, after: window };
-  }
   const width = Math.min(Math.max(before.width, after.width) + context * 2, bounds.width);
   const height = Math.min(Math.max(before.height, after.height) + context * 2, bounds.height);
   const centred = (region, size) => fitWindow({
@@ -533,9 +537,11 @@ export function escapeMarkdown(text) {
   return String(text).replace(/\s+/g, " ").trim().replace(MARKDOWN_SPECIAL, (char) => ENTITIES[char] ?? `\\${char}`);
 }
 
-// The publisher reads `![alt](path)`; brackets and newlines would end the alt.
+// The publisher reads `![alt](path)` and HTML `img` tags; brackets, newlines,
+// or markup in alt text would end it or add a reference.
 export function escapeAlt(text) {
-  return String(text).replace(/\s+/g, " ").trim().replace(/\[/g, "(").replace(/\]/g, ")");
+  return String(text).replace(/\s+/g, " ").trim().replace(/\[/g, "(").replace(/\]/g, ")")
+    .replace(/[&<>]/g, (char) => ENTITIES[char]);
 }
 
 // Publisher-compatible section. Every image uses a relative path under the

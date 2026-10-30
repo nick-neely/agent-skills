@@ -246,6 +246,10 @@ test("detail windows share coordinates by default and stay equal-sized at image 
   assert.deepEqual(shared.after, shared.before);
   const edge = detailWindows({ before: { x: 0, y: 0, width: 10, height: 10 }, after: null, sizes, context: 20 });
   assert.deepEqual(edge.before, { x: 0, y: 0, width: 50, height: 50 });
+  const padded = detailWindows({ before: null, after: { x: 100, y: 500, width: 50, height: 30 },
+    sizes: { before: { width: 300, height: 200 }, after: { width: 300, height: 600 } }, context: 10 });
+  assert.deepEqual(padded.after, { x: 90, y: 490, width: 70, height: 50 }, "padded sizes keep the requested region");
+  assert.deepEqual(padded.before, padded.after);
   const separate = detailWindows({ before: { x: 10, y: 10, width: 20, height: 20 }, after: { x: 250, y: 150, width: 30, height: 20 }, sizes, context: 5, separate: true });
   assert.equal(separate.mode, "separate");
   assert.deepEqual([separate.before.width, separate.before.height], [separate.after.width, separate.after.height]);
@@ -264,13 +268,13 @@ test("crop suggestions group nearby changed regions and leave distant ones apart
 test("generated Markdown neutralizes media syntax in explanations and keeps alt text intact", () => {
   const markdown = sectionMarkdown({
     title: "Header <script> & &lt;b&gt;",
-    comparison: { file: "comparison.png", alt: "Before [left] and after" },
+    comparison: { file: "comparison.png", alt: "Before [left] and after <img src=\"x.png\">" },
     callouts: [{ id: 4, text: "Shows ![x](secret.png) and <img src=\"a.png\">\nwrapped" }],
     details: [{ file: "detail-callout-4.png", alt: "Detail" }],
     flip: { file: "flip.gif", alt: "Screenshot flip" },
   });
   assert.match(markdown, /^#### Header &lt;script&gt; &amp; &amp;lt;b&amp;gt;/);
-  assert.match(markdown, /!\[Before \(left\) and after\]\(comparison\.png\)/);
+  assert.match(markdown, /!\[Before \(left\) and after &lt;img src="x\.png"&gt;\]\(comparison\.png\)/);
   assert.match(markdown, /- \*\*4\*\*: Shows \\!\\\[x\\\]\(secret\.png\) and &lt;img src="a\.png"&gt; wrapped/);
   const references = [...markdown.matchAll(/!\[[^\]\n]*\]\(([^)\s]+)\)/g)].map((match) => match[1]);
   assert.deepEqual(references, ["comparison.png", "detail-callout-4.png", "flip.gif"]);
@@ -387,6 +391,19 @@ test("incompatible or invalid geometry fails with an actionable message before r
   assert.deepEqual(padded.result.comparison.panels.before.canvas.slice(2), [300, 200]);
   assert.deepEqual(padded.result.comparison.panels.after.canvas.slice(2), [320, 200]);
   assert.match(padded.result.limitations.join("\n"), /no stretching/);
+
+  image(join(dir, "tall.png"), 300, 600, [{ color: "#0000ff", rect: [100, 500, 50, 30] }]);
+  const tall = compare(dir, { ...base, after: { image: "tall.png" }, sizeMismatch: "pad",
+    callouts: [{ id: 1, text: "A footer action appears.", after: [100, 500, 50, 30] }],
+    details: [{ callout: 1, zoom: 2, context: 10 }] });
+  assert.equal(tall.status, 0, tall.stderr);
+  const detail = tall.result.details[0];
+  assert.deepEqual(detail.panels.after.source, [90, 490, 70, 50]);
+  assert.deepEqual(detail.callouts, [1]);
+  const afterPanel = detail.panels.after;
+  assertColor(rgb(detail.path, afterPanel.canvas[0] + 40, afterPanel.canvas[1] + 40), BLUE, 14, "padded detail shows the change");
+  assertColor(rgb(detail.path, detail.panels.before.canvas[0] + 40, detail.panels.before.canvas[1] + 40), WHITE, 2, "blank fill");
+  assert.match(tall.result.limitations.join("\n"), /Detail callout-1 extends past the Before screenshot/);
 });
 
 test("the flip GIF alternates labelled before and after frames with readable holds", media, () => {

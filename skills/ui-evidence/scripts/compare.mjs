@@ -216,8 +216,14 @@ function redact(panel, rects, temp) {
   return out;
 }
 
+// A shared detail window can extend past a smaller padded screenshot; fill the
+// missing area so both panels keep the same source coordinates.
 function extract(panel, window, zoom, out) {
-  const args = [panel.source, "-crop", `${window.width}x${window.height}+${window.x}+${window.y}`, "+repage"];
+  const visible = intersect(window, panel.bounds);
+  const args = visible
+    ? [panel.source, "-crop", `${visible.width}x${visible.height}+${visible.x}+${visible.y}`, "+repage",
+      "-background", "#ffffff", "-gravity", "NorthWest", "-extent", `${window.width}x${window.height}`]
+    : ["-size", `${window.width}x${window.height}`, "xc:#ffffff"];
   if (zoom !== 1) {
     args.push(Number.isInteger(zoom) ? "-sample" : "-resize",
       `${Math.round(window.width * zoom)}x${Math.round(window.height * zoom)}!`);
@@ -567,6 +573,11 @@ function main() {
       const path = join(outDir, `detail-${slug}.png`);
       const view = renderView({ name: `detail-${slug}`, views, layout, displayWidth, callouts, measure, temp, out: path });
       limitations.push(...view.plan.limitations.map((text) => `Detail ${slug}: ${text}`));
+      for (const panel of Object.values(panels)) {
+        if (!contains(panel.bounds, windows[panel.key])) {
+          limitations.push(`Detail ${slug} extends past the ${panel.label} screenshot; the missing area is blank.`);
+        }
+      }
       if (zoom === 1) {
         limitations.push(`Detail ${slug} is a 1x crop; its window is wider than the readable target, so set "zoom" to enlarge it.`);
       }

@@ -557,7 +557,9 @@ test("publishes a generated comparison section and replaces it on the next run",
   writeFileSync(specPath, JSON.stringify({
     title: "Card position",
     before: { image: "before.png" }, after: { image: "after.png" },
-    callouts: [{ id: 1, text: "The card moved 30 px right.", before: [40, 30, 60, 40], after: [70, 30, 60, 40] }],
+    callouts: [{ id: 1, text: "The card moved 30 px right.", before: [40, 30, 60, 40], after: [70, 30, 60, 40] },
+      // Markup in an explanation reaches alt text and the legend but must never become an upload.
+      { id: 2, text: 'The <img src="avatar.png"> slot and ![x](avatar.png) stay text.', after: [200, 120, 20, 20] }],
     details: [{ callout: 1 }], flip: true, onion: true,
   }));
   const out = join(dir, "evidence");
