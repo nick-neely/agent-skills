@@ -731,7 +731,9 @@ function ring(rect, by) {
   return points;
 }
 
-const hex = (color) => [1, 3, 5].map((index) => parseInt(color.slice(index, index + 2), 16));
+const rgbOf = (color) => [1, 3, 5].map((index) => parseInt(color.slice(index, index + 2), 16));
+// Close enough to read as the same colour once antialiased.
+const near = (a, b) => a.every((value, index) => Math.abs(value - b[index]) <= 40);
 
 test("clean, pin-only, and emphasised comparisons keep targets, neighbours, and redaction intact in both layouts", media, () => {
   const dir = caseDir();
@@ -818,7 +820,7 @@ test("clean, pin-only, and emphasised comparisons keep targets, neighbours, and 
                 const sy = wy + Math.floor((y - cy) / panel.scale);
                 if (sx < nx || sx >= nx + nw || sy < ny || sy >= ny + nh) continue;
                 if (sx >= 326 && sx < 396 && sy >= 112 && sy < 134) continue; // redacted
-                assert.deepEqual(output.at(x, y), sourceAt(x, y), `${name} ${key}: ${part} pixel ${sx},${sy} was covered`);
+                assert.deepEqual(output.at(x, y), source[key].at(sx, sy), `${name} ${key}: ${part} pixel ${sx},${sy} was covered`);
                 compared += 1;
               }
             }
@@ -832,8 +834,7 @@ test("clean, pin-only, and emphasised comparisons keep targets, neighbours, and 
               canvasRect.y + canvasRect.height > cy + ch) continue;
             const points = [2, 3, 4].flatMap((by) => ring(canvasRect, by));
             const callout = callouts.find((item) => item[key] === rect);
-            const color = callout && hex(result.callouts.find((item) => item.id === callout.id).color);
-            const near = (a, b) => a.every((value, index) => Math.abs(value - b[index]) <= 40);
+            const color = callout && rgbOf(result.callouts.find((item) => item.id === callout.id).color);
             if (callout?.outline) {
               const drawn = points.filter(([x, y]) => near(output.at(x, y), color)).length;
               assert.ok(drawn > points.length * 0.25, `${name} ${key}: ${part} outline drawn on ${drawn}/${points.length} ring pixels`);
@@ -882,27 +883,40 @@ test("explicit measurements and outlines render in matched detail crops", media,
   // A 60x40 card widens to 90 px on blank space, so a bracket fits beside it.
   image(join(dir, "before.png"), 300, 200, [{ color: "#1f6feb", rect: [100, 80, 60, 40] }]);
   image(join(dir, "after.png"), 300, 200, [{ color: "#1f6feb", rect: [100, 80, 90, 40] }]);
-  const run = compare(dir, {
-    before: { image: "before.png" }, after: { image: "after.png" },
-    callouts: [{ id: 1, text: "The card widens.", before: [100, 80, 60, 40], after: [100, 80, 90, 40], measure: "width", outline: true }],
+  const render = (emphasis) => compare(caseDir(), {
+    before: { image: join(dir, "before.png") }, after: { image: join(dir, "after.png") },
+    callouts: [{ id: 1, text: "The card widens.", before: [100, 80, 60, 40], after: [100, 80, 90, 40], ...emphasis }],
     details: [{ callout: 1, context: 40, zoom: 2 }],
   });
+  const run = render({ measure: "width", outline: true });
+  const plain = render({});
   assert.equal(run.status, 0, run.stderr);
+  assert.equal(plain.status, 0, plain.stderr);
   const [detail] = run.result.details;
   assert.equal(detail.zoom, 2);
-  assert.deepEqual(run.result.limitations, [], "blank space keeps every bracket");
+  assert.deepEqual(run.result.limitations, [], "blank space keeps every bracket, including in the detail");
+  assert.match(run.result.callouts[0].legend, /Measured width: Before 60 px, After 90 px\./);
+  const red = rgbOf(run.result.callouts[0].color);
+  const output = pixels(detail.path);
+  const marked = (image) => {
+    let count = 0;
+    for (let y = 0; y < image.height; y += 1) for (let x = 0; x < image.width; x += 1) if (near(image.at(x, y), red)) count += 1;
+    return count;
+  };
   for (const [key, width] of [["before", 60], ["after", 90]]) {
     const panel = run.result.callouts[0].panels[key];
     assert.ok(panel.outline && panel.bracket, `the overview ${key} panel keeps its outline and bracket`);
-    // The detail view draws its own marks around the enlarged target.
-    const view = detail.panels[key];
-    const target = viewRect(view, [100, 80, width, 40]);
-    const output = pixels(detail.path);
-    const red = hex(run.result.callouts[0].color);
-    const outlined = ring(target, 3).filter(([x, y]) => output.at(x, y).every((value, index) => Math.abs(value - red[index]) <= 40));
-    assert.ok(outlined.length > ring(target, 3).length * 0.5, `the detail ${key} panel outlines the target`);
+    // The detail view draws its own outline around the enlarged target.
+    const points = ring(viewRect(detail.panels[key], [100, 80, width, 40]), 3);
+    const outlined = points.filter(([x, y]) => near(output.at(x, y), red));
+    assert.ok(outlined.length > points.length * 0.5, `the detail ${key} panel outlines the target`);
   }
-  assert.match(run.result.callouts[0].legend, /Measured width: Before 60 px, After 90 px\./);
+  // Beyond the outline, the bracket and its value pill add callout-coloured
+  // ink that a pin-only detail of the same callout lacks.
+  const outlineInk = Object.values(detail.panels).reduce((total, panel, index) =>
+    total + ring(viewRect(panel, [100, 80, [60, 90][index], 40]), 3).length * 3, 0);
+  assert.ok(marked(output) > marked(pixels(plain.result.details[0].path)) + outlineInk,
+    "the detail draws measurement brackets");
 });
 
 test("callout outlines must be true or false", media, () => {
@@ -934,10 +948,14 @@ test("the documented example prepares every asset and Markdown in one invocation
   assert.ok(example, "comparisons.md carries a JSON example");
   const spec = JSON.parse(example[1]);
   const dir = caseDir();
+  // Buttons for the moved and measured callouts, and the subtle target: an
+  // indicator dot that shifts from grey to amber.
   for (const key of ["before", "after"]) {
-    const shapes = spec.callouts.filter((callout) => !callout.measure).map((callout) => callout[key] ?? callout.region)
-      .filter(Boolean).map((rect) => ({ color: "#1f6feb", rect }));
-    image(join(dir, spec[key].image), 1280, 800, shapes);
+    const buttons = spec.callouts.filter((callout) => !callout.outline && !callout.measure)
+      .map((callout) => ({ color: "#1f6feb", rect: callout[key] ?? callout.region }));
+    const dots = spec.callouts.filter((callout) => callout.outline)
+      .map((callout) => ({ color: key === "before" ? "#8c959f" : "#bf8700", rect: callout[key] ?? callout.region }));
+    image(join(dir, spec[key].image), 1280, 800, [...buttons, ...dots]);
   }
   const run = compare(dir, spec);
   assert.equal(run.status, 0, run.stderr);

@@ -139,9 +139,9 @@ relative to the spec, so the captures are referenced by name.
 
 Each callout is pin-only, following comparisons.md's "Choose the annotation".
 Callout 1 pairs the moved Save button across both panels, and callout 2 points
-to a badge small enough to miss at PR width. Both changes are plainly visible
-once found, so neither needs an outline or a label, and the button's width is
-not the claim, so it carries no measurement.
+to a badge small enough to overlook at PR width. Both are plain once a pin
+points at them, so neither needs an outline or a label, and the button's width
+is not the claim, so it carries no measurement.
 
 ```bash
 cat > "$EVIDENCE_DIR/compare.json" <<'JSON'
@@ -191,8 +191,9 @@ node -p 'require(process.argv[1]).limitations.join("\n") || "No limitations."' \
   "$EVIDENCE_DIR/compare/result.json"
 ```
 
-In the sample, the After panel's Save pin sits in the margin, and its connector
-crosses the toolbar on the way; the result reports that limitation.
+With real captures of the sample, the After panel's Save pin sits in the
+margin, and its connector crosses the toolbar on the way; the result reports
+that limitation.
 
 ## 8. Register the derived files and check freshness
 

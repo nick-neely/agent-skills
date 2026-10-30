@@ -18,12 +18,10 @@ An image inside a before/after table already has a column header, and the
 section prose already describes the change, so a caption reading "Before" or
 "Capture your first note was reworded" is pure duplication rendered twice.
 
-Annotate only what a reviewer would otherwise miss or misread. An annotation
-list may be empty. Give each mark a label only when it adds what the pixels
-do not show; a visibly new badge needs no "new badge" label. Keep boxes and
-circles for subtle targets, as
-[comparisons.md](comparisons.md#choose-the-annotation) describes for
-comparisons.
+Choose marks the way
+[comparisons.md](comparisons.md#choose-the-annotation) ranks them: an empty
+`annotations` list is valid, labels carry only what the pixels do not show,
+and boxes and circles are for subtle targets.
 
 **Coordinates always refer to the original screenshot**, including when `crop`
 is set. The script translates them. This means you can feed rectangles straight

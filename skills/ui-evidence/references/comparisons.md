@@ -31,8 +31,9 @@ A comparison with no callouts is a complete result. Give a callout only a note
 the pixels do not already say: where a small change is, which element moved,
 or a reason or consequence the task or verified behaviour supports. Write
 `label` only when the pin needs a name the reviewer could not read off the UI;
-a visibly new badge needs no "New badge" tag. Reserve outlines for targets a
-reviewer would otherwise miss, such as a one-pixel border or a slight colour
+a visibly new badge needs no "New badge" tag. A pin is enough to locate a small
+target that is plain once found. Reserve outlines for targets that stay hard to
+see with a pin beside them, such as a one-pixel border or a slight colour
 shift, and pair them with a detail view when the target is tiny.
 
 ## Capture anchors with the screenshots
@@ -135,8 +136,8 @@ only cue. Each option below is explicit emphasis; pick it for a purpose from
 [Choose the annotation](#choose-the-annotation).
 
 - `outline: true` draws a box in the callout colour just outside the region.
-  Until this option existed every callout was outlined; existing specs still
-  render, now without the box, so add `outline: true` where it helped.
+  Callouts are no longer outlined by default. An older spec still renders, now
+  without boxes; add `outline: true` to a callout whose target needs one.
 - `label`: an optional short tag beside the pin. When it cannot fit without
   covering another mark, surrounding UI, or leaving the panel, it is dropped and
   the legend keeps the explanation; the result lists that limitation.
@@ -181,8 +182,9 @@ placement, outlines, labels, and brackets, detail windows, and `limitations` to
 mention in the PR when relevant.
 
 The combined image stands on its own: labelled panels at one scale, plus pins
-and a legend when there are callouts. Without callouts it has neither. Chrome scales with the canvas so it reads at the rendered PR width. Wide
-captures stack and tall captures sit side by side; crop or add a detail when the
+and a legend when there are callouts. Without callouts it has neither. Chrome
+scales with the canvas so it reads at the rendered PR width. Wide captures stack
+and tall captures sit side by side; crop or add a detail when the
 change is still too small to read at that width.
 
 `flip.gif` alternates the two labelled screenshots with the configured hold.
