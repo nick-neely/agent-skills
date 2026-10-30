@@ -597,6 +597,26 @@ test("derived outputs from compare and motion reports link to their recorded sou
   const status = p.status();
   assert.match(reasons(status["compare.comparison"]), /preparation inputs changed/);
   assert.equal(status.interaction.status, "fresh");
+  // An input that matches no recorded asset is kept, so the output is never
+  // reported fresh and a later change to that input is detected.
+  const untracked = join(p.evidence, "untracked-after.png");
+  writeFileSync(untracked, "not captured by a recipe");
+  const half = join(p.evidence, "half");
+  mkdirSync(half);
+  writeFileSync(join(half, "comparison.png"), "half comparison");
+  writeFileSync(join(half, "result.json"), JSON.stringify({
+    outputs: { comparison: join(half, "comparison.png"), details: [], flip: null, onion: null },
+    inputs: { before: { image: stored.assets["pricing-toggle.after"].path }, after: { image: untracked } },
+  }));
+  const halfAdded = p.manifest("add", "--result", join(half, "result.json"));
+  assert.equal(halfAdded.status, 0, halfAdded.stderr);
+  assert.deepEqual(halfAdded.json.unmatchedSources, [untracked]);
+  assert.equal(halfAdded.json.freshness[0].status, "review", reasons(halfAdded.json.freshness[0]));
+  assert.match(reasons(halfAdded.json.freshness[0]), /derived from untracked-after\.png, which has no capture provenance/);
+  writeFileSync(untracked, "changed");
+  assert.match(reasons(p.status()["half.comparison"]), /unrecorded source untracked-after\.png changed/);
+  assert.equal(p.status()["half.comparison"].status, "stale");
+
   const clash = p.manifest("add", "--asset", prepared, "--id", "pricing-toggle.after");
   assert.notEqual(clash.status, 0);
   assert.match(clash.stderr, /belongs to a capture/);
@@ -660,7 +680,7 @@ test("status lists recipe captures that have no recorded evidence yet", () => {
 
 test("the documented recipe example and the fixture recipe validate", () => {
   const doc = readFileSync(join(repo, "skills", "ui-evidence", "references", "recipes.md"), "utf8");
-  const example = /```json\n([\s\S]*?)\n```/.exec(doc);
+  const example = /```json\r?\n([\s\S]*?)\r?\n```/.exec(doc);
   assert.ok(example, "recipes.md has a JSON recipe example");
   const recipe = parseRecipe(JSON.parse(example[1]));
   assert.ok(recipe.captures.size >= 2);

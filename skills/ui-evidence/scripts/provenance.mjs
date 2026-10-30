@@ -11,7 +11,7 @@ import {
   closeSync, existsSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, realpathSync, renameSync, unlinkSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { effectiveCapture, globMatcher, loadRecipe, recipeHash } from "./recipe.mjs";
 
 export const MANIFEST_VERSION = 1;
@@ -406,8 +406,19 @@ function assessAsset(manifest, id, captureStatus, ancestors = new Set()) {
     return result ?? { asset: id, status: "review", reasons: [{ level: "review", text: "its capture record is missing" }] };
   }
   const reasons = [...assetIntegrity(asset)];
-  if (!asset.derivedFrom?.length) {
+  if (!asset.derivedFrom?.length && !asset.unrecordedSources?.length) {
     reasons.push({ level: "review", text: "recorded without capture provenance; inspect it before reuse" });
+  }
+  // Inputs that matched no recorded asset when this was derived.
+  for (const source of asset.unrecordedSources ?? []) {
+    const name = basename(source.path);
+    if (!source.sha256 || !existsSync(source.path)) {
+      reasons.push({ level: "review", text: `derived from ${name}, which was missing when recorded or is missing now` });
+    } else if (sha256File(source.path) !== source.sha256) {
+      reasons.push({ level: "stale", text: `unrecorded source ${name} changed after this was derived; regenerate it` });
+    } else {
+      reasons.push({ level: "review", text: `derived from ${name}, which has no capture provenance` });
+    }
   }
   if (ancestors.has(id)) return { asset: id, status: "review", reasons: [{ level: "review", text: "derivation cycle" }] };
   const chain = new Set(ancestors).add(id);
@@ -505,13 +516,20 @@ export function assetsByHash(manifest) {
   return byHash;
 }
 
-// Freshness for the files a publication references, keyed by content.
+// Freshness for the files a publication references. A file at a recorded
+// path is that asset, so an in-place overwrite is caught by its integrity
+// check; matching content also links copies of recorded files.
 export function publicationFreshness(manifest, files, options = {}) {
   const report = assessManifest(manifest, options);
   const byHash = assetsByHash(manifest);
+  const byPath = new Map();
+  for (const [id, asset] of Object.entries(manifest.assets)) {
+    const path = canonicalPath(asset.path);
+    byPath.set(path, [...(byPath.get(path) ?? []), id]);
+  }
   const items = files.map(({ file, refs }) => {
     const hash = sha256File(file);
-    const ids = byHash.get(hash) ?? [];
+    const ids = [...new Set([...(byPath.get(canonicalPath(file)) ?? []), ...(byHash.get(hash) ?? [])])];
     if (!ids.length) {
       return { refs, assets: [], sha256: hash, status: "untracked", reasons: ["not recorded in the manifest"] };
     }

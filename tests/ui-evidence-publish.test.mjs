@@ -633,6 +633,14 @@ test("reports manifest freshness in the plan and refuses stale evidence before u
   assert.deepEqual(refused.github.uploads, []);
   assert.equal(refused.github.calls.length, staleDry.github.calls.length, "stale evidence is refused before reading or writing the target");
   assert.deepEqual(JSON.parse(readFileSync(stale, "utf8")).publications, []);
+
+  // A recorded file overwritten in place is the same asset, now tampered.
+  const recorded = manifestFor(f, { screen: { file: "screen.png" } });
+  writeFileSync(join(f.dir, "screen.png"), "overwritten screenshot");
+  const overwritten = run(f, ["--manifest", recorded]);
+  assert.notEqual(overwritten.status, 0);
+  assert.match(overwritten.stderr, /stale evidence: screen\.png \(asset file changed after it was recorded/);
+  assert.deepEqual(overwritten.github.uploads, []);
 });
 
 test("records hosted references after readback and reports partial publication failure in the manifest", () => {

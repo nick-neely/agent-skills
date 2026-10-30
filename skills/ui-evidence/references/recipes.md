@@ -195,6 +195,8 @@ node "<skill-root>/scripts/manifest.mjs" add --manifest "$EVIDENCE_DIR/manifest.
 report. It links each output to the recorded captures with the same content.
 `--asset <file> --from <asset-id>` records any other file. An asset with no
 recorded source, such as an existing screenshot, is accepted but stays `review`.
+An input that matches no recorded capture is kept as an unrecorded source, so
+the output stays `review` and becomes stale if that input changes.
 Review sheets and previews stay local and unrecorded.
 
 ## Publish with the record
@@ -211,6 +213,8 @@ branch, fixture, recipe identity, and freshness, and lists unresolved
 limitations. It never includes local paths, base URLs, or session names.
 
 With `--manifest`, the publisher reports freshness for every referenced file.
+A file at a recorded path is checked as that asset, so an in-place overwrite is
+stale.
 Stale evidence is refused before uploading; a dry run still prints the plan with
 a `blocked` reason. After readback, the manifest records which assets map to
 which hosted URLs. A failed or partial publication is recorded as unverified

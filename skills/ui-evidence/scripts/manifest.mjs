@@ -188,6 +188,8 @@ function add(options) {
       path: resolve(output), sha256: sha256File(output), bytes: statSync(output).size,
       media: /\.(mp4|mov|webm)$/i.test(output) ? "video" : "image",
       derivedFrom: [...from].map(([source, sha]) => ({ id: source, sha256: sha })),
+      ...(unmatched.length ? { unrecordedSources: unmatched.map((source) =>
+        ({ path: resolve(source), sha256: existsSync(source) ? sha256File(source) : null })) } : {}),
       ...(inputs ? { inputs } : {}), kind: plan.kind, createdAt,
     }];
   });
