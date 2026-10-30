@@ -256,8 +256,9 @@ function nearestPoint(rect, x, y) {
 // the surrounding UI that gives the change its context. Without a surface no
 // screenshot pixel is known to be safe, and marks use the gutters.
 class PanelPlacer {
-  constructor(panel, bounds, chrome, surface = null) {
+  constructor(panel, bounds, chrome, surface = null, lanes = 1) {
     this.panel = panel;
+    this.lanes = lanes;
     this.bounds = bounds;
     this.chrome = chrome;
     this.surface = surface;
@@ -416,9 +417,12 @@ class PanelPlacer {
     ].sort((a, b) => a.distance - b.distance);
     const step = d + gap;
     let fallback = null;
-    for (const { side } of sides) {
+    // Lane 0 sits against the panel; each further lane is one pin further out.
+    const walks = Array.from({ length: this.lanes }, (_, lane) => sides.map(({ side }) => ({ side, lane }))).flat();
+    for (const { side, lane } of walks) {
       const vertical = side !== "bottom";
-      const fixed = side === "left" ? bounds.x + gap : side === "right" ? right(panel) + gap : bottom(panel) + gap;
+      const out = lane * step;
+      const fixed = side === "left" ? panel.x - d - out : side === "right" ? right(panel) + gap + out : bottom(panel) + gap + out;
       const start = vertical ? centreY - radius : centreX - radius;
       const limit = vertical ? bounds.height : bounds.width;
       for (let k = 0; k <= Math.ceil(limit / step) * 2; k += 1) {
@@ -482,14 +486,28 @@ class PanelPlacer {
 // final canvas pixels. `panels` carry their output size and, optionally, a
 // `surface` from pixelSurface() over their rendered pixels; callout marks carry
 // rectangles in panel-local output pixels.
-export function planComparison({ panels, callouts = [], layout = "auto", displayWidth = DEFAULT_DISPLAY_WIDTH, measure }) {
-  if (typeof measure !== "function") throw new Error("planComparison needs a measure function");
+export function planComparison(options) {
+  if (typeof options.measure !== "function") throw new Error("planComparison needs a measure function");
+  // A pin that fits neither beside its region nor in a gutter lane would
+  // cover UI or another mark, so widen the gutters one lane at a time.
+  let plan;
+  for (let lanes = 1; lanes <= MAX_LANES; lanes += 1) {
+    plan = planWithLanes(options, lanes);
+    if (!plan.marks.some((mark) => mark.pin.placement === "overlap")) break;
+  }
+  return plan;
+}
+
+const MAX_LANES = 4;
+
+function planWithLanes({ panels, callouts = [], layout = "auto", displayWidth = DEFAULT_DISPLAY_WIDTH, measure }, lanes) {
   const maxWidth = Math.max(...panels.map((panel) => panel.width));
   const maxHeight = Math.max(...panels.map((panel) => panel.height));
   const chosen = chooseLayout(layout, { width: maxWidth, height: maxHeight });
   const contentWidth = chosen === "side-by-side" ? maxWidth * panels.length : maxWidth;
   const chrome = chromeFor(contentWidth, displayWidth);
-  const { gutter, headerPad, headerFont, gap } = chrome;
+  const { headerPad, headerFont, gap } = chrome;
+  const gutter = chrome.gutter + (lanes - 1) * (chrome.radius * 2 + gap);
   const limitations = [];
 
   const headerSizes = panels.map((panel) => measure(panel.label, headerFont));
@@ -526,7 +544,7 @@ export function planComparison({ panels, callouts = [], layout = "auto", display
   const spotlights = [];
   for (const panel of planned) {
     const placer = new PanelPlacer({ x: panel.x, y: panel.y, width: panel.width, height: panel.height },
-      panel.bounds, chrome, panel.surface);
+      panel.bounds, chrome, panel.surface, lanes);
     const local = sorted
       .map((callout) => ({ callout, mark: callout.marks?.[panel.key] }))
       .filter(({ mark }) => mark)
@@ -587,8 +605,8 @@ export function planComparison({ panels, callouts = [], layout = "auto", display
   let height = slotsBottom;
   if (sorted.length) {
     const { radius, legendFont } = chrome;
-    const x = gutter;
-    const width = canvasWidth - gutter * 2;
+    const x = chrome.gutter;
+    const width = canvasWidth - chrome.gutter * 2;
     const textX = x + radius * 2 + gap * 2;
     const textWidth = width - (textX - x);
     let y = slotsBottom + gap;
@@ -611,7 +629,7 @@ export function planComparison({ panels, callouts = [], layout = "auto", display
 
   return {
     layout: chosen,
-    canvas: { width: canvasWidth, height: height + gutter / 2 },
+    canvas: { width: canvasWidth, height: height + chrome.gutter / 2 },
     chrome,
     panels: planned.map(({ bounds, surface, ...panel }) => panel),
     marks,

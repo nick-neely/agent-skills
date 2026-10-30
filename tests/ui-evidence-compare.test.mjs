@@ -192,7 +192,7 @@ test("crowded edge callouts keep every pin in bounds, apart, and off every chang
   }
 });
 
-test("crowded edge callouts over busy UI keep pins off it, or report the pin that covers it", () => {
+test("crowded edge callouts over busy or unknown UI widen the gutters instead of covering it", () => {
   const rects = [[0, 0, 8, 8], [10, 0, 8, 8], [0, 10, 8, 8], [20, 0, 8, 8], [0, 20, 8, 8], [72, 52, 8, 8], [36, 26, 8, 8]];
   const callouts = rects.map(([x, y, width, height], index) => ({
     id: index + 1, color: "#cf222e", text: `change ${index + 1}`, label: `label ${index + 1}`,
@@ -200,26 +200,30 @@ test("crowded edge callouts over busy UI keep pins off it, or report the pin tha
   }));
   // Text strokes fill the panel's interior; only a thin frame at its edges is blank.
   const busy = paint(80, 60, [{ rect: [0, 0, 80, 60], color: [255, 255, 255], text: true }]);
-  const plan = planComparison({ panels: ["before", "after"].map((key) => ({ key, label: key, width: 80, height: 60, surface: busy })),
-    callouts, measure: fakeMeasure });
-  const limitations = plan.limitations.join("\n");
-  for (const mark of plan.marks) {
-    const panel = plan.panels.find((item) => item.key === mark.panel);
-    const coversUi = (box) => {
-      const x = Math.max(box.x, panel.x);
-      const y = Math.max(box.y, panel.y);
-      const width = Math.min(box.x + box.width, panel.x + panel.width) - x;
-      const height = Math.min(box.y + box.height, panel.y + panel.height) - y;
-      return width > 0 && height > 0 && !busy.blank({ x: x - panel.x, y: y - panel.y, width, height });
-    };
-    if (mark.label) assert.ok(!coversUi(mark.label), `label ${mark.id} covers busy UI in ${mark.panel}`);
-    if (coversUi(pinRect(mark.pin))) {
-      // Only the last-resort fallback may cover UI, and it says so.
-      assert.equal(mark.pin.placement, "overlap", `pin ${mark.id} covers busy UI in ${mark.panel} without falling back`);
-      assert.match(limitations, new RegExp(`Callout ${mark.id} pin in ${mark.panel} covers surrounding UI`));
+  const crowded = (surface) => planComparison({
+    panels: ["before", "after"].map((key) => ({ key, label: key, width: 80, height: 60, surface })), callouts, measure: fakeMeasure });
+  const standard = planComparison({ panels: blankPanels(80, 60), callouts, measure: fakeMeasure });
+  for (const [name, surface] of [["busy", busy], ["unknown", undefined]]) {
+    const plan = crowded(surface);
+    for (const mark of plan.marks) {
+      const panel = plan.panels.find((item) => item.key === mark.panel);
+      const coversUi = (box) => {
+        const x = Math.max(box.x, panel.x);
+        const y = Math.max(box.y, panel.y);
+        const width = Math.min(box.x + box.width, panel.x + panel.width) - x;
+        const height = Math.min(box.y + box.height, panel.y + panel.height) - y;
+        return width > 0 && height > 0 && !(surface?.blank({ x: x - panel.x, y: y - panel.y, width, height }) ?? false);
+      };
+      assert.notEqual(mark.pin.placement, "overlap", `${name}: pin ${mark.id} fell back to covering in ${mark.panel}`);
+      assert.ok(!coversUi(pinRect(mark.pin)), `${name}: pin ${mark.id} covers UI in ${mark.panel}`);
+      if (mark.label) assert.ok(!coversUi(mark.label), `${name}: label ${mark.id} covers UI in ${mark.panel}`);
+      for (const other of plan.marks.filter((item) => item.panel === mark.panel && item !== mark)) {
+        assert.ok(!overlaps(pinRect(mark.pin), pinRect(other.pin)), `${name}: pins ${mark.id} and ${other.id} overlap`);
+      }
     }
+    assert.doesNotMatch(plan.limitations.join("\n"), /pin in .* (covers surrounding UI|overlaps another mark)/);
+    assert.ok(plan.panels[1].y > standard.panels[1].y, `${name}: the gutters widen to hold the extra pins`);
   }
-  assert.ok(plan.marks.filter((mark) => mark.pin.placement === "margin").length >= rects.length, "busy UI sends pins to the margins");
 });
 
 test("a region nested inside another callout keeps its pin beside it", () => {
