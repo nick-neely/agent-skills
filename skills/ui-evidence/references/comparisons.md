@@ -120,7 +120,8 @@ as a neighbouring button or heading. A pin, label, or bracket covers screenshot
 pixels only where the rendered panel is blank: one flat colour, with a small
 margin. Otherwise the pin moves into a reserved margin beside the panel, with a
 connector line that crosses no other mark and as little UI as possible; the
-label and bracket are dropped, and the legend keeps their text. Placement is
+margins widen when a crowded panel needs more room. The label and bracket are
+dropped, and the legend keeps their text. Placement is
 deterministic, so the same inputs give the same image. The result lists each
 dropped label or bracket and each connector that still crosses UI.
 

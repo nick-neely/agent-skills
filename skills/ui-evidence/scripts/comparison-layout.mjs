@@ -326,13 +326,13 @@ class PanelPlacer {
     return { x1: cx, y1: cy, x2: Math.round(to.x), y2: Math.round(to.y) };
   }
 
-  // Overlap is a last resort for an impossibly crowded panel. Choose the
-  // in-bounds candidate covering the least area, first one on ties. With
-  // `safeOnly`, candidates over non-blank screenshot pixels are skipped.
-  leastOverlap(candidates, safeOnly = false) {
+  // Overlap with another mark is a last resort for a crowded measurement.
+  // Choose the in-bounds candidate over blank pixels covering the least
+  // area, first one on ties.
+  leastOverlap(candidates) {
     let best = null;
     for (const candidate of candidates) {
-      if (!contains(this.bounds, candidate.box) || (safeOnly && !this.safe(candidate.box))) continue;
+      if (!contains(this.bounds, candidate.box) || !this.safe(candidate.box)) continue;
       const cost = this.blocking().reduce((total, other) => {
         const hit = intersect(other, candidate.box);
         return total + (hit ? hit.width * hit.height : 0);
@@ -375,7 +375,7 @@ class PanelPlacer {
     let chosen = candidates.find((candidate) => this.fits(candidate.box));
     let placement = "clear";
     if (!chosen) {
-      chosen = this.leastOverlap(candidates, true);
+      chosen = this.leastOverlap(candidates);
       placement = "overlap";
     }
     if (!chosen) return null;
@@ -441,12 +441,8 @@ class PanelPlacer {
         }
       }
     }
-    if (fallback) return this.commitPin(fallback.box, "margin", rect, fallback.covers);
-    const crowded = this.leastOverlap(adjacent, true) ?? this.leastOverlap(adjacent) ??
-      { box: fitWindow({ x: rect.x, y: rect.y, width: d, height: d }, { width: right(bounds), height: bottom(bounds) }) };
-    return this.commitPin(crowded.box, "overlap", rect, {
-      mark: this.blocking().some((other) => intersect(other, crowded.box)), ui: !this.safe(crowded.box),
-    });
+    // No free slot: the caller widens the gutters and plans again.
+    return fallback ? this.commitPin(fallback.box, "margin", rect, fallback.covers) : null;
   }
 
   // `covers` says what the pin, or a margin pin's connector, still draws over.
@@ -485,21 +481,25 @@ class PanelPlacer {
 // Plan one comparison image: panel slots, headers, marks, and legend, all in
 // final canvas pixels. `panels` carry their output size and, optionally, a
 // `surface` from pixelSurface() over their rendered pixels; callout marks carry
-// rectangles in panel-local output pixels.
+// rectangles in panel-local output pixels. Throws when the callouts cannot all
+// be numbered without covering the screenshot.
 export function planComparison(options) {
   if (typeof options.measure !== "function") throw new Error("planComparison needs a measure function");
-  // A pin that fits neither beside its region nor in a gutter lane would
-  // cover UI or another mark, so widen the gutters one lane at a time.
-  let plan;
-  for (let lanes = 1; lanes <= MAX_LANES; lanes += 1) {
-    plan = planWithLanes(options, lanes);
-    if (!plan.marks.some((mark) => mark.pin.placement === "overlap")) break;
+  // A pin that fits neither beside its region nor in a gutter lane would have
+  // to cover UI or another pin, so widen the gutters instead. Every lane adds
+  // free slots, so as many lanes as callouts always suffice in practice.
+  const callouts = options.callouts?.length ?? 0;
+  for (let lanes = 1; ; lanes *= 2) {
+    const plan = planWithLanes(options, lanes);
+    if (plan) return plan;
+    if (lanes > callouts) {
+      throw new Error(`${callouts} callouts are too crowded to number without covering the screenshot; ` +
+        "split them across detail views or comparisons");
+    }
   }
-  return plan;
 }
 
-const MAX_LANES = 4;
-
+// The plan with this many gutter lanes, or null when a pin finds no free slot.
 function planWithLanes({ panels, callouts = [], layout = "auto", displayWidth = DEFAULT_DISPLAY_WIDTH, measure }, lanes) {
   const maxWidth = Math.max(...panels.map((panel) => panel.width));
   const maxHeight = Math.max(...panels.map((panel) => panel.height));
@@ -578,11 +578,10 @@ function planWithLanes({ panels, callouts = [], layout = "auto", displayWidth = 
     local.forEach((item, index) => {
       placer.owner = item.rect;
       entries[index].pin = placer.placePin(item.rect);
-      const { placement, coversUi } = entries[index].pin;
-      if (placement === "overlap") {
-        const covered = coversUi ? "covers surrounding UI" : "overlaps another mark";
-        limitations.push(`Callout ${item.callout.id} pin in ${panel.label} ${covered}; the panel is too crowded.`);
-      } else if (entries[index].pin.crossing) {
+    });
+    if (entries.some((entry) => !entry.pin)) return null;
+    local.forEach((item, index) => {
+      if (entries[index].pin.crossing) {
         limitations.push(`Callout ${item.callout.id} connector in ${panel.label} crosses another mark; the panel is too crowded.`);
       } else if (entries[index].pin.coversUi) {
         limitations.push(`Callout ${item.callout.id} connector in ${panel.label} crosses surrounding UI on its way to a margin pin.`);

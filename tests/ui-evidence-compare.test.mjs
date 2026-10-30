@@ -226,6 +226,29 @@ test("crowded edge callouts over busy or unknown UI widen the gutters instead of
   }
 });
 
+test("dozens of callouts on a small busy panel still keep every pin off its pixels", () => {
+  // 48 disjoint regions on an 80x60 checkerboard, so no screenshot pixel is blank.
+  const data = Buffer.alloc(80 * 60 * 3, 255);
+  for (let y = 0; y < 60; y += 1) for (let x = 0; x < 80; x += 1) if ((x + y) % 2) data.set([0, 0, 0], (y * 80 + x) * 3);
+  const checker = pixelSurface({ width: 80, height: 60, data });
+  const callouts = Array.from({ length: 48 }, (_, index) => {
+    const rect = { x: 5 + (index % 8) * 8, y: 5 + Math.floor(index / 8) * 8, width: 4, height: 4 };
+    return { id: index + 1, color: "#cf222e", text: `change ${index + 1}`, marks: { before: { rect }, after: { rect } } };
+  });
+  for (const surface of [checker, undefined]) {
+    const plan = planComparison({ panels: ["before", "after"].map((key) => ({ key, label: key, width: 80, height: 60, surface })),
+      callouts, measure: fakeMeasure });
+    for (const mark of plan.marks) {
+      const panel = plan.panels.find((item) => item.key === mark.panel);
+      assert.ok(!overlaps(pinRect(mark.pin), panel), `pin ${mark.id} covers screenshot pixels in ${mark.panel}`);
+      for (const other of plan.marks.filter((item) => item.panel === mark.panel && item.id > mark.id)) {
+        assert.ok(!overlaps(pinRect(mark.pin), pinRect(other.pin)), `pins ${mark.id} and ${other.id} overlap`);
+      }
+    }
+    assert.equal(plan.marks.length, 96);
+  }
+});
+
 test("a region nested inside another callout keeps its pin beside it", () => {
   const row = { x: 20, y: 100, width: 500, height: 40 };
   const badge = { x: 200, y: 110, width: 40, height: 20 };
