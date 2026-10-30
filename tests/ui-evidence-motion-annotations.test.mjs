@@ -10,7 +10,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { after, test } from "node:test";
 import {
-  AnnotationError, formatTime, layoutCaptions, mapInstant, mapInterval, motionMarkdown, outputSize, outputTimeline, planEvents,
+  AnnotationError, formatTime, layoutCaptions, layoutStoryboard, mapInstant, mapInterval, motionMarkdown, outputSize, outputTimeline, planEvents,
   planStoryboard, toOutput, usesCaptionArea,
 } from "../skills/ui-evidence/scripts/motion-annotations.mjs";
 
@@ -173,8 +173,17 @@ test("storyboard checkpoints keep their order, labels, and resolved times", () =
     [{ checkpoints: [{ at: 2 }] }, /label must be non-empty/],
     [{ checkpoints: Array.from({ length: 9 }, (_, index) => ({ at: 1 + index * 0.1, label: "x" })) }, /1 to 8/],
     [{ checkpoints: [{ at: 2, label: "x" }], columns: 5 }, /columns/],
-    [{ checkpoints: [{ at: 2, label: "x" }], columns: 4, displayWidth: 200 }, /leaves no room for labels/],
+    [{ checkpoints: [{ at: 2, label: "x" }], columns: 4, displayWidth: 200 }, /leaves no room for labels at displayWidth 200; use at most 1 column,/],
   ]) assert.throws(() => planStoryboard(raw, timeline, { duration: 4 }), pattern);
+  // Automatic columns never exceed what keeps labels readable, even for a tiny capture.
+  const tiny = planStoryboard({ displayWidth: 200, checkpoints: [1.2, 1.6, 2, 2.4].map((at) => ({ at, label: "x" })) },
+    timeline, { duration: 4 });
+  const measure = (value, pointsize, wrap) => {
+    assert.ok(wrap === undefined || wrap > 0, `label wrap width must be positive, got ${wrap}`);
+    return { width: Math.min(value.length * 9, wrap ?? Infinity), height: 19 };
+  };
+  assert.equal(layoutStoryboard(tiny, { width: 32, height: 18 }, measure).columns, 1);
+  assert.equal(layoutStoryboard({ ...tiny, displayWidth: 880, maxColumns: 4 }, { width: 32, height: 18 }, measure).columns, 4);
   const inherited = planStoryboard({ checkpoints: [{ at: 2, label: "x" }] }, timeline, { duration: 4 }, 600);
   assert.equal(inherited.displayWidth, 600, "the storyboard follows annotations.displayWidth");
   assert.equal(planStoryboard({ checkpoints: [{ at: 2, label: "x" }], displayWidth: 1000 }, timeline, { duration: 4 }, 600).displayWidth, 1000);

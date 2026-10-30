@@ -358,8 +358,10 @@ export function planStoryboard(raw, timeline, source, defaultWidth = DEFAULT_DIS
   if (spec.columns !== undefined && (!Number.isInteger(spec.columns) || spec.columns < 1 || spec.columns > 4)) {
     fail("storyboard.columns must be an integer from 1 to 4");
   }
-  if (spec.columns !== undefined && storyboardGrid(displayWidth, spec.columns).textWidth < storyboardGrid(displayWidth, 1).chrome.legendFont * 6) {
-    fail(`storyboard.columns ${spec.columns} leaves no room for labels at displayWidth ${displayWidth}; use fewer columns or a wider displayWidth`);
+  const maxColumns = fittingColumns(displayWidth);
+  if (spec.columns !== undefined && spec.columns > maxColumns) {
+    fail(`storyboard.columns ${spec.columns} leaves no room for labels at displayWidth ${displayWidth}; ` +
+      `use at most ${maxColumns} column${maxColumns === 1 ? "" : "s"}, or a wider displayWidth`);
   }
   let previous = -Infinity;
   const checkpoints = spec.checkpoints.map((item, index) => {
@@ -374,7 +376,7 @@ export function planStoryboard(raw, timeline, source, defaultWidth = DEFAULT_DIS
     if (!mapped) fail(`${name}.at ${at}s is outside the trim ${timeline.trim.start}-${timeline.trim.end}s`);
     return { index: index + 1, at, label: text(item.label, `${name}.label`, 160), ...mapped };
   });
-  return { checkpoints, displayWidth, columns: spec.columns ?? null };
+  return { checkpoints, displayWidth, columns: spec.columns ?? null, maxColumns };
 }
 
 // Panel and label widths for a storyboard drawn at twice the display width.
@@ -388,12 +390,20 @@ function storyboardGrid(displayWidth, columns) {
   return { scale, width, chrome, gap, panelWidth, textX, textWidth: panelWidth - textX };
 }
 
+// The most columns (up to 4) whose labels keep room for six legend characters.
+function fittingColumns(displayWidth) {
+  const minimum = storyboardGrid(displayWidth, 1).chrome.legendFont * 6;
+  let columns = 4;
+  while (columns > 1 && storyboardGrid(displayWidth, columns).textWidth < minimum) columns -= 1;
+  return columns;
+}
+
 // Grid for the storyboard PNG, drawn at twice the display width so text and
 // panels stay sharp when GitHub scales the image down.
 export function layoutStoryboard(plan, frameSize, measure) {
   const base = storyboardGrid(plan.displayWidth, 1);
   const fit = Math.floor((plan.displayWidth + base.gap / base.scale) / (Math.min(frameSize.width, 360) + base.gap / base.scale));
-  const columns = plan.columns ?? Math.max(1, Math.min(plan.checkpoints.length, 4, fit));
+  const columns = plan.columns ?? Math.max(1, Math.min(plan.checkpoints.length, plan.maxColumns, fit));
   const { scale, width, chrome, gap, panelWidth } = storyboardGrid(plan.displayWidth, columns);
   const imageScale = Math.min(panelWidth / frameSize.width, scale * 2);
   const image = { width: Math.round(frameSize.width * imageScale), height: Math.round(frameSize.height * imageScale) };
