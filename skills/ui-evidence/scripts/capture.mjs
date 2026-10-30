@@ -219,11 +219,21 @@ function checkState(observed, effective, base) {
   };
 }
 
-// Whether the capture is known to come from the identified checkout.
-function servedEvidence(identity, base, servedCheck) {
+// Whether the capture is known to come from the identified checkout. A file
+// page counts only when every page actually captured lies inside it; the base
+// URL alone does not show where routes and steps led.
+function servedEvidence(identity, hrefs, servedCheck) {
   if (servedCheck) return { verified: true, basis: servedCheck };
-  if (identity?.available && base.protocol === "file:" && insideCheckout(fileURLToPath(base), identity.root)) {
-    return { verified: true, basis: "file URL inside the source checkout" };
+  const inCheckout = (href) => {
+    try {
+      const url = new URL(href);
+      return url.protocol === "file:" && insideCheckout(fileURLToPath(url), identity.root);
+    } catch {
+      return false;
+    }
+  };
+  if (identity?.available && hrefs.length && hrefs.every(inCheckout)) {
+    return { verified: true, basis: "captured file pages are inside the source checkout" };
   }
   return { verified: false, basis: null };
 }
@@ -258,7 +268,6 @@ function main() {
       if (path && insideCheckout(path, root)) fail(`${label} must be outside the source checkout`);
     }
   }
-  const servedBy = servedEvidence(identity, base, options.servedCheck);
   const extension = effective.kind === "screenshot" ? "png" : effective.record.format;
   const assetId = `${capture.id}.${options.version}`;
   const target = resolve(outDir, `${assetId}.${extension}`);
@@ -278,7 +287,7 @@ function main() {
   const temporary = resolve(outDir, `.${assetId}.${randomBytes(6).toString("hex")}.${extension}`);
   try {
     return captureAndRecord({ options, recipe, recipePath, capture, effective, base, url, manifestPath, baseline,
-      identity, servedBy, assetId, target, previousId, previous, session, owned, temporary });
+      identity, assetId, target, previousId, previous, session, owned, temporary });
   } finally {
     rmSync(temporary, { force: true });
   }
@@ -286,8 +295,9 @@ function main() {
 
 // Everything after validation: drive the browser, then record the result.
 function captureAndRecord(plan) {
-  const { options, recipe, recipePath, capture, effective, base, url, manifestPath, baseline, identity, servedBy,
+  const { options, recipe, recipePath, capture, effective, base, url, manifestPath, baseline, identity,
     assetId, target, previousId, previous, session, owned, temporary } = plan;
+  const hrefs = [];
   const warnings = [];
   let state;
   let recording = null;
@@ -301,7 +311,9 @@ function captureAndRecord(plan) {
       if (error.command === readiness.at(-2)) error.message = `ready assertion did not become true: ${error.message}`;
       throw error;
     }
-    state = checkState(ready.at(-1).result?.result ?? {}, effective, base);
+    const observed = ready.at(-1).result?.result ?? {};
+    hrefs.push(observed.href);
+    state = checkState(observed, effective, base);
     if (effective.kind === "screenshot") {
       const shot = ["screenshot", ...(effective.screenshot.full ? ["--full"] : []),
         ...(effective.screenshot.selector ? [effective.screenshot.selector] : []), temporary];
@@ -312,8 +324,10 @@ function captureAndRecord(plan) {
       // One batch keeps the take free of process gaps between planned actions.
       try {
         const results = batch(session, [start, ...effective.actions, ["wait", "--fn", effective.expect],
-          ["record", "stop"]], "recording");
-        const { lifecycle, path: _path, ...stopped } = results.at(-1).result ?? {};
+          ["record", "stop"], ["eval", "location.href"]], "recording");
+        const finalHref = results.at(-1).result?.result;
+        hrefs.push(typeof finalHref === "string" ? finalHref : finalHref?.href);
+        const { lifecycle, path: _path, ...stopped } = results.at(-2).result ?? {};
         recording = stopped;
       } catch (error) {
         // Stop only a take this run started; a caller's recording stays intact.
@@ -353,6 +367,7 @@ function captureAndRecord(plan) {
       revision: baseline.baseRevision ?? null, mergeBase: baseline.mergeBase, repoRoot: baseline.repoRoot,
       pullRequest: baseline.pullRequest ?? null },
   } : identity);
+  const servedBy = servedEvidence(identity, hrefs, options.servedCheck);
   const provenance = { recipe: recipeHash(effective), fixture: effective.fixture, source: sourceRecord ?? null, served: servedBy };
 
   // A recapture that matches the recorded asset keeps it, with its original

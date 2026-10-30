@@ -279,7 +279,7 @@ test("one recipe drives before, after, and a follow-up capture with explicit ver
   assert.notEqual(before.json.asset.sha256, afterRun.json.asset.sha256);
   assert.equal(before.json.source.head, baseline.mergeBase);
   assert.equal(before.json.source.kind, "baseline");
-  assert.deepEqual(before.json.served, { verified: true, basis: "file URL inside the source checkout" });
+  assert.deepEqual(before.json.served, { verified: true, basis: "captured file pages are inside the source checkout" });
 
   const batches = p.calls().filter((call) => call.args[0] === "batch").map((call) => call.commands);
   const [beforeBatch, afterBatch] = batches.filter((commands) => commands[0][0] === "set");
@@ -352,6 +352,16 @@ test("steps may navigate and the observed route is recorded relative to the base
   assert.deepEqual(result.json.asset.size, [640, 720]);
   assert.ok(!JSON.stringify(result.json.state).includes(p.root));
   assert.ok(p.calls().some((call) => call.commands?.[0]?.[0] === "screenshot" && call.commands[0].includes("--full")));
+  assert.equal(result.json.served.verified, true);
+
+  // A file page outside the source checkout is not served by it, whatever the base URL.
+  const outside = project({ recipe: (r) => { r.captures[0].steps = [["click", "a[href=../outside.html]"]]; return r; } });
+  writeFileSync(join(outside.root, "outside.html"), "<p>not part of the checkout</p>");
+  const escaped = outside.capture(["--capture", "settings-profile"]);
+  assert.equal(escaped.status, 0, escaped.stderr);
+  assert.equal(escaped.json.state.path, null);
+  assert.deepEqual(escaped.json.served, { verified: false, basis: null });
+  assert.match(reasons(outside.status()["settings-profile.after"]), /served checkout was not verified/);
 });
 
 test("recordings run setup, actions, and the result assertion in one take and reject failed takes", () => {
@@ -365,8 +375,10 @@ test("recordings run setup, actions, and the result assertion in one take and re
   const recorded = p.calls().filter((call) => call.commands?.[0]?.[0] === "record")[0].commands;
   assert.deepEqual(recorded[0].slice(0, 2), ["record", "start"]);
   assert.ok(recorded[0].includes("--cursor"));
-  assert.deepEqual(recorded.at(-2), ["wait", "--fn", JSON.parse(readFileSync(join(p.app, "recipe.json"), "utf8")).captures[2].expect]);
-  assert.deepEqual(recorded.at(-1), ["record", "stop"]);
+  assert.deepEqual(recorded.at(-3), ["wait", "--fn", JSON.parse(readFileSync(join(p.app, "recipe.json"), "utf8")).captures[2].expect]);
+  assert.deepEqual(recorded.at(-2), ["record", "stop"]);
+  assert.deepEqual(recorded.at(-1), ["eval", "location.href"], "the final page is checked after the take");
+  assert.equal(take.json.served.verified, true);
   assert.equal(p.stored().assets["pricing-toggle.after"].media, "video");
 
   const failing = project({ recipe: (r) => { r.captures[2].expect = "window.neverReady"; return r; } });

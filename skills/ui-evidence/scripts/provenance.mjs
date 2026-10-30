@@ -520,7 +520,7 @@ export function assetsByHash(manifest) {
 
 // Freshness for the files a publication references. A file at a recorded
 // path is that asset, so an in-place overwrite is caught by its integrity
-// check; matching content also links copies of recorded files.
+// check; content matches only link a copy at an unrecorded path.
 export function publicationFreshness(manifest, files, options = {}) {
   const report = assessManifest(manifest, options);
   const byHash = assetsByHash(manifest);
@@ -531,7 +531,7 @@ export function publicationFreshness(manifest, files, options = {}) {
   }
   const items = files.map(({ file, refs }) => {
     const hash = sha256File(file);
-    const ids = [...new Set([...(byPath.get(canonicalPath(file)) ?? []), ...(byHash.get(hash) ?? [])])];
+    const ids = byPath.get(canonicalPath(file)) ?? byHash.get(hash) ?? [];
     if (!ids.length) {
       return { refs, assets: [], sha256: hash, status: "untracked", reasons: ["not recorded in the manifest"] };
     }

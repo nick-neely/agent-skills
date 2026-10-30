@@ -634,6 +634,15 @@ test("reports manifest freshness in the plan and refuses stale evidence before u
   assert.equal(refused.github.calls.length, staleDry.github.calls.length, "stale evidence is refused before reading or writing the target");
   assert.deepEqual(JSON.parse(readFileSync(stale, "utf8")).publications, []);
 
+  // A recorded path identifies its asset; a modified copy with the original's
+  // content hash does not make the intact original stale.
+  writeFileSync(join(f.dir, "copy.png"), "screenshot");
+  const copies = manifestFor(f, { screen: { file: "screen.png" }, copy: { file: "copy.png" } });
+  writeFileSync(join(f.dir, "copy.png"), "modified copy");
+  const intact = run(f, ["--manifest", copies, "--dry-run"]);
+  assert.equal(intact.status, 0, intact.stderr);
+  assert.deepEqual(JSON.parse(intact.stdout).freshness.assets[0].assets, ["screen"]);
+
   // A recorded file overwritten in place is the same asset, now tampered.
   const recorded = manifestFor(f, { screen: { file: "screen.png" } });
   writeFileSync(join(f.dir, "screen.png"), "overwritten screenshot");

@@ -125,8 +125,9 @@ gap is added between planned actions. A take whose assertion fails is kept as
   written as `<id>.<version>.<ext>`; a file there that the manifest does not
   record is never overwritten.
 - `--source` is the checkout the server renders. Confirm it the way
-  `before-after.md` describes and say how in `--served-check`. A `file:` base
-  URL inside the source checkout counts as verified. Without these the capture
+  `before-after.md` describes and say how in `--served-check`. A capture whose
+  `file:` pages, checked before capture and after a recording, all lie inside
+  the source checkout counts as verified. Without these the capture
   is recorded, but its freshness can only be `review`.
 - For the base version, save the JSON printed by `before-capture.mjs create`
   and pass it as `--baseline` with `--version before`; its checkout becomes the
