@@ -80,7 +80,7 @@ function greenPixels(path) {
 }
 
 function frames(gif) {
-  return execFileSync(MAGICK, [gif, "-format", "%T\n", "info:"], { encoding: "utf8" }).trim().split("\n");
+  return execFileSync(MAGICK, [gif, "-format", "%T\n", "info:"], { encoding: "utf8" }).trim().split(/\r?\n/);
 }
 
 const sha = (path) => createHash("sha256").update(readFileSync(path)).digest("hex");
@@ -543,7 +543,8 @@ test("text with ImageMagick escapes and file prefixes renders literally", media,
 
 test("the documented example prepares every asset and Markdown in one invocation", media, () => {
   const text = readFileSync(reference, "utf8");
-  const example = /```json\n([\s\S]*?)\n```/.exec(text);
+  // Windows checkouts may convert the reference to CRLF line endings.
+  const example = /```json\r?\n([\s\S]*?)\r?\n```/.exec(text);
   assert.ok(example, "comparisons.md carries a JSON example");
   const spec = JSON.parse(example[1]);
   const dir = caseDir();
