@@ -48,6 +48,8 @@ a login page is not the requested baseline.
 The browser's `diff screenshot --baseline <absolute-path>` provides quick visual
 inspection. Use `regions.mjs` when changed-region geometry helps annotation.
 Neither replaces checking that both captures show the intended app state.
+Capture selector anchors with each screenshot and compose the published pair as
+described in [comparisons.md](comparisons.md).
 
 ## Remove only this run's clean checkout
 

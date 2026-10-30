@@ -1,0 +1,747 @@
+#!/usr/bin/env node
+
+import assert from "node:assert/strict";
+import { execFileSync, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { after, test } from "node:test";
+import {
+  anchorToImageRect, chooseLayout, detailWindows, expectedScreenshotSize, planComparison, sectionMarkdown,
+  segmentCrosses, suggestCrops,
+} from "../skills/ui-evidence/scripts/comparison-layout.mjs";
+
+const repo = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const scripts = join(repo, "skills", "ui-evidence", "scripts");
+const compareScript = join(scripts, "compare.mjs");
+const anchorsScript = join(scripts, "anchors.mjs");
+const regionsScript = join(scripts, "regions.mjs");
+const reference = join(repo, "skills", "ui-evidence", "references", "comparisons.md");
+const font = join(repo, "skills", "ui-evidence", "assets", "DejaVuSans.ttf");
+const temp = mkdtempSync(join(tmpdir(), "ui-evidence-compare-test-"));
+after(() => rmSync(temp, { recursive: true, force: true }));
+
+const MAGICK = (process.platform === "win32" ? ["magick"] : ["magick", "convert"])
+  .find((binary) => spawnSync(binary, ["-version"], { stdio: "ignore" }).status === 0);
+if (!MAGICK && process.env.UI_EVIDENCE_REQUIRE_MEDIA === "1") throw new Error("ImageMagick is required for comparison tests");
+const media = { skip: MAGICK ? false : "ImageMagick is unavailable" };
+
+const HEADER = [0x24, 0x29, 0x2f];
+const RED = [255, 0, 0];
+const BLUE = [0, 0, 255];
+const WHITE = [255, 255, 255];
+
+// A deterministic fake text measurer: 0.6em per character, wrapped by width.
+function fakeMeasure(text, pointsize, wrapWidth) {
+  const width = String(text).length * pointsize * 0.6;
+  const lines = wrapWidth ? Math.max(1, Math.ceil(width / wrapWidth)) : 1;
+  return { width: wrapWidth ? Math.min(width, wrapWidth) : width, height: Math.ceil(lines * pointsize * 1.3) };
+}
+
+const overlaps = (a, b) =>
+  Math.min(a.x + a.width, b.x + b.width) > Math.max(a.x, b.x) &&
+  Math.min(a.y + a.height, b.y + b.height) > Math.max(a.y, b.y);
+const pinRect = (pin) => ({ x: pin.cx - pin.radius, y: pin.cy - pin.radius, width: pin.radius * 2, height: pin.radius * 2 });
+
+function caseDir() {
+  return mkdtempSync(join(temp, "case-"));
+}
+
+function image(path, width, height, shapes = [], extra = []) {
+  const args = ["-size", `${width}x${height}`, "xc:white"];
+  for (const { color, rect } of shapes) {
+    const [x, y, w, h] = rect;
+    args.push("-fill", color, "-draw", `rectangle ${x},${y} ${x + w - 1},${y + h - 1}`);
+  }
+  execFileSync(MAGICK, [...args, ...extra, path]);
+  return path;
+}
+
+function rgb(path, x, y) {
+  return [...execFileSync(MAGICK, [path, "+repage", "-crop", `1x1+${x}+${y}`, "+repage", "-depth", "8", "rgb:-"])];
+}
+
+function assertColor(actual, expected, tolerance = 14, where = "") {
+  assert.equal(actual.length, 3, `pixel ${where} must exist`);
+  actual.forEach((value, index) => assert.ok(Math.abs(value - expected[index]) <= tolerance,
+    `expected ${expected} at ${where}, got ${actual}`));
+}
+
+function greenPixels(path) {
+  const raw = execFileSync(MAGICK, [path, "-depth", "8", "rgb:-"], { maxBuffer: 256 * 1024 * 1024 });
+  let count = 0;
+  for (let index = 0; index < raw.length; index += 3) {
+    const [r, g, b] = [raw[index], raw[index + 1], raw[index + 2]];
+    if (g > 150 && g > r * 2 && g > b * 2) count += 1;
+  }
+  return count;
+}
+
+function frames(gif) {
+  return execFileSync(MAGICK, [gif, "-format", "%T\n", "info:"], { encoding: "utf8" }).trim().split(/\r?\n/);
+}
+
+const sha = (path) => createHash("sha256").update(readFileSync(path)).digest("hex");
+
+function compare(dir, spec) {
+  const specPath = join(dir, "spec.json");
+  writeFileSync(specPath, JSON.stringify(spec, null, 2));
+  const out = join(dir, "out");
+  const result = spawnSync(process.execPath, [compareScript, "--spec", specPath, "--out-dir", out], { encoding: "utf8" });
+  return { ...result, out, result: result.status === 0 ? JSON.parse(result.stdout) : null };
+}
+
+// Shared before/after pair: a 60x40 card moves 30px right between captures.
+function cardPair(dir, size = [300, 200]) {
+  image(join(dir, "before.png"), ...size, [{ color: "#ff0000", rect: [40, 30, 60, 40] }]);
+  image(join(dir, "after.png"), ...size, [{ color: "#0000ff", rect: [70, 30, 60, 40] }]);
+}
+
+// ---------------------------------------------------------------------------
+// Pure geometry and layout rules
+
+test("anchor rectangles map viewport and full-page captures at non-unit pixel ratios", () => {
+  const rect = { x: 20.25, y: -130, width: 40, height: 20.5 };
+  const full = { mode: "full", scroll: { x: 5, y: 150 }, devicePixelRatio: 1.5,
+    viewport: { width: 200, height: 100 }, document: { width: 205, height: 300 } };
+  assert.deepEqual(anchorToImageRect(rect, full), { x: 37, y: 30, width: 61, height: 31 });
+  assert.deepEqual(expectedScreenshotSize(full), { width: 308, height: 450 });
+  const viewport = { ...full, mode: "viewport", devicePixelRatio: 2 };
+  assert.deepEqual(anchorToImageRect({ x: 10, y: 20, width: 30, height: 5 }, viewport), { x: 20, y: 40, width: 60, height: 10 });
+  assert.deepEqual(expectedScreenshotSize(viewport), { width: 400, height: 200 });
+  assert.throws(() => anchorToImageRect(rect, { ...viewport, devicePixelRatio: 0 }), /devicePixelRatio/);
+});
+
+test("layout keeps matched scale and stacks wide captures but pairs tall ones", () => {
+  assert.equal(chooseLayout("auto", { width: 1280, height: 800 }), "stacked");
+  assert.equal(chooseLayout("auto", { width: 390, height: 844 }), "side-by-side");
+  assert.equal(chooseLayout("side-by-side", { width: 1280, height: 800 }), "side-by-side");
+  assert.throws(() => chooseLayout("grid", { width: 1, height: 1 }), /layout must be/);
+  for (const [layout, size] of [["side-by-side", [390, 844]], ["stacked", [1280, 800]]]) {
+    const plan = planComparison({
+      panels: [{ key: "before", label: "Before", width: size[0], height: size[1] },
+        { key: "after", label: "After", width: size[0], height: size[1] }],
+      measure: fakeMeasure,
+    });
+    assert.equal(plan.layout, layout);
+    const [before, afterPanel] = plan.panels;
+    assert.deepEqual([before.width, before.height], size);
+    assert.deepEqual([afterPanel.width, afterPanel.height], size);
+    if (layout === "side-by-side") assert.equal(before.y, afterPanel.y);
+    else assert.equal(before.x, afterPanel.x);
+    assert.ok(!overlaps(before, afterPanel));
+    assert.ok(plan.canvas.width >= afterPanel.x + afterPanel.width);
+  }
+});
+
+test("crowded edge callouts keep every pin in bounds, apart, and off every changed region", () => {
+  const rects = [[0, 0, 8, 8], [10, 0, 8, 8], [0, 10, 8, 8], [20, 0, 8, 8], [0, 20, 8, 8], [72, 52, 8, 8], [36, 26, 8, 8]];
+  const callouts = rects.map(([x, y, width, height], index) => ({
+    id: index + 1, color: "#cf222e", text: `change ${index + 1}`,
+    marks: { before: { rect: { x, y, width, height } }, after: { rect: { x, y, width, height } } },
+  }));
+  const plan = planComparison({
+    panels: [{ key: "before", label: "Before", width: 80, height: 60 }, { key: "after", label: "After", width: 80, height: 60 }],
+    callouts, measure: fakeMeasure,
+  });
+  assert.ok(plan.canvas.width >= 360, "a small canvas keeps a readable minimum width");
+  for (const panel of plan.panels) {
+    const marks = plan.marks.filter((mark) => mark.panel === panel.key);
+    assert.equal(marks.length, rects.length);
+    for (const mark of marks) {
+      const pin = pinRect(mark.pin);
+      assert.ok(pin.x >= 0 && pin.y >= panel.y && pin.x + pin.width <= plan.canvas.width && pin.y + pin.height <= plan.canvas.height);
+      assert.notEqual(mark.pin.placement, "overlap");
+      for (const other of marks) {
+        assert.ok(!overlaps(pin, other.rect), `pin ${mark.id} covers region ${other.id}`);
+        if (other !== mark) assert.ok(!overlaps(pin, pinRect(other.pin)), `pins ${mark.id} and ${other.id} overlap`);
+      }
+      if (mark.pin.placement === "margin") {
+        const { x2, y2 } = mark.pin.connector;
+        assert.ok(x2 >= mark.outline.x && x2 <= mark.outline.x + mark.outline.width);
+        assert.ok(y2 >= mark.outline.y && y2 <= mark.outline.y + mark.outline.height);
+        if (mark.pin.crossing) {
+          assert.match(plan.limitations.join("\n"), new RegExp(`Callout ${mark.id} connector in ${panel.label} crosses`));
+        } else {
+          for (const other of marks.filter((item) => item !== mark)) {
+            assert.ok(!segmentCrosses(mark.pin.connector, pinRect(other.pin)), `connector ${mark.id} crosses pin ${other.id}`);
+            assert.ok(!segmentCrosses(mark.pin.connector, other.rect), `connector ${mark.id} crosses region ${other.id}`);
+          }
+        }
+      }
+    }
+    assert.ok(marks.some((mark) => mark.pin.placement === "margin"), "crowding falls back to the reserved margin");
+    assert.ok(marks.some((mark) => mark.pin.placement === "margin" && !mark.pin.crossing), "most connectors find a clear path");
+  }
+});
+
+test("a region nested inside another callout keeps its pin beside it", () => {
+  const row = { x: 20, y: 100, width: 500, height: 40 };
+  const badge = { x: 200, y: 110, width: 40, height: 20 };
+  const plan = planComparison({
+    panels: [{ key: "before", label: "Before", width: 600, height: 400 }, { key: "after", label: "After", width: 600, height: 400 }],
+    callouts: [
+      { id: 1, color: "#cf222e", text: "row", marks: { after: { rect: row } } },
+      { id: 2, color: "#0969da", text: "badge", marks: { after: { rect: badge } } },
+    ],
+    measure: fakeMeasure,
+  });
+  const [outer, inner] = plan.marks;
+  assert.equal(inner.pin.placement, "adjacent");
+  assert.equal(inner.pin.connector, null);
+  assert.ok(!overlaps(pinRect(inner.pin), inner.rect), "the pin never covers its own region");
+  assert.ok(!overlaps(pinRect(outer.pin), outer.rect));
+  assert.ok(!overlaps(pinRect(outer.pin), pinRect(inner.pin)));
+});
+
+test("a measurement bracket that cannot fit is reported instead of silently dropped", () => {
+  const plan = planComparison({
+    panels: [{ key: "before", label: "Before", width: 400, height: 300 }, { key: "after", label: "After", width: 400, height: 300 }],
+    callouts: [{ id: 1, color: "#cf222e", text: "full width", measure: "height",
+      marks: { after: { rect: { x: 0, y: 0, width: 400, height: 300 }, measureText: "150 px" } } }],
+    measure: fakeMeasure,
+  });
+  assert.equal(plan.marks[0].bracket, null);
+  assert.match(plan.limitations.join("\n"), /Callout 1 measurement bracket did not fit in After/);
+});
+
+test("connector clipping detects crossings and ignores segments that only pass nearby", () => {
+  const rect = { x: 10, y: 10, width: 10, height: 10 };
+  assert.equal(segmentCrosses({ x1: 0, y1: 15, x2: 30, y2: 15 }, rect), true);
+  assert.equal(segmentCrosses({ x1: 0, y1: 0, x2: 30, y2: 5 }, rect), false);
+  assert.equal(segmentCrosses({ x1: 15, y1: 0, x2: 15, y2: 9 }, rect), false);
+});
+
+test("long labels fall back to the legend and long explanations wrap inside the canvas", () => {
+  const long = "A long explanation that should never be squeezed onto the screenshot itself. ".repeat(4);
+  const plan = planComparison({
+    panels: [{ key: "before", label: "Before", width: 120, height: 80 }, { key: "after", label: "After", width: 120, height: 80 }],
+    callouts: [
+      { id: 1, color: "#cf222e", text: long, label: "far too long for a label inside a tiny panel",
+        marks: { after: { rect: { x: 40, y: 30, width: 20, height: 10 } } } },
+      { id: 2, color: "#0969da", text: "short", label: "ok", marks: { before: { rect: { x: 10, y: 50, width: 10, height: 10 } } } },
+    ],
+    measure: fakeMeasure,
+  });
+  assert.equal(plan.marks.find((mark) => mark.id === 1).label, null);
+  assert.match(plan.limitations.join("\n"), /Callout 1 label did not fit/);
+  const fitted = plan.marks.find((mark) => mark.id === 2).label;
+  assert.ok(fitted && fitted.text === "ok");
+  assert.ok(!plan.marks.some((mark) => mark.panel === "after" && mark.id === 2), "one-sided callouts stay one-sided");
+  const [first, second] = plan.legend.items;
+  assert.equal(first.text.value, long);
+  assert.ok(first.text.height > plan.chrome.legendFont * 2, "long legend text wraps to several lines");
+  assert.ok(second.pin.cy - second.pin.radius >= first.text.y + first.text.height, "legend items never overlap");
+  assert.ok(first.text.x + first.text.width <= plan.canvas.width);
+  assert.ok(plan.legend.y + plan.legend.height <= plan.canvas.height);
+});
+
+test("detail windows share coordinates by default and stay equal-sized at image edges", () => {
+  const sizes = { before: { width: 300, height: 200 }, after: { width: 300, height: 200 } };
+  const shared = detailWindows({ before: { x: 40, y: 30, width: 60, height: 40 }, after: { x: 70, y: 30, width: 60, height: 40 }, sizes, context: 10 });
+  assert.equal(shared.mode, "shared");
+  assert.deepEqual(shared.before, { x: 30, y: 20, width: 110, height: 60 });
+  assert.deepEqual(shared.after, shared.before);
+  const edge = detailWindows({ before: { x: 0, y: 0, width: 10, height: 10 }, after: null, sizes, context: 20 });
+  assert.deepEqual(edge.before, { x: 0, y: 0, width: 50, height: 50 });
+  const padded = detailWindows({ before: null, after: { x: 100, y: 500, width: 50, height: 30 },
+    sizes: { before: { width: 300, height: 200 }, after: { width: 300, height: 600 } }, context: 10 });
+  assert.deepEqual(padded.after, { x: 90, y: 490, width: 70, height: 50 }, "padded sizes keep the requested region");
+  assert.deepEqual(padded.before, padded.after);
+  const separate = detailWindows({ before: { x: 10, y: 10, width: 20, height: 20 }, after: { x: 250, y: 150, width: 30, height: 20 }, sizes, context: 5, separate: true });
+  assert.equal(separate.mode, "separate");
+  assert.deepEqual([separate.before.width, separate.before.height], [separate.after.width, separate.after.height]);
+  assert.ok(separate.after.x + separate.after.width <= 300 && separate.after.y + separate.after.height <= 200);
+});
+
+test("crop suggestions group nearby changed regions and leave distant ones apart", () => {
+  const regions = [{ x: 10, y: 10, width: 20, height: 10 }, { x: 40, y: 12, width: 10, height: 10 }, { x: 200, y: 150, width: 30, height: 30 }];
+  const crops = suggestCrops(regions, { width: 300, height: 200 }, { gap: 24, context: 8 });
+  assert.equal(crops.length, 2);
+  const grouped = crops.find((crop) => crop.members.length === 2);
+  assert.deepEqual(grouped.region, [10, 10, 40, 12]);
+  assert.deepEqual(grouped.window, [2, 2, 56, 28]);
+});
+
+test("generated Markdown neutralizes media syntax in explanations and keeps alt text intact", () => {
+  const markdown = sectionMarkdown({
+    title: "Header <script> & &lt;b&gt;",
+    comparison: { file: "comparison.png", alt: "Before [left] and after <img src=\"x.png\">" },
+    callouts: [{ id: 4, text: "Shows ![x](secret.png) and <img src=\"a.png\">\nwrapped" }],
+    details: [{ file: "detail-callout-4.png", alt: "Detail" }],
+    flip: { file: "flip.gif", alt: "Screenshot flip" },
+  });
+  assert.match(markdown, /^#### Header &lt;script&gt; &amp; &amp;lt;b&amp;gt;/);
+  assert.match(markdown, /!\[Before \(left\) and after &lt;img src="x\.png"&gt;\]\(comparison\.png\)/);
+  assert.match(markdown, /- \*\*4\*\*: Shows \\!\\\[x\\\]\(secret\.png\) and &lt;img src="a\.png"&gt; wrapped/);
+  const references = [...markdown.matchAll(/!\[[^\]\n]*\]\(([^)\s]+)\)/g)].map((match) => match[1]);
+  assert.deepEqual(references, ["comparison.png", "detail-callout-4.png", "flip.gif"]);
+  assert.match(markdown, /<details><summary>Screenshot comparison aids<\/summary>/);
+});
+
+// ---------------------------------------------------------------------------
+// Rendered comparisons
+
+test("the combined image keeps labelled panels at one scale with exact crop transforms", media, () => {
+  const dir = caseDir();
+  cardPair(dir);
+  const before = join(dir, "before.png");
+  const afterImage = join(dir, "after.png");
+  const hashes = [sha(before), sha(afterImage)];
+  const run = compare(dir, {
+    before: { image: "before.png", label: "Main" },
+    after: { image: "after.png", label: "Branch" },
+    layout: "side-by-side",
+    crop: [20, 10, 200, 120],
+    callouts: [{ id: 3, text: "The card moved 30 px right.", before: [40, 30, 60, 40], after: [70, 30, 60, 40] }],
+  });
+  assert.equal(run.status, 0, run.stderr);
+  const { comparison } = run.result;
+  assert.equal(comparison.layout, "side-by-side");
+  const panels = comparison.panels;
+  assert.deepEqual([panels.before.label, panels.after.label], ["Main", "Branch"]);
+  for (const panel of [panels.before, panels.after]) {
+    assert.deepEqual(panel.source, [20, 10, 200, 120]);
+    assert.deepEqual(panel.canvas.slice(2), [200, 120], "panels keep the source aspect ratio at scale 1");
+    assert.equal(panel.scale, 1);
+  }
+  assert.equal(panels.before.canvas[1], panels.after.canvas[1]);
+  const at = (panel, x, y) => rgb(run.result.outputs.comparison, panel.canvas[0] + x - 20, panel.canvas[1] + y - 10);
+  assertColor(at(panels.before, 45, 65), RED, 14, "before card");
+  assertColor(at(panels.after, 45, 65), WHITE, 14, "after vacated area");
+  assertColor(at(panels.after, 100, 40), BLUE, 14, "after card");
+  assertColor(at(panels.before, 200, 120), WHITE, 14, "before background");
+  // Header bars carry the panel identity as rendered text.
+  for (const panel of [panels.before, panels.after]) {
+    assertColor(rgb(run.result.outputs.comparison, panel.canvas[0] + 1, panel.canvas[1] - 2), HEADER, 6, "header");
+    const strip = execFileSync(MAGICK, [run.result.outputs.comparison, "-crop", `120x${Math.floor(panel.canvas[1] - 14)}+${panel.canvas[0]}+12`,
+      "+repage", "-depth", "8", "rgb:-"]);
+    assert.ok(strip.some((value, index) => index % 3 === 0 && value > 200 && strip[index + 1] > 200), "header text is drawn");
+  }
+  assert.deepEqual(run.result.calloutIds, [3]);
+  assert.match(readFileSync(run.result.outputs.markdown, "utf8"), /- \*\*3\*\*: The card moved 30 px right\./);
+  assert.deepEqual([sha(before), sha(afterImage)], hashes, "inputs are never modified");
+});
+
+test("detail crops enlarge matching windows that preserve movement", media, () => {
+  const dir = caseDir();
+  cardPair(dir);
+  const run = compare(dir, {
+    before: { image: "before.png" },
+    after: { image: "after.png" },
+    callouts: [{ id: 1, text: "Card moved.", before: [40, 30, 60, 40], after: [70, 30, 60, 40] }],
+    details: [
+      { callout: 1, zoom: 2, context: 10, layout: "side-by-side" },
+      { id: "moved", before: [40, 30, 60, 40], after: [70, 30, 60, 40], separate: true, context: 5, zoom: 1 },
+    ],
+  });
+  assert.equal(run.status, 0, run.stderr);
+  const [shared, separate] = run.result.details;
+  assert.equal(shared.mode, "shared");
+  assert.deepEqual(shared.panels.before.source, [30, 20, 110, 60]);
+  assert.deepEqual(shared.panels.after.source, [30, 20, 110, 60]);
+  for (const panel of Object.values(shared.panels)) assert.deepEqual(panel.canvas.slice(2), [220, 120]);
+  const at = (panel, x, y) => rgb(shared.path, panel.canvas[0] + (x - 30) * 2, panel.canvas[1] + (y - 20) * 2);
+  assertColor(at(shared.panels.before, 45, 40), RED, 14, "detail before card");
+  assertColor(at(shared.panels.after, 45, 40), WHITE, 14, "detail after vacated");
+  assertColor(at(shared.panels.after, 125, 40), BLUE, 14, "detail after card");
+  assert.deepEqual(shared.callouts, [1]);
+  assert.match(shared.alt, /Enlarged detail at 2x/);
+
+  assert.equal(separate.mode, "separate");
+  assert.deepEqual(separate.panels.before.source, [35, 25, 70, 50]);
+  assert.deepEqual(separate.panels.after.source, [65, 25, 70, 50]);
+  assert.match(run.result.limitations.join("\n"), /Detail moved centres separate windows/);
+  const markdown = readFileSync(run.result.outputs.markdown, "utf8");
+  assert.match(markdown, /\(detail-callout-1\.png\)/);
+  assert.match(markdown, /\(detail-moved\.png\)/);
+});
+
+test("incompatible or invalid geometry fails with an actionable message before rendering", media, () => {
+  const dir = caseDir();
+  cardPair(dir);
+  image(join(dir, "wide.png"), 320, 200, [{ color: "#0000ff", rect: [70, 30, 60, 40] }]);
+  const base = { before: { image: "before.png" }, after: { image: "after.png" } };
+  const cases = [
+    [{ ...base, after: { image: "wide.png" } }, /dimension mismatch: before is 300x200 and after is 320x200/],
+    [{ ...base, after: { image: "wide.png" }, sizeMismatch: "pad", flip: true }, /identical dimensions/],
+    [{ ...base, before: { image: "before.png", devicePixelRatio: 2 } }, /device pixel ratio 2 and after at 1/],
+    [{ ...base, callouts: [{ text: "x", region: [-5, 0, 10, 10] }] }, /extends outside the 300x200 before image/],
+    [{ ...base, callouts: [{ text: "x", region: [5, 0, 0, 10] }] }, /positive width and height/],
+    [{ ...base, callouts: [{ text: "x", region: [5, 0, "10", 10] }] }, /finite numbers/],
+    [{ ...base, crop: [250, 0, 100, 100] }, /crop .* extends outside/],
+    [{ ...base, crop: [0, 0, 30, 30], callouts: [{ text: "x", region: [200, 100, 10, 10] }] }, /outside the crop/],
+    [{ ...base, callouts: [{ text: "x", region: { anchor: "save" } }] }, /no "anchors" file/],
+    [{ ...base, callouts: [{ id: 1, text: "x", region: [1, 1, 5, 5] }, { id: 1, text: "y", region: [9, 9, 5, 5] }] }, /used twice/],
+    [{ ...base, details: [{ callout: 9 }] }, /callout 9, which does not exist/],
+    [{ ...base, flip: { holdMs: 100 } }, /holdMs/],
+    [{ ...base, onion: { opacity: 1 } }, /opacity/],
+    [{ ...base, flip: "yes" }, /"flip" must be true, false, or an options object/],
+  ];
+  for (const [spec, pattern] of cases) {
+    const run = compare(dir, spec);
+    assert.notEqual(run.status, 0, `expected failure for ${JSON.stringify(spec)}`);
+    assert.match(run.stderr, pattern);
+    assert.equal(existsSync(join(run.out, "comparison.png")), false);
+  }
+  const padded = compare(dir, { ...base, after: { image: "wide.png" }, sizeMismatch: "pad", layout: "stacked" });
+  assert.equal(padded.status, 0, padded.stderr);
+  assert.deepEqual(padded.result.comparison.panels.before.canvas.slice(2), [300, 200]);
+  assert.deepEqual(padded.result.comparison.panels.after.canvas.slice(2), [320, 200]);
+  assert.match(padded.result.limitations.join("\n"), /no stretching/);
+
+  image(join(dir, "tall.png"), 300, 600, [{ color: "#0000ff", rect: [100, 500, 50, 30] }]);
+  const tall = compare(dir, { ...base, after: { image: "tall.png" }, sizeMismatch: "pad",
+    callouts: [{ id: 1, text: "A footer action appears.", after: [100, 500, 50, 30] }],
+    details: [{ callout: 1, zoom: 2, context: 10 }] });
+  assert.equal(tall.status, 0, tall.stderr);
+  const detail = tall.result.details[0];
+  assert.deepEqual(detail.panels.after.source, [90, 490, 70, 50]);
+  assert.deepEqual(detail.callouts, [1]);
+  const afterPanel = detail.panels.after;
+  assertColor(rgb(detail.path, afterPanel.canvas[0] + 40, afterPanel.canvas[1] + 40), BLUE, 14, "padded detail shows the change");
+  assertColor(rgb(detail.path, detail.panels.before.canvas[0] + 40, detail.panels.before.canvas[1] + 40), WHITE, 2, "blank fill");
+  assert.match(tall.result.limitations.join("\n"), /Detail callout-1 extends past the Before screenshot/);
+});
+
+test("the flip GIF alternates labelled before and after frames with readable holds", media, () => {
+  const dir = caseDir();
+  cardPair(dir);
+  const run = compare(dir, { before: { image: "before.png" }, after: { image: "after.png" }, flip: { holdMs: 800 } });
+  assert.equal(run.status, 0, run.stderr);
+  const { flip } = run.result;
+  assert.deepEqual(frames(flip.path), ["80", "80"]);
+  assert.equal(flip.holdMs, 800);
+  assert.deepEqual(flip.frames, ["Before", "After"]);
+  const banner = flip.banner;
+  assertColor(rgb(`${flip.path}[0]`, 50, banner + 40), RED, 24, "frame 0 is before");
+  assertColor(rgb(`${flip.path}[1]`, 50, banner + 40), WHITE, 24, "frame 1 is after");
+  assertColor(rgb(`${flip.path}[1]`, 100, banner + 40), BLUE, 24, "frame 1 card");
+  const bannerText = (frame) => {
+    const raw = execFileSync(MAGICK, [`${flip.path}[${frame}]`, "+repage", "-crop", `120x${banner}+0+0`, "+repage", "-depth", "8", "rgb:-"]);
+    assertColor([raw[0], raw[1], raw[2]], HEADER, 24, `frame ${frame} banner`);
+    return raw.filter((value, index) => index % 3 === 0 && value > 200).length;
+  };
+  assert.ok(bannerText(0) > 0 && bannerText(1) > 0, "both frames keep their label");
+  assert.match(readFileSync(run.result.outputs.markdown, "utf8"), /Screenshot flip comparison[^\]]*not a recording of motion\]\(flip\.gif\)/);
+});
+
+test("the onion skin blends after over before at the requested opacity in registration", media, () => {
+  const dir = caseDir();
+  cardPair(dir);
+  const run = compare(dir, { before: { image: "before.png" }, after: { image: "after.png" }, onion: { opacity: 0.25 } });
+  assert.equal(run.status, 0, run.stderr);
+  const { onion } = run.result;
+  assert.equal(onion.opacity, 0.25);
+  const [x0, y0, width, height] = onion.image;
+  assert.deepEqual([width, height], [300, 200]);
+  const at = (x, y) => rgb(onion.path, x0 + x, y0 + y);
+  assertColor(at(50, 40), [255, 64, 64], 4, "before only");
+  assertColor(at(110, 40), [191, 191, 255], 4, "after only");
+  assertColor(at(80, 40), [191, 0, 64], 4, "overlap");
+  assertColor(at(200, 150), WHITE, 2, "unchanged");
+  assertColor(at(39, 40), WHITE, 2, "left edge stays registered");
+  assertColor(at(40, 40), [255, 64, 64], 4, "card edge stays registered");
+});
+
+test("redaction reaches every derived comparison, crop, zoom, flip frame, and overlay", media, () => {
+  for (const style of ["pixelate", "block"]) {
+    const dir = caseDir();
+    const secret = ["-fill", "#00ff00", "-font", font, "-pointsize", "22", "-annotate", "+202+172", "SECRET"];
+    image(join(dir, "before.png"), 300, 200, [{ color: "#ff0000", rect: [40, 30, 60, 40] }], secret);
+    image(join(dir, "after.png"), 300, 200, [{ color: "#0000ff", rect: [70, 30, 60, 40] }], secret);
+    assert.ok(greenPixels(join(dir, "before.png")) > 50, "the fixture carries a visible secret");
+    const spec = {
+      before: { image: "before.png" }, after: { image: "after.png" },
+      callouts: [{ id: 1, text: "Card moved.", before: [40, 30, 60, 40], after: [70, 30, 60, 40] }],
+      details: [{ id: "secret-area", region: [190, 140, 100, 50], zoom: 3 }],
+      flip: true, onion: true,
+    };
+    const control = compare(dir, spec);
+    assert.equal(control.status, 0, control.stderr);
+    assert.ok(greenPixels(control.result.details[0].path) > 50, "without redaction the detail would leak");
+    const run = compare(dir, { ...spec, redact: [{ at: [198, 150, 96, 30], style }] });
+    assert.equal(run.status, 0, run.stderr);
+    const outputs = [run.result.outputs.comparison, ...run.result.outputs.details, run.result.outputs.onion,
+      `${run.result.outputs.flip}[0]`, `${run.result.outputs.flip}[1]`];
+    for (const output of outputs) assert.equal(greenPixels(output), 0, `${style} redaction leaked into ${output}`);
+    assert.deepEqual(run.result.inputs.before.redactions, [{ at: [198, 150, 96, 30], style }]);
+  }
+});
+
+test("saved anchors resolve through capture metadata without a live page", media, () => {
+  const dir = caseDir();
+  const capture = { mode: "full", viewport: { width: 200, height: 100 }, scroll: { x: 0, y: 150 },
+    document: { width: 200, height: 300 }, devicePixelRatio: 1.5, screenshot: { width: 300, height: 450 } };
+  const record = (rect) => ({ version: 1, capture, anchors: { card: { selector: "#card", rect } } });
+  writeFileSync(join(dir, "before-anchors.json"), JSON.stringify(record({ x: 20, y: -130, width: 40, height: 20 })));
+  writeFileSync(join(dir, "after-anchors.json"), JSON.stringify(record({ x: 40, y: -130, width: 40, height: 20 })));
+  image(join(dir, "before.png"), 300, 450, [{ color: "#ff0000", rect: [30, 30, 60, 30] }]);
+  image(join(dir, "after.png"), 300, 450, [{ color: "#0000ff", rect: [60, 30, 60, 30] }]);
+  const spec = {
+    before: { image: "before.png", anchors: "before-anchors.json" },
+    after: { image: "after.png", anchors: "after-anchors.json" },
+    layout: "side-by-side",
+    callouts: [{ id: 1, text: "Card moved.", region: { anchor: "card" }, measure: "width" }],
+  };
+  const run = compare(dir, spec);
+  assert.equal(run.status, 0, run.stderr);
+  const callout = run.result.callouts[0];
+  assert.deepEqual(callout.panels.before.source, [30, 30, 60, 30]);
+  assert.deepEqual(callout.panels.after.source, [60, 30, 60, 30]);
+  assert.equal(run.result.inputs.before.devicePixelRatio, 1.5);
+  assert.match(callout.legend, /Measured width: Before 40 px, After 40 px\./);
+  const panel = run.result.comparison.panels.after;
+  assertColor(rgb(run.result.outputs.comparison, panel.canvas[0] + 90, panel.canvas[1] + 45), BLUE, 14, "anchored card");
+  assert.ok(callout.panels.before.bracket, "measurement brackets render for a fully visible span");
+
+  writeFileSync(join(dir, "after-anchors.json"), JSON.stringify({ ...record({ x: 1, y: 1, width: 1, height: 1 }),
+    capture: { ...capture, screenshot: { width: 600, height: 900 } } }));
+  const mismatched = compare(dir, spec);
+  assert.notEqual(mismatched.status, 0);
+  assert.match(mismatched.stderr, /recorded for a 600x900 screenshot/);
+});
+
+test("crowded edge callouts on a small canvas render with a legend for text that cannot fit", media, () => {
+  const dir = caseDir();
+  image(join(dir, "before.png"), 80, 60, [{ color: "#ff0000", rect: [0, 0, 8, 8] }]);
+  image(join(dir, "after.png"), 80, 60, [{ color: "#0000ff", rect: [0, 0, 8, 8] }]);
+  const text = "The explanation is long enough to wrap across several legend lines at this width. ".repeat(3);
+  const rects = [[0, 0, 8, 8], [10, 0, 8, 8], [0, 10, 8, 8], [72, 0, 8, 8], [72, 52, 8, 8], [36, 26, 8, 8]];
+  const run = compare(dir, {
+    before: { image: "before.png" }, after: { image: "after.png" },
+    callouts: rects.map((region, index) => ({ id: index + 1, text, label: "this label cannot fit beside a tiny panel", region })),
+  });
+  assert.equal(run.status, 0, run.stderr);
+  const { canvas } = run.result.comparison;
+  for (const callout of run.result.callouts) {
+    for (const panel of Object.values(callout.panels)) {
+      const [cx, cy] = panel.pin.center;
+      assert.ok(cx - panel.pin.radius >= 0 && cx + panel.pin.radius <= canvas.width);
+      assert.ok(cy - panel.pin.radius >= 0 && cy + panel.pin.radius <= canvas.height);
+      assert.notEqual(panel.pin.placement, "overlap");
+    }
+  }
+  assert.match(run.result.limitations.join("\n"), /label did not fit/);
+  const legend = run.result.comparison.legend;
+  assert.ok(legend[3] > rects.length * 3 * 16, "wrapped legend grows with its text");
+  assert.ok(legend[1] + legend[3] <= canvas.height);
+});
+
+test("text with ImageMagick escapes and file prefixes renders literally", media, () => {
+  const dir = caseDir();
+  cardPair(dir);
+  const run = compare(dir, {
+    before: { image: "before.png", label: "@before 100%" }, after: { image: "after.png", label: "after \\n %w" },
+    callouts: [{ text: "@/etc/hostname keeps 100% literal %[pixel:p{0,0}]", label: "@x", region: [150, 100, 20, 20] }],
+  });
+  assert.equal(run.status, 0, run.stderr);
+  assert.match(readFileSync(run.result.outputs.markdown, "utf8"), /@\/etc\/hostname keeps 100% literal/);
+});
+
+test("the documented example prepares every asset and Markdown in one invocation", media, () => {
+  const text = readFileSync(reference, "utf8");
+  // Windows checkouts may convert the reference to CRLF line endings.
+  const example = /```json\r?\n([\s\S]*?)\r?\n```/.exec(text);
+  assert.ok(example, "comparisons.md carries a JSON example");
+  const spec = JSON.parse(example[1]);
+  const dir = caseDir();
+  image(join(dir, spec.before.image), 1280, 800, [{ color: "#1f6feb", rect: [1040, 24, 120, 36] }]);
+  image(join(dir, spec.after.image), 1280, 800, [{ color: "#1f6feb", rect: [1000, 24, 160, 36] }]);
+  const run = compare(dir, spec);
+  assert.equal(run.status, 0, run.stderr);
+  const { outputs } = run.result;
+  for (const path of [outputs.comparison, ...outputs.details, outputs.flip, outputs.onion, outputs.markdown, outputs.result]) {
+    if (path) assert.ok(existsSync(path), `${path} exists`);
+  }
+  assert.equal(outputs.details.length, spec.details.length);
+  const markdown = readFileSync(outputs.markdown, "utf8");
+  for (const callout of spec.callouts) assert.match(markdown, new RegExp(`- \\*\\*${callout.id}\\*\\*: `));
+  const references = [...markdown.matchAll(/!\[[^\]\n]+\]\(([^)\s]+)\)/g)].map((match) => match[1]);
+  const files = [outputs.comparison, ...outputs.details, outputs.flip, outputs.onion].filter(Boolean)
+    .map((path) => path.slice(run.out.length + 1));
+  assert.deepEqual(references.sort(), files.sort());
+});
+
+test("regions suggests detail crops without choosing one", media, () => {
+  const dir = caseDir();
+  image(join(dir, "before.png"), 300, 200);
+  image(join(dir, "after.png"), 300, 200, [{ color: "#000000", rect: [10, 10, 20, 20] },
+    { color: "#000000", rect: [45, 10, 20, 20] }, { color: "#000000", rect: [240, 150, 20, 20] }]);
+  const result = spawnSync(process.execPath, [regionsScript, join(dir, "before.png"), join(dir, "after.png"), "--crops"], { encoding: "utf8" });
+  assert.equal(result.status, 0, result.stderr);
+  const report = JSON.parse(result.stdout);
+  assert.equal(report.regions.length, 3);
+  assert.equal(report.crops.length, 2);
+  assert.deepEqual(report.crops[0].region, [10, 10, 55, 20], "nearby regions join into one suggestion");
+  assert.deepEqual(report.crops[1].region, [240, 150, 20, 20]);
+});
+
+// ---------------------------------------------------------------------------
+// Anchor capture against a fake browser boundary
+
+const browserBoundary = join(temp, "browser-boundary.mjs");
+writeFileSync(browserBoundary, String.raw`
+import cp from "node:child_process";
+import { appendFileSync, writeFileSync } from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
+const settings = JSON.parse(process.env.FAKE_BROWSER);
+let evals = 0;
+function png(width, height) {
+  const bytes = Buffer.alloc(33);
+  Buffer.from("89504e470d0a1a0a", "hex").copy(bytes, 0);
+  bytes.writeUInt32BE(13, 8);
+  bytes.write("IHDR", 12, "latin1");
+  bytes.writeUInt32BE(width, 16);
+  bytes.writeUInt32BE(height, 20);
+  return bytes;
+}
+cp.execFileSync = (binary, args) => {
+  appendFileSync(process.env.FAKE_BROWSER_LOG, JSON.stringify([binary, ...args]) + "\n");
+  if (binary !== "agent-browser") throw new Error("unexpected binary " + binary);
+  const command = args[2];
+  if (command === "eval") {
+    const result = settings.measurements[Math.min(evals, settings.measurements.length - 1)];
+    evals += 1;
+    return JSON.stringify({ success: true, data: { result } });
+  }
+  if (command === "screenshot") {
+    writeFileSync(args.at(-1), png(settings.png.width, settings.png.height));
+    return "saved";
+  }
+  throw new Error("unexpected browser command " + command);
+};
+syncBuiltinESMExports();
+`);
+
+function page(overrides = {}) {
+  return {
+    url: "http://localhost:3000/settings",
+    viewport: { width: 400, height: 300 }, scroll: { x: 0, y: 200 }, document: { width: 400, height: 900 },
+    devicePixelRatio: 2, problems: [],
+    anchors: { save: { selector: "#save", element: "button#save \"Save\"", rect: { x: 10.5, y: -150, width: 80, height: 24 } } },
+    ...overrides,
+  };
+}
+
+function anchors(args, settings, env = {}) {
+  const dir = caseDir();
+  const log = join(dir, "browser.log");
+  const result = spawnSync(process.execPath, [anchorsScript, ...args.map((arg) => arg.replaceAll("$DIR", dir))], {
+    encoding: "utf8",
+    env: { ...process.env, ...env, NODE_TEST_CONTEXT: "", NODE_OPTIONS: `--import=${pathToFileURL(browserBoundary).href}`,
+      FAKE_BROWSER: JSON.stringify(settings), FAKE_BROWSER_LOG: log },
+  });
+  const calls = existsSync(log) ? readFileSync(log, "utf8").trim().split("\n").map((line) => JSON.parse(line)) : [];
+  return { ...result, dir, calls };
+}
+
+test("anchor capture stays inside the named session and records transform metadata", () => {
+  const run = anchors(["--session", "after-run", "--anchor", "save=#save", "--screenshot", "$DIR/after.png", "--full", "--out", "$DIR/anchors.json"],
+    { measurements: [page(), page()], png: { width: 800, height: 1800 } });
+  assert.equal(run.status, 0, run.stderr);
+  assert.deepEqual(run.calls.map((call) => call.slice(0, 4)), [
+    ["agent-browser", "--session", "after-run", "eval"],
+    ["agent-browser", "--session", "after-run", "screenshot"],
+    ["agent-browser", "--session", "after-run", "eval"],
+  ]);
+  assert.ok(run.calls[1].includes("--full"));
+  const record = JSON.parse(readFileSync(join(run.dir, "anchors.json"), "utf8"));
+  assert.equal(record.capture.mode, "full");
+  assert.deepEqual(record.capture.screenshot, { width: 800, height: 1800 });
+  assert.deepEqual(record.capture.scroll, { x: 0, y: 200 });
+  assert.equal(record.capture.devicePixelRatio, 2);
+  assert.deepEqual(record.anchors.save.image, [21, 100, 160, 48]);
+  assert.equal(record.url, "http://localhost:3000/settings");
+});
+
+test("anchor capture rejects missing, ambiguous, invalid, and hidden targets with diagnostics", () => {
+  const problems = [
+    { name: "save", selector: "#save", problem: "missing" },
+    { name: "row", selector: ".row", problem: "ambiguous", count: 3, candidates: ["li.row \"One\"", "li.row \"Two\"", "li.row \"Three\""] },
+    { name: "bad", selector: "p[", problem: "invalid", detail: "not a valid selector" },
+    { name: "menu", selector: "#menu", problem: "empty", candidates: ["div#menu"] },
+  ];
+  const run = anchors(["--session", "s", "--anchor", "save=#save", "--image", "$DIR/x.png", "--out", "$DIR/anchors.json"],
+    { measurements: [page({ problems, anchors: {} })], png: { width: 1, height: 1 } });
+  assert.equal(run.status, 1);
+  assert.match(run.stderr, /"#save" matched no element on http:\/\/localhost:3000\/settings/);
+  assert.match(run.stderr, /matched 3 elements.*Candidates: li\.row "One"; li\.row "Two"/);
+  assert.match(run.stderr, /"p\[" is not a valid selector/);
+  assert.match(run.stderr, /no rendered box/);
+  assert.equal(existsSync(join(run.dir, "anchors.json")), false);
+});
+
+test("anchor capture requires an explicit session and refuses moving or mismatched captures", () => {
+  const missingSession = anchors(["--anchor", "save=#save", "--image", "$DIR/x.png", "--out", "$DIR/a.json"],
+    { measurements: [page()], png: { width: 800, height: 600 } }, { AGENT_BROWSER_SESSION: "someone-else" });
+  assert.equal(missingSession.status, 1);
+  assert.match(missingSession.stderr, /--session is required/);
+  assert.deepEqual(missingSession.calls, []);
+
+  const scrolled = anchors(["--session", "s", "--anchor", "save=#save", "--screenshot", "$DIR/x.png", "--out", "$DIR/a.json"],
+    { measurements: [page(), page({ scroll: { x: 0, y: 260 } })], png: { width: 800, height: 600 } });
+  assert.equal(scrolled.status, 1);
+  assert.match(scrolled.stderr, /page moved while capturing/);
+
+  const wrongSize = anchors(["--session", "s", "--anchor", "save=#save", "--screenshot", "$DIR/x.png", "--out", "$DIR/a.json"],
+    { measurements: [page(), page()], png: { width: 400, height: 300 } });
+  assert.equal(wrongSize.status, 1);
+  assert.match(wrongSize.stderr, /screenshot is 400x300, but the viewport 400x300 at device pixel ratio 2 implies 800x600/);
+
+  const outside = anchors(["--session", "s", "--anchor", "save=#save", "--screenshot", "$DIR/x.png", "--out", "$DIR/a.json"],
+    { measurements: [page(), page()], png: { width: 800, height: 600 } });
+  assert.equal(outside.status, 1);
+  assert.match(outside.stderr, /lies outside the captured viewport.*--full/);
+});
+
+// ---------------------------------------------------------------------------
+// Optional real-browser check of the whole capture path. Set
+// UI_EVIDENCE_BROWSER_TESTS=1 where agent-browser and Chrome are installed.
+
+const browserTests = process.env.UI_EVIDENCE_BROWSER_TESTS === "1" && MAGICK;
+test("real captures at a non-unit pixel ratio map anchors onto the rendered pixels", { skip: browserTests ? false : "set UI_EVIDENCE_BROWSER_TESTS=1" }, () => {
+  const dir = caseDir();
+  const fixture = (name) => pathToFileURL(join(repo, "tests", "fixtures", "ui-evidence-app", name)).href;
+  const session = `uie-compare-test-${process.pid}`;
+  const browser = (...args) => execFileSync("agent-browser", ["--session", session, ...args], { encoding: "utf8" });
+  try {
+    const capture = (name, full) => {
+      browser("open", fixture(`${name}.html`));
+      browser("set", "viewport", "640", "400", "2");
+      // A scrolled full-page capture exercises the scroll offset; the viewport
+      // capture stays at the top where the toolbar is visible.
+      browser("eval", `window.scrollTo(0, ${full ? 120 : 0})`);
+      const run = spawnSync(process.execPath, [anchorsScript, "--session", session, "--anchor", "save=[data-testid=save]",
+        "--anchor", "email=[data-testid=email]", "--screenshot", join(dir, `${name}.png`), ...(full ? ["--full"] : []),
+        "--out", join(dir, `${name}-anchors.json`)], { encoding: "utf8" });
+      assert.equal(run.status, 0, run.stderr);
+      return JSON.parse(run.stdout);
+    };
+    for (const full of [false, true]) {
+      const beforeRecord = capture("before", full);
+      capture("after", full);
+      const [x, y, width] = beforeRecord.anchors.save.image;
+      assertColor(rgb(join(dir, "before.png"), x + Math.floor(width / 2), y + 2), [0x1f, 0x6f, 0xeb], 20, "anchored button");
+      const out = join(dir, full ? "full" : "viewport");
+      mkdirSync(out, { recursive: true });
+      const specPath = join(dir, "spec.json");
+      writeFileSync(specPath, JSON.stringify({
+        before: { image: "before.png", anchors: "before-anchors.json" },
+        after: { image: "after.png", anchors: "after-anchors.json" },
+        // The after page is taller, so full-page captures differ in height.
+        sizeMismatch: "pad",
+        redact: [{ anchor: "email", style: "block" }],
+        callouts: [{ id: 1, text: "Save moved into the toolbar.", region: { anchor: "save" } }],
+        details: [{ callout: 1 }],
+      }));
+      const run = spawnSync(process.execPath, [compareScript, "--spec", specPath, "--out-dir", out], { encoding: "utf8" });
+      assert.equal(run.status, 0, run.stderr);
+      assert.equal(JSON.parse(run.stdout).inputs.before.devicePixelRatio, 2);
+    }
+  } finally {
+    try { browser("close"); } catch { /* the session may not have started */ }
+  }
+});

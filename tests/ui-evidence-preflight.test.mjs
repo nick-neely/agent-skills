@@ -367,3 +367,21 @@ test("motion capture reports an actionable minimum recorder version", () => {
     tools.cleanup();
   }
 });
+
+test("comparison preflight checks only ImageMagick and the bundled font", () => {
+  const tools = fixture({ media: true });
+  const missing = fixture({});
+  try {
+    const result = tools.run("--compare", "--json");
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    const report = JSON.parse(result.stdout);
+    assert.equal(report.mode, "compare");
+    assert.deepEqual(report.checks.map((check) => check.name), ["ImageMagick", "bundled font"]);
+    const failed = missing.run("--compare", "--json");
+    assert.equal(failed.status, 1);
+    assert.equal(JSON.parse(failed.stdout).checks.find((check) => check.name === "ImageMagick").ok, false);
+  } finally {
+    tools.cleanup();
+    missing.cleanup();
+  }
+});

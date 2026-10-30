@@ -40,7 +40,7 @@ node "<skill-root>/scripts/preflight.mjs"
 ```
 
 Preflight checks only the selected operation: default screenshot capture,
-`--motion`, `--prepare`, `--annotate`, or `--publish`. Use `--format gif` for GIF
+`--motion`, `--prepare`, `--annotate`, `--compare`, or `--publish`. Use `--format gif` for GIF
 preparation or WebM capture. Report missing tools and the suggested fix; ask
 before system packages, global modules, browser downloads, or global upgrades
 unless already authorized.
@@ -59,8 +59,10 @@ agent-browser screenshot "$EVIDENCE_DIR/after.png"
 
 Use selector screenshots for a simple element crop and `diff screenshot` for a
 quick baseline comparison. For a base revision, read
-[before-after.md](references/before-after.md). For changed-region geometry or
-reviewer callouts, use `regions.mjs` and read
+[before-after.md](references/before-after.md). For a published before/after
+comparison, enlarged detail crops, or numbered callouts across both versions,
+read [comparisons.md](references/comparisons.md) before `compare.mjs`. For
+callouts on a single screenshot, use `regions.mjs` and read
 [annotation-spec.md](references/annotation-spec.md) before `annotate.mjs`.
 Browser `--annotate` numbers interactive refs for diagnostics; it does not
 replace reviewer callouts or redaction.

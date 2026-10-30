@@ -2,13 +2,15 @@
 // Report where two screenshots differ, as bounding boxes.
 //
 // Usage:
-//   node regions.mjs <before.png> <after.png> [--threshold 8] [--min-area 200] [--text]
+//   node regions.mjs <before.png> <after.png> [--threshold 8] [--min-area 200] [--crops] [--text]
 //
 // Prints JSON: { dimensions, changedPixels, changedFraction, union, regions[] }
 // Each region is { x, y, width, height, area, centroid: [x, y] }, largest first.
+// --crops adds suggested detail crops that group nearby regions.
 
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
+import { suggestCrops } from "./comparison-layout.mjs";
 
 const HELP = `regions.mjs - locate the changed areas between two screenshots
 
@@ -16,6 +18,8 @@ const HELP = `regions.mjs - locate the changed areas between two screenshots
 
   --threshold <pct>   Per-pixel difference required to count as changed (default 8)
   --min-area <px>     Discard regions smaller than this many pixels (default 200)
+  --crops             Add crop suggestions that group regions within --gap pixels
+  --gap <px>          Distance that joins regions into one crop suggestion (default 24)
   --text              Human-readable output instead of JSON
 `;
 
@@ -39,7 +43,7 @@ function resolveMagick() {
 
 function parseArgs(argv) {
   const positional = [];
-  const options = { threshold: 8, minArea: 200, text: false };
+  const options = { threshold: 8, minArea: 200, text: false, crops: false, gap: 24 };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === "--help" || arg === "-h") {
@@ -51,6 +55,10 @@ function parseArgs(argv) {
       options.minArea = Number(argv[++i]);
     } else if (arg === "--text") {
       options.text = true;
+    } else if (arg === "--crops") {
+      options.crops = true;
+    } else if (arg === "--gap") {
+      options.gap = Number(argv[++i]);
     } else if (arg.startsWith("-")) {
       die(`unknown option ${arg}`);
     } else {
@@ -64,11 +72,15 @@ function parseArgs(argv) {
   if (!Number.isFinite(options.minArea) || options.minArea < 0) {
     die("--min-area must be a non-negative number");
   }
+  if (!Number.isFinite(options.gap) || options.gap < 0) {
+    die("--gap must be a non-negative number");
+  }
   return { before: positional[0], after: positional[1], options };
 }
 
 function dimensionsOf(magick, path) {
-  const out = execFileSync(magick, ["identify", "-format", "%wx%h", path], {
+  // `info:` works for both ImageMagick 7 `magick` and ImageMagick 6 `convert`.
+  const out = execFileSync(magick, [`${path}[0]`, "-format", "%wx%h", "info:"], {
     encoding: "utf8",
   }).trim();
   const [width, height] = out.split("x").map(Number);
@@ -160,6 +172,10 @@ const result = {
   union: unionOf(regions),
   regions,
 };
+// Suggestions only: the agent still picks the crop that proves its claim.
+if (options.crops) {
+  result.crops = suggestCrops(regions, afterSize, { gap: options.gap, context: options.gap });
+}
 
 if (options.text) {
   if (regions.length === 0) {
@@ -168,6 +184,9 @@ if (options.text) {
     console.log(`${regions.length} changed region(s) in ${afterSize.width}x${afterSize.height}:`);
     for (const r of regions) {
       console.log(`  ${r.width}x${r.height} at (${r.x}, ${r.y})  area ${r.area}`);
+    }
+    for (const crop of result.crops ?? []) {
+      console.log(`  crop [${crop.window.join(", ")}] covers region(s) ${crop.members.join(", ")}`);
     }
   }
 } else {
