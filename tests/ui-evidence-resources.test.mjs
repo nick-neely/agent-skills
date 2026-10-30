@@ -383,3 +383,159 @@ test("a malformed ownership record is refused without removing the checkout", ()
     project.cleanup();
   }
 });
+
+// Fake only the GitHub CLI boundary; Git runs for real.
+function withPullRequest(project, pr) {
+  const preload = join(project.root, "fake-gh.mjs");
+  writeFileSync(preload, String.raw`
+    import cp from "node:child_process";
+    import { appendFileSync } from "node:fs";
+    import { syncBuiltinESMExports } from "node:module";
+    const real = cp.execFileSync;
+    cp.execFileSync = (binary, args, options) => {
+      if (binary !== "gh") return real(binary, args, options);
+      appendFileSync(process.env.FAKE_GH_LOG, JSON.stringify(args) + "\n");
+      if (process.env.FAKE_PR === "fail") {
+        const error = new Error("gh failed");
+        error.stderr = Buffer.from("HTTP 401: Bad credentials");
+        throw error;
+      }
+      return process.env.FAKE_PR;
+    };
+    syncBuiltinESMExports();
+  `);
+  const log = join(project.root, "gh.log");
+  return (...args) => {
+    const result = spawnSync(process.execPath, [beforeCapture, ...args], {
+      cwd: project.checkout, encoding: "utf8", env: {
+        ...process.env, TMPDIR: project.temporary, TEMP: project.temporary, TMP: project.temporary,
+        NODE_OPTIONS: `--import=${pathToFileURL(preload).href}`, NODE_TEST_CONTEXT: "",
+        FAKE_PR: typeof pr === "string" ? pr : JSON.stringify(pr), FAKE_GH_LOG: log,
+      },
+    });
+    return { ...result, gh: existsSync(log) ? readFileSync(log, "utf8").trim().split("\n").map((line) => JSON.parse(line)) : [] };
+  };
+}
+
+function releaseBranch(project) {
+  project.git("branch", "release", "HEAD");
+  project.git("remote", "add", "origin", "https://github.com/Acme/demo.git");
+  const oid = project.git("rev-parse", "release");
+  project.git("update-ref", "refs/remotes/origin/release", oid);
+  return oid;
+}
+
+test("a pull request baseline uses the branch the pull request targets, not the default branch", () => {
+  const project = fixture();
+  try {
+    const oid = releaseBranch(project);
+    const run = withPullRequest(project, { number: 12, baseRefName: "release", baseRefOid: oid, state: "OPEN" });
+    const created = run("create", "--pr", "12", "--repo", "acme/demo");
+    assert.equal(created.status, 0, created.stderr);
+    const info = JSON.parse(created.stdout);
+    assert.deepEqual(created.gh[0].slice(0, 4), ["pr", "view", "12", "--repo"]);
+    assert.equal(info.base, "origin/release");
+    assert.equal(info.ref, "origin/release");
+    assert.equal(info.baseSource, "pull-request");
+    assert.equal(info.baseRevision, oid);
+    assert.equal(info.mergeBase, project.git("merge-base", "HEAD", oid));
+    assert.notEqual(info.mergeBase, project.git("merge-base", "HEAD", "main"), "the default branch would select another baseline");
+    assert.deepEqual(info.pullRequest, { repo: "acme/demo", number: 12, baseRefName: "release", baseRefOid: oid, state: "OPEN" });
+    assert.equal(realpathSync.native(info.repoRoot), realpathSync.native(project.checkout));
+    assert.equal(project.git("-C", info.path, "rev-parse", "HEAD"), info.mergeBase);
+    const refused = project.run("remove", "--dir", info.path, "--owner", "not-the-owner");
+    assert.equal(refused.status, 1);
+    assert.match(refused.stderr, /ownership record does not match/);
+    assert.equal(project.run("remove", "--dir", info.path, "--owner", info.owner).status, 0);
+  } finally {
+    project.cleanup();
+  }
+});
+
+test("a stale local copy of the pull request base uses the revision GitHub reports and says so", () => {
+  const project = fixture();
+  try {
+    const oid = releaseBranch(project);
+    project.git("update-ref", "refs/remotes/origin/release", project.git("rev-parse", "main"));
+    const created = withPullRequest(project, { number: 12, baseRefName: "release", baseRefOid: oid })(
+      "create", "--pr", "12", "--repo", "acme/demo");
+    assert.equal(created.status, 0, created.stderr);
+    const info = JSON.parse(created.stdout);
+    assert.equal(info.base, "release");
+    assert.equal(info.ref, null);
+    assert.equal(info.baseRevision, oid);
+    assert.match(info.warnings.join("\n"), /origin\/release is at .* but the pull request base is .*git fetch origin release/);
+    assert.equal(project.run("remove", "--dir", info.path, "--owner", info.owner).status, 0);
+  } finally {
+    project.cleanup();
+  }
+});
+
+test("an explicit --ref overrides the pull request base and records the difference", () => {
+  const project = fixture();
+  try {
+    const oid = releaseBranch(project);
+    const created = withPullRequest(project, { number: 12, baseRefName: "release", baseRefOid: oid })(
+      "create", "--pr", "12", "--repo", "acme/demo", "--ref", "main");
+    assert.equal(created.status, 0, created.stderr);
+    const info = JSON.parse(created.stdout);
+    assert.equal(info.base, "main");
+    assert.equal(info.baseSource, "explicit");
+    assert.equal(info.mergeBase, project.git("merge-base", "HEAD", "main"));
+    assert.equal(info.pullRequest.baseRefName, "release");
+    assert.match(info.warnings.join("\n"), /--ref main overrides pull request #12's target branch release/);
+    const unreadable = withPullRequest(project, "fail")("create", "--pr", "12", "--repo", "acme/demo", "--ref", "main");
+    assert.equal(unreadable.status, 0, unreadable.stderr);
+    assert.match(JSON.parse(unreadable.stdout).warnings.join("\n"), /could not be read .*Bad credentials.*used --ref/);
+    for (const item of [info, JSON.parse(unreadable.stdout)]) {
+      assert.equal(project.run("remove", "--dir", item.path, "--owner", item.owner).status, 0);
+    }
+  } finally {
+    project.cleanup();
+  }
+});
+
+test("an unavailable pull request baseline is refused with the fetch that fixes it", () => {
+  const project = fixture();
+  try {
+    releaseBranch(project);
+    const missing = "1".repeat(40);
+    const created = withPullRequest(project, { number: 12, baseRefName: "release", baseRefOid: missing })(
+      "create", "--pr", "12", "--repo", "acme/demo");
+    assert.equal(created.status, 1);
+    assert.match(created.stderr, /baseline unavailable: pull request #12 targets "release" at 1111111111/);
+    assert.match(created.stderr, /git fetch origin release/);
+    assert.match(created.stderr, /after-only evidence/);
+    project.git("remote", "set-url", "origin", "https://github.com/someone/fork.git");
+    const fork = withPullRequest(project, { number: 12, baseRefName: "release", baseRefOid: missing })(
+      "create", "--pr", "12", "--repo", "acme/demo");
+    assert.equal(fork.status, 1);
+    assert.match(fork.stderr, /git fetch https:\/\/github\.com\/acme\/demo\.git release/);
+    assert.deepEqual(readdirSync(project.temporary), []);
+    const unreadable = withPullRequest(project, "fail")("create", "--pr", "12", "--repo", "acme/demo");
+    assert.equal(unreadable.status, 1);
+    assert.match(unreadable.stderr, /could not read pull request #12 in acme\/demo: HTTP 401/);
+    for (const args of [["--pr", "12"], ["--repo", "acme/demo"], ["--pr", "twelve", "--repo", "acme/demo"]]) {
+      const invalid = project.run("create", ...args);
+      assert.equal(invalid.status, 1);
+      assert.match(invalid.stderr, /--pr and --repo must be passed together|pull request number/);
+    }
+    assert.deepEqual(readdirSync(project.temporary), []);
+  } finally {
+    project.cleanup();
+  }
+});
+
+test("without a pull request or --ref the remote default branch is selected and reported", () => {
+  const project = fixture();
+  try {
+    const info = JSON.parse(project.run("create").stdout);
+    assert.equal(info.baseSource, "default");
+    assert.equal(info.base, "main");
+    assert.equal(info.baseRevision, project.git("rev-parse", "main"));
+    assert.equal(info.pullRequest, undefined);
+    assert.equal(project.run("remove", "--dir", info.path, "--owner", info.owner).status, 0);
+  } finally {
+    project.cleanup();
+  }
+});

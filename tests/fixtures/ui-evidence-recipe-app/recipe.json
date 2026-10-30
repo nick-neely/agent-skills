@@ -1,0 +1,128 @@
+{
+  "version": 1,
+  "id": "fixture-app",
+  "sources": {
+    "shared": [
+      "styles.css"
+    ],
+    "ignore": [
+      "**/*.md",
+      "recipe.json"
+    ]
+  },
+  "captures": [
+    {
+      "id": "settings-profile",
+      "claims": [
+        "The profile card shows the save action"
+      ],
+      "route": "settings.html",
+      "viewport": {
+        "width": 640,
+        "height": 360,
+        "devicePixelRatio": 1
+      },
+      "theme": "light",
+      "fixture": "seed:profile-v1",
+      "inputs": [
+        "settings.html"
+      ],
+      "ready": "document.querySelector('[data-testid=save]') !== null"
+    },
+    {
+      "id": "pricing-yearly",
+      "claims": [
+        "Selecting Yearly shows the yearly price"
+      ],
+      "route": "pricing.html",
+      "viewport": {
+        "width": 640,
+        "height": 360,
+        "devicePixelRatio": 1
+      },
+      "theme": "light",
+      "fixture": "seed:pricing-v1",
+      "inputs": [
+        "pricing.html"
+      ],
+      "steps": [
+        [
+          "eval",
+          "localStorage.removeItem('fixture-period')"
+        ],
+        [
+          "reload"
+        ],
+        [
+          "click",
+          "label:has(#yearly)"
+        ]
+      ],
+      "ready": "document.querySelector('#yearly').checked && document.querySelector('[data-testid=price]').textContent.includes('year')"
+    },
+    {
+      "id": "pricing-toggle",
+      "kind": "recording",
+      "claims": [
+        "Choosing Yearly updates the price, and the choice survives a reload"
+      ],
+      "route": "pricing.html",
+      "viewport": {
+        "width": 640,
+        "height": 360,
+        "devicePixelRatio": 1
+      },
+      "theme": "light",
+      "fixture": "seed:pricing-v1",
+      "inputs": [
+        "pricing.html"
+      ],
+      "steps": [
+        [
+          "eval",
+          "localStorage.removeItem('fixture-period')"
+        ],
+        [
+          "reload"
+        ]
+      ],
+      "ready": "document.documentElement.dataset.ready === 'true' && document.querySelector('#monthly').checked",
+      "record": {
+        "fps": 30,
+        "cursor": true
+      },
+      "actions": [
+        [
+          "wait",
+          "600"
+        ],
+        [
+          "click",
+          "label:has(#yearly)"
+        ],
+        [
+          "wait",
+          "--fn",
+          "document.querySelector('[data-testid=price]').textContent.includes('year')"
+        ],
+        [
+          "wait",
+          "1000"
+        ],
+        [
+          "reload"
+        ],
+        [
+          "wait",
+          "--fn",
+          "document.documentElement.dataset.ready === 'true'"
+        ],
+        [
+          "wait",
+          "1200"
+        ]
+      ],
+      "expect": "document.querySelector('#yearly').checked && document.querySelector('[data-testid=price]').textContent.includes('year')"
+    }
+  ]
+}

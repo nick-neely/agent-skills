@@ -18,7 +18,13 @@ managed evidence section. Publishing requires the authorization described in
 | `--mode body` or `comment` | Replace the description block or manage one comment; default `body` |
 | `--image-root path` | Asset directory, defaulting to the section's directory; applies to video too |
 | `--max-video-bytes N` | Explicit exclusive video byte ceiling, at most 100,000,000; raising it asserts paid-plan eligibility |
+| `--manifest path` | Local capture manifest; reports freshness, refuses stale evidence, and records hosted references |
 | `--dry-run` | Read-only validation and a plan including the selected upload transport |
+
+With `--manifest`, the dry run and result list each referenced file's freshness
+(`fresh`, `review`, `stale`, or `untracked`). Stale evidence is refused before any
+upload, and the publication outcome is recorded in the manifest. See
+[recipes.md](recipes.md).
 
 Use absolute paths for the section and a unique evidence directory outside the
 source checkout. Relative media paths resolve under the asset root. Missing

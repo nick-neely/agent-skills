@@ -591,3 +591,95 @@ test("publishes a generated comparison section and replaces it on the next run",
   assert.equal(again.status, 0, again.stderr || again.stdout);
   assert.equal((again.github.body.match(/<!-- ui-evidence:start -->/g) ?? []).length, 1);
 });
+
+// A local manifest as manifest.mjs writes it: "screen" has no capture
+// provenance (review), and "stale" was derived from a since-refreshed source.
+function manifestFor(f, assets) {
+  const path = join(f.dir, "manifest.json");
+  const hash = (file) => createHash("sha256").update(readFileSync(join(f.dir, file))).digest("hex");
+  const records = {};
+  for (const [id, { file, derivedFrom }] of Object.entries(assets)) {
+    records[id] = { path: join(f.dir, file), sha256: hash(file), media: "image", ...(derivedFrom ? { derivedFrom } : {}) };
+  }
+  writeFileSync(path, JSON.stringify({ version: 1, recipe: null, captures: {}, assets: records, publications: [] }));
+  return path;
+}
+
+test("reports manifest freshness in the plan and refuses stale evidence before uploading", () => {
+  const f = fixture("![Finished](screen.png)\n\nThe flow:\n\n![](flow.mp4)\n");
+  writeFileSync(join(f.dir, "screen.png"), "screenshot");
+  writeFileSync(join(f.dir, "flow.mp4"), "video");
+  writeFileSync(join(f.dir, "raw.png"), "refreshed raw");
+  const manifest = manifestFor(f, { screen: { file: "screen.png" } });
+  const dry = run(f, ["--manifest", manifest, "--dry-run"]);
+  assert.equal(dry.status, 0, dry.stderr);
+  const plan = JSON.parse(dry.stdout);
+  assert.deepEqual(plan.freshness.summary, { fresh: 0, review: 1, stale: 0, untracked: 1 });
+  assert.deepEqual(plan.freshness.assets.map((item) => [item.refs, item.assets, item.status]),
+    [[["screen.png"], ["screen"], "review"], [["flow.mp4"], [], "untracked"]]);
+  assert.match(plan.freshness.assets[0].reasons.join(" "), /without capture provenance/);
+
+  const stale = manifestFor(f, { raw: { file: "raw.png" },
+    screen: { file: "screen.png", derivedFrom: [{ id: "raw", sha256: "0".repeat(64) }] } });
+  const staleDry = run(f, ["--manifest", stale, "--dry-run"]);
+  assert.notEqual(staleDry.status, 0);
+  const blockedPlan = JSON.parse(staleDry.stdout);
+  assert.match(blockedPlan.blocked, /stale evidence: screen\.png \(source asset raw was refreshed/);
+  assert.equal(blockedPlan.freshness.assets[0].status, "stale");
+  const refused = run(f, ["--manifest", stale]);
+  assert.notEqual(refused.status, 0);
+  assert.match(refused.stderr, /stale evidence: screen\.png \(source asset raw was refreshed/);
+  assert.equal(refused.github.body, "Introduction.\n");
+  assert.deepEqual(refused.github.uploads, []);
+  assert.equal(refused.github.calls.length, staleDry.github.calls.length, "stale evidence is refused before reading or writing the target");
+  assert.deepEqual(JSON.parse(readFileSync(stale, "utf8")).publications, []);
+
+  // A recorded path identifies its asset; a modified copy with the original's
+  // content hash does not make the intact original stale.
+  writeFileSync(join(f.dir, "copy.png"), "screenshot");
+  const copies = manifestFor(f, { screen: { file: "screen.png" }, copy: { file: "copy.png" } });
+  writeFileSync(join(f.dir, "copy.png"), "modified copy");
+  const intact = run(f, ["--manifest", copies, "--dry-run"]);
+  assert.equal(intact.status, 0, intact.stderr);
+  assert.deepEqual(JSON.parse(intact.stdout).freshness.assets[0].assets, ["screen"]);
+
+  // A recorded file overwritten in place is the same asset, now tampered.
+  const recorded = manifestFor(f, { screen: { file: "screen.png" } });
+  writeFileSync(join(f.dir, "screen.png"), "overwritten screenshot");
+  const overwritten = run(f, ["--manifest", recorded]);
+  assert.notEqual(overwritten.status, 0);
+  assert.match(overwritten.stderr, /stale evidence: screen\.png \(asset file changed after it was recorded/);
+  assert.deepEqual(overwritten.github.uploads, []);
+});
+
+test("records hosted references after readback and reports partial publication failure in the manifest", () => {
+  const f = fixture("![Finished](screen.png)\n\nThe flow:\n\n![](flow.mp4)\n");
+  writeFileSync(join(f.dir, "screen.png"), "screenshot");
+  writeFileSync(join(f.dir, "flow.mp4"), "video");
+  const manifest = manifestFor(f, { screen: { file: "screen.png" } });
+  const published = run(f, ["--manifest", manifest]);
+  assert.equal(published.status, 0, published.stderr);
+  assert.deepEqual(JSON.parse(published.stdout).manifest, { recorded: true });
+  let record = JSON.parse(readFileSync(manifest, "utf8")).publications.at(-1);
+  assert.equal(record.verified, true);
+  assert.equal(record.target, "pr:123");
+  assert.equal(record.repo, "acme/demo");
+  assert.deepEqual(record.assets.map((item) => [item.ids, item.refs, item.status, item.url]), [
+    [["screen"], ["screen.png"], "review", "https://github.com/user-attachments/assets/asset-1"],
+    [[], ["flow.mp4"], "untracked", "https://github.com/user-attachments/assets/asset-2"],
+  ]);
+  assert.ok(!JSON.stringify(published.github.body).includes(f.dir), "no local path reaches the published body");
+
+  const partial = fixture("![Finished](screen.png)\n\n![Second](second.png)\n", { nativeFailure: true });
+  writeFileSync(join(partial.dir, "screen.png"), "screenshot");
+  writeFileSync(join(partial.dir, "second.png"), "second");
+  const partialManifest = manifestFor(partial, { screen: { file: "screen.png" }, second: { file: "second.png" } });
+  const failed = run(partial, ["--manifest", partialManifest]);
+  assert.notEqual(failed.status, 0);
+  record = JSON.parse(readFileSync(partialManifest, "utf8")).publications.at(-1);
+  assert.equal(record.verified, false);
+  assert.equal(record.changed, true);
+  assert.match(record.error, /simulated native failure/);
+  assert.deepEqual(record.unresolved, ["second.png"]);
+  assert.deepEqual(record.assets.map((item) => item.url), [null, null], "unverified readback maps no hosted references");
+});

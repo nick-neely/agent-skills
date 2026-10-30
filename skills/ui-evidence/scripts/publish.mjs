@@ -5,6 +5,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { publicationFreshness, readManifest, recordPublication } from "./provenance.mjs";
 
 const START = "<!-- ui-evidence:start -->";
 const END = "<!-- ui-evidence:end -->";
@@ -27,6 +28,8 @@ const HELP = `publish.mjs - publish visual evidence to a PR or issue
   --image-root <path>      Directory assets must live under (default section directory)
   --max-video-bytes <N>    Exclusive video byte limit, up to 100000000; using a higher
                            limit asserts paid-plan upload eligibility
+  --manifest <path>        Report evidence freshness from this local manifest, refuse
+                           stale assets, and record the hosted references afterwards
   --dry-run                Validate target and local files, print plan, upload nothing
 
 Images and videos must be smaller than 9500000 bytes by default.
@@ -50,7 +53,7 @@ function parseArgs(argv) {
     const arg = argv[i];
     if (arg === "--help" || arg === "-h") { console.log(HELP); process.exit(0); }
     if (arg === "--dry-run") { options.dryRun = true; continue; }
-    const fields = { "--repo": "repo", "--target": "target", "--section": "section", "--mode": "mode", "--image-root": "imageRoot", "--max-video-bytes": "videoLimit" };
+    const fields = { "--repo": "repo", "--target": "target", "--section": "section", "--mode": "mode", "--image-root": "imageRoot", "--max-video-bytes": "videoLimit", "--manifest": "manifest" };
     if (!fields[arg]) fail(`unknown option ${arg}`);
     if (!argv[i + 1] || argv[i + 1].startsWith("--")) fail(`${arg} requires a value`);
     options[fields[arg]] = argv[++i];
@@ -361,6 +364,12 @@ async function main() {
   if (!statSync(root).isDirectory()) fail("image root must be a directory");
   const { assets, occurrences } = collectAssets(markdown, root, options.videoLimit);
   assets.forEach((asset, index) => { asset.index = index; });
+  const manifestPath = options.manifest ? resolve(options.manifest) : null;
+  const freshness = manifestPath ? publicationFreshness(readManifest(manifestPath), assets) : null;
+  const stale = freshness?.assets.filter((item) => item.status === "stale") ?? [];
+  const blocked = stale.length ? `stale evidence: ${stale.map((item) => `${item.refs.join(", ")} (${item.reasons.join("; ")})`).join("; ")}. ` +
+    "Refresh it and record the new asset before publishing; manifest.mjs status lists the next action" : null;
+  if (blocked && !options.dryRun) fail(blocked);
   const issuesPath = `repos/${options.repo}/issues/${options.number}`;
   const targetPath = options.kind === "pr" ? `repos/${options.repo}/pulls/${options.number}` : issuesPath;
   const target = ghJson(["api", targetPath]);
@@ -380,7 +389,15 @@ async function main() {
   blockLocation(current);
   const transport = !assets.length ? "none" : existing || occurrences.some((item) => item.style === "html") ? "direct-attachment" : "native-gh";
   const plan = { repo: options.repo, target: options.target, mode: options.mode, transport, commentId: existing?.id, assets: assets.map((asset) => ({ refs: asset.refs, bytes: asset.size, media: asset.video ? "video" : "image" })) };
-  if (options.dryRun) { console.log(JSON.stringify({ ...plan, dryRun: true }, null, 2)); return; }
+  if (freshness) {
+    const items = freshness.assets.map(({ refs, assets: ids, status, reasons }) => ({ refs, assets: ids, status, reasons }));
+    plan.freshness = { summary: freshness.summary, assets: items, limitations: freshness.limitations };
+  }
+  if (options.dryRun) {
+    console.log(JSON.stringify({ ...plan, dryRun: true, ...(blocked ? { blocked } : {}) }, null, 2));
+    if (blocked) process.exitCode = 1;
+    return;
+  }
   if (transport === "native-gh" && !gh([options.kind, options.mode === "body" ? "edit" : "comment", "--help"]).includes("--attach")) {
     fail("installed gh lacks --attach; upgrade to gh 2.99.0 or newer");
   }
@@ -468,13 +485,29 @@ async function main() {
     const unresolved = assets.filter((asset) => asset.staged && savedBlock.includes(asset.staged)).flatMap((asset) => asset.refs);
     const result = { ...plan, commentId, uploads, readback: { verified: verification.verified, changed: saved === undefined ? (writeAttempted ? null : false) : saved !== current, savedReferences, unresolved, error: readError } };
     if (transport === "native-gh" && verification.verified) result.uploads = assets.map((asset) => ({ refs: asset.refs, url: verification.urls[asset.index] }));
-    if (writeError || !verification.verified) {
-      result.error = writeError || readError || "saved target did not match the expected managed block and asset references";
-      console.log(JSON.stringify(result, null, 2));
-      process.exitCode = 1;
-      return;
+    const failed = writeError || !verification.verified;
+    if (failed) result.error = writeError || readError || "saved target did not match the expected managed block and asset references";
+    if (manifestPath) {
+      // Map each manifest asset to its hosted reference only when readback
+      // confirmed it; a partial failure is recorded as unresolved.
+      const hosted = new Map(result.uploads.map((upload) => [upload.refs.join("\0"), upload.url]));
+      try {
+        recordPublication(manifestPath, {
+          repo: options.repo, target: options.target, mode: options.mode, commentId: commentId ?? null, transport,
+          verified: verification.verified, changed: result.readback.changed,
+          assets: assets.map((asset, index) => ({
+            ids: freshness.assets[index].assets, sha256: freshness.assets[index].sha256, refs: asset.refs,
+            status: freshness.assets[index].status, url: verification.verified ? hosted.get(asset.refs.join("\0")) ?? null : null,
+          })),
+          unresolved: result.readback.unresolved, ...(failed ? { error: result.error } : {}),
+        });
+        result.manifest = { recorded: true };
+      } catch (error) {
+        result.manifest = { recorded: false, error: error.message };
+      }
     }
     console.log(JSON.stringify(result, null, 2));
+    if (failed) process.exitCode = 1;
   } finally { if (staging) rmSync(staging, { recursive: true, force: true }); }
 }
 
