@@ -203,6 +203,39 @@ export function segmentCrosses(segment, rect) {
   return true;
 }
 
+// Largest per-channel spread, out of 255, that still counts as one flat colour.
+const BLANK_TOLERANCE = 16;
+
+// Panel pixels for placement. `blank(rect)` is true when every pixel in the
+// panel-local rectangle is within BLANK_TOLERANCE of one flat colour: empty
+// background a mark can sit on without hiding surrounding UI. Pixels past the
+// image edge are not known to be blank.
+export function pixelSurface({ width, height, data, channels = 3 }) {
+  if (data.length < width * height * channels) throw new Error(`pixel data is smaller than ${width}x${height}x${channels}`);
+  return {
+    width, height,
+    blank(rect) {
+      if (rect.x < 0 || rect.y < 0 || right(rect) > width || bottom(rect) > height) return false;
+      const low = [255, 255, 255];
+      const high = [0, 0, 0];
+      for (let y = rect.y; y < bottom(rect); y += 1) {
+        for (let x = rect.x; x < right(rect); x += 1) {
+          const at = (y * width + x) * channels;
+          for (let c = 0; c < 3; c += 1) {
+            const value = data[at + c];
+            if (value < low[c]) low[c] = value;
+            if (value > high[c]) high[c] = value;
+          }
+          if (high[0] - low[0] > BLANK_TOLERANCE || high[1] - low[1] > BLANK_TOLERANCE || high[2] - low[2] > BLANK_TOLERANCE) {
+            return false;
+          }
+        }
+      }
+      return true;
+    },
+  };
+}
+
 function nearestPoint(rect, x, y) {
   return {
     x: Math.min(Math.max(x, rect.x), right(rect)),
@@ -211,13 +244,17 @@ function nearestPoint(rect, x, y) {
 }
 
 // Places marks for one panel. Every mark must stay inside `bounds` (the panel
-// plus its side and bottom gutters) and avoid `obstacles` (other marks and
-// every changed region, so nothing hides the change it explains).
+// plus its side and bottom gutters), avoid `obstacles` (other marks and every
+// changed region, so nothing hides the change it explains), and cover
+// screenshot pixels only where `surface` shows them blank, so marks never hide
+// the surrounding UI that gives the change its context. Without a surface no
+// screenshot pixel is known to be safe, and marks use the gutters.
 class PanelPlacer {
-  constructor(panel, bounds, chrome) {
+  constructor(panel, bounds, chrome, surface = null) {
     this.panel = panel;
     this.bounds = bounds;
     this.chrome = chrome;
+    this.surface = surface;
     this.obstacles = [];
     this.connectors = [];
     // Changed regions block marks, except a region that encloses the one being
@@ -238,7 +275,35 @@ class PanelPlacer {
 
   fits(box) {
     return contains(this.bounds, box) && !this.blocking().some((other) => intersect(other, box)) &&
-      !this.connectors.some((segment) => segmentCrosses(segment, box));
+      !this.connectors.some((segment) => segmentCrosses(segment, box)) && this.safe(box);
+  }
+
+  // A mark that covers screenshot pixels needs them, and a small margin
+  // around it, blank. A mark wholly in a gutter covers none.
+  safe(box) {
+    if (!intersect(box, this.panel)) return true;
+    const hit = intersect(expand(box, this.chrome.ring), this.panel);
+    return Boolean(this.surface?.blank({ ...hit, x: hit.x - this.panel.x, y: hit.y - this.panel.y }));
+  }
+
+  // How many separate stretches of surrounding UI a connector would draw
+  // over, sampled each pixel along its length outside the pin and its own
+  // region, and its length to break ties.
+  connectorCost(segment, pin, rect) {
+    const own = expand(rect, this.clearance);
+    const length = Math.ceil(Math.hypot(segment.x2 - segment.x1, segment.y2 - segment.y1));
+    let crossings = 0;
+    let inside = false;
+    for (let step = 0; step <= length; step += 1) {
+      const t = length ? step / length : 0;
+      const x = Math.round(segment.x1 + (segment.x2 - segment.x1) * t);
+      const y = Math.round(segment.y1 + (segment.y2 - segment.y1) * t);
+      const dot = { x: x - 1, y: y - 1, width: 3, height: 3 };
+      const covers = !intersect(dot, pin) && !intersect(dot, own) && !this.safe({ x, y, width: 1, height: 1 });
+      if (covers && !inside) crossings += 1;
+      inside = covers;
+    }
+    return { crossings, length };
   }
 
   // A connector may end on its own region but must not cross other marks.
@@ -255,11 +320,12 @@ class PanelPlacer {
   }
 
   // Overlap is a last resort for an impossibly crowded panel. Choose the
-  // in-bounds candidate covering the least area, first one on ties.
-  leastOverlap(candidates) {
+  // in-bounds candidate covering the least area, first one on ties. With
+  // `safeOnly`, candidates over non-blank screenshot pixels are skipped.
+  leastOverlap(candidates, safeOnly = false) {
     let best = null;
     for (const candidate of candidates) {
-      if (!contains(this.bounds, candidate.box)) continue;
+      if (!contains(this.bounds, candidate.box) || (safeOnly && !this.safe(candidate.box))) continue;
       const cost = this.blocking().reduce((total, other) => {
         const hit = intersect(other, candidate.box);
         return total + (hit ? hit.width * hit.height : 0);
@@ -302,7 +368,7 @@ class PanelPlacer {
     let chosen = candidates.find((candidate) => this.fits(candidate.box));
     let placement = "clear";
     if (!chosen) {
-      chosen = this.leastOverlap(candidates);
+      chosen = this.leastOverlap(candidates, true);
       placement = "overlap";
     }
     if (!chosen) return null;
@@ -330,7 +396,10 @@ class PanelPlacer {
     if (clear) return this.commitPin(clear.box, "adjacent", rect);
 
     // Reserved margins: walk along the nearest gutter from the region's
-    // centre, alternating directions, until a free slot appears.
+    // centre, alternating directions, until a slot appears whose connector
+    // crosses neither another mark nor surrounding UI. Failing that, take the
+    // slot whose connector crosses no mark, then the fewest stretches of UI,
+    // then the shortest.
     const { panel, bounds } = this;
     const centreX = rect.x + rect.width / 2;
     const centreY = rect.y + rect.height / 2;
@@ -340,7 +409,7 @@ class PanelPlacer {
       { side: "bottom", distance: bottom(panel) - bottom(rect) },
     ].sort((a, b) => a.distance - b.distance);
     const step = d + gap;
-    let crossing = null;
+    let fallback = null;
     for (const { side } of sides) {
       const vertical = side !== "bottom";
       const fixed = side === "left" ? bounds.x + gap : side === "right" ? right(panel) + gap : bottom(panel) + gap;
@@ -352,17 +421,25 @@ class PanelPlacer {
           ? { x: Math.round(fixed), y: Math.round(start + offset), width: d, height: d }
           : { x: Math.round(start + offset), y: Math.round(fixed), width: d, height: d };
         if (!this.fits(box)) continue;
-        if (this.connectorClear(this.connectorFor(box, rect))) return this.commitPin(box, "margin", rect);
-        crossing ??= box;
+        const connector = this.connectorFor(box, rect);
+        const crossing = !this.connectorClear(connector);
+        const cost = this.connectorCost(connector, box, rect);
+        if (!crossing && !cost.crossings) return this.commitPin(box, "margin", rect);
+        const better = !fallback || crossing < fallback.crossing || (crossing === fallback.crossing &&
+          (cost.crossings < fallback.cost.crossings ||
+            (cost.crossings === fallback.cost.crossings && cost.length < fallback.cost.length)));
+        if (better) fallback = { box, crossing, cost };
       }
     }
-    if (crossing) return this.commitPin(crossing, "margin-crossing", rect);
-    const fallback = this.leastOverlap(adjacent) ??
+    if (fallback) {
+      return this.commitPin(fallback.box, fallback.crossing ? "margin-crossing" : "margin", rect, fallback.cost.crossings);
+    }
+    const last = this.leastOverlap(adjacent, true) ?? this.leastOverlap(adjacent) ??
       { box: fitWindow({ x: rect.x, y: rect.y, width: d, height: d }, { width: right(bounds), height: bottom(bounds) }) };
-    return this.commitPin(fallback.box, "overlap", rect);
+    return this.commitPin(last.box, "overlap", rect);
   }
 
-  commitPin(box, placement, rect) {
+  commitPin(box, placement, rect, uiCost = 0) {
     this.obstacles.push(box);
     const cx = box.x + this.chrome.radius;
     const cy = box.y + this.chrome.radius;
@@ -372,7 +449,7 @@ class PanelPlacer {
       this.connectors.push(connector);
     }
     return { cx, cy, radius: this.chrome.radius, placement: placement === "margin-crossing" ? "margin" : placement,
-      connector, crossing: placement === "margin-crossing" };
+      connector, crossing: placement === "margin-crossing", coversUi: uiCost > 0 };
   }
 
   placeLabel(pin, text, measure) {
@@ -395,7 +472,8 @@ class PanelPlacer {
 }
 
 // Plan one comparison image: panel slots, headers, marks, and legend, all in
-// final canvas pixels. `panels` carry their output size; callout marks carry
+// final canvas pixels. `panels` carry their output size and, optionally, a
+// `surface` from pixelSurface() over their rendered pixels; callout marks carry
 // rectangles in panel-local output pixels.
 export function planComparison({ panels, callouts = [], layout = "auto", displayWidth = DEFAULT_DISPLAY_WIDTH, measure }) {
   if (typeof measure !== "function") throw new Error("planComparison needs a measure function");
@@ -425,6 +503,7 @@ export function planComparison({ panels, callouts = [], layout = "auto", display
     return {
       key: panel.key,
       label: panel.label,
+      surface: panel.surface ?? null,
       x, y, width: panel.width, height: panel.height,
       header: {
         x, y: slotY, width: innerWidth, height: headerHeight,
@@ -439,7 +518,8 @@ export function planComparison({ panels, callouts = [], layout = "auto", display
   const marks = [];
   const spotlights = [];
   for (const panel of planned) {
-    const placer = new PanelPlacer(panel, panel.bounds, chrome);
+    const placer = new PanelPlacer({ x: panel.x, y: panel.y, width: panel.width, height: panel.height },
+      panel.bounds, chrome, panel.surface);
     const local = sorted
       .map((callout) => ({ callout, mark: callout.marks?.[panel.key] }))
       .filter(({ mark }) => mark)
@@ -477,6 +557,8 @@ export function planComparison({ panels, callouts = [], layout = "auto", display
         limitations.push(`Callout ${item.callout.id} pin in ${panel.label} overlaps another mark; the panel is too crowded.`);
       } else if (entries[index].pin.crossing) {
         limitations.push(`Callout ${item.callout.id} connector in ${panel.label} crosses another mark; the panel is too crowded.`);
+      } else if (entries[index].pin.coversUi) {
+        limitations.push(`Callout ${item.callout.id} connector in ${panel.label} crosses surrounding UI on its way to a margin pin.`);
       }
     });
     local.forEach((item, index) => {
@@ -522,7 +604,7 @@ export function planComparison({ panels, callouts = [], layout = "auto", display
     layout: chosen,
     canvas: { width: canvasWidth, height: height + gutter / 2 },
     chrome,
-    panels: planned.map(({ bounds, ...panel }) => panel),
+    panels: planned.map(({ bounds, surface, ...panel }) => panel),
     marks,
     spotlights,
     legend,

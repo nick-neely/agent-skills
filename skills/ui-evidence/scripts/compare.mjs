@@ -17,7 +17,7 @@ import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   DEFAULT_DISPLAY_WIDTH, PALETTE, anchorToImageRect, asArray, chooseLayout, chromeFor, contains,
-  detailWindows, intersect, planComparison, rectFrom, sectionMarkdown, snapOut,
+  detailWindows, intersect, pixelSurface, planComparison, rectFrom, sectionMarkdown, snapOut,
 } from "./comparison-layout.mjs";
 import { CHROME, geometry, imText, numberedPinArgs, textMeasurer } from "./magick-args.mjs";
 
@@ -86,6 +86,19 @@ function magick(args) {
     return execFileSync(magickBinary, args, {
       encoding: "utf8", maxBuffer: 64 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"],
     });
+  } catch (error) {
+    die(`ImageMagick failed: ${String(error.stderr || error.message).trim()}`);
+  }
+}
+
+// Raw 8-bit RGB pixels of a rendered panel, so marks can avoid covering its UI.
+function surfaceOf(path) {
+  const { width, height } = imageSize(path);
+  try {
+    const data = execFileSync(magickBinary, [`${path}[0]`, "-alpha", "off", "-depth", "8", "rgb:-"], {
+      maxBuffer: width * height * 3 + 1024 * 1024, stdio: ["ignore", "pipe", "pipe"],
+    });
+    return pixelSurface({ width, height, data });
   } catch (error) {
     die(`ImageMagick failed: ${String(error.stderr || error.message).trim()}`);
   }
@@ -365,7 +378,7 @@ function renderView({ name, views, layout, displayWidth, callouts, measure, temp
   const visible = viewCallouts(callouts, views);
   const plan = planComparison({
     panels: views.map((view) => ({
-      key: view.panel.key, label: view.label,
+      key: view.panel.key, label: view.label, surface: surfaceOf(images[view.panel.key]),
       width: Math.round(view.window.width * view.zoom), height: Math.round(view.window.height * view.zoom),
     })),
     callouts: visible, layout, displayWidth, measure,
