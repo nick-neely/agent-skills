@@ -97,6 +97,7 @@ function run(state, command) {
     writeFileSync(path, png(Math.round(width * ratio), Math.round(height * ratio) * (args.includes("--full") ? 2 : 1),
       [...content(state).subarray(0, 3)]));
   } else if (name === "record" && args[0] === "start") {
+    if (state.recording) throw new Error("a recording is already in progress");
     state.recording = args[1];
     writeFileSync(args[1], "");
   } else if (name === "record" && args[0] === "stop") {
@@ -240,6 +241,12 @@ test("invalid recipes and runtime inputs fail before any browser command", () =>
     assert.notEqual(result.status, 0);
     assert.match(result.stderr, pattern);
   }
+  const inside = spawnSync(process.execPath, [captureScript, "--recipe", "recipe.json", "--capture", "settings-profile",
+    "--base-url", p.baseUrl, "--out-dir", "evidence", "--session", "uie-test"], {
+    cwd: p.app, encoding: "utf8", env: { ...process.env, NODE_OPTIONS: `--import=${pathToFileURL(fake).href}`, FAKE_BROWSER_DIR: p.browserDir },
+  });
+  assert.notEqual(inside.status, 0);
+  assert.match(inside.stderr, /--out-dir must be outside the source checkout/);
   const noSession = spawnSync(process.execPath, [captureScript, "--recipe", join(p.app, "recipe.json"), "--capture",
     "settings-profile", "--base-url", p.baseUrl, "--out-dir", p.evidence], {
     encoding: "utf8", env: { ...process.env, AGENT_BROWSER_SESSION: "" },
@@ -369,6 +376,15 @@ test("recordings run setup, actions, and the result assertion in one take and re
   assert.equal(existsSync(failing.manifestPath), false);
   assert.ok(failing.calls().some((call) => call.args[0] === "record" && call.args[1] === "stop"));
   assert.ok(!readdirSync(failing.evidence).some((name) => name.startsWith(".")), "temporary files are removed");
+
+  writeFileSync(join(p.browserDir, "recording-caller.json"), JSON.stringify({ viewport: [640, 360, 1], theme: "light",
+    url: "about:blank", scroll: [0, 0], clicked: [], recording: join(p.root, "caller-take.mp4") }));
+  const busy = p.capture(["--capture", "pricing-toggle"], { session: "recording-caller" });
+  assert.notEqual(busy.status, 0);
+  assert.match(busy.stderr, /already in progress/);
+  assert.ok(!p.calls().some((call) => call.session === "recording-caller" && call.args[0] === "record"),
+    "a take this run did not start is never stopped");
+  assert.equal(JSON.parse(readFileSync(join(p.browserDir, "recording-caller.json"), "utf8")).recording, join(p.root, "caller-take.mp4"));
 });
 
 test("freshness separates committed, dirty, and unrelated changes without trusting HEAD alone", () => {
@@ -462,6 +478,10 @@ test("unavailable or unverified source identity needs review instead of passing 
   assert.equal(served.status, 0, served.stderr);
   status = p.status();
   assert.match(reasons(status["pricing-yearly.after"]), /served checkout was not verified/);
+  assert.match(status["pricing-yearly.after"].next, /--served-check/);
+  const unverifiable = p.manifest("verify", "--capture", "pricing-yearly", "--basis", "looks right");
+  assert.notEqual(unverifiable.status, 0);
+  assert.match(unverifiable.stderr, /cannot establish where this capture came from.*--served-check/);
   const checked = p.capture(["--capture", "pricing-yearly", "--served-check", "dev server cwd is the app checkout"],
     { baseUrl: "http://localhost:4321/" });
   assert.equal(checked.json.outcome, "unchanged");
@@ -602,6 +622,27 @@ test("capture references are compact Markdown without local paths, URLs, or sess
   const parsed = JSON.parse(json.stdout);
   assert.equal(parsed.captures.length, 2);
   assert.equal(parsed.captures[0].versions[0].revision, head);
+
+  const recipe = join(p.root, "recipe.json");
+  cpSync(join(p.app, "recipe.json"), recipe);
+  rmSync(p.app, { recursive: true, force: true });
+  const gone = p.manifest("reference", "--recipe", recipe);
+  assert.equal(gone.status, 0, gone.stderr);
+  assert.match(gone.stdout, /current source identity is unavailable: the checkout is missing or has no commit/);
+  for (const secret of [p.root, p.app, "fatal", "cannot change"]) assert.ok(!gone.stdout.includes(secret), `reference leaked ${secret}`);
+});
+
+test("status lists recipe captures that have no recorded evidence yet", () => {
+  const p = project();
+  captured(p, "settings-profile");
+  const result = p.manifest("status");
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.json.summary.uncaptured, 2);
+  assert.deepEqual(result.json.uncaptured.map((item) => item.capture), ["pricing-yearly", "pricing-toggle"]);
+  assert.match(result.json.uncaptured[0].next, /capture\.mjs --capture pricing-yearly/);
+  const selected = p.manifest("status", "--capture", "pricing-toggle");
+  assert.deepEqual(selected.json.captures, []);
+  assert.deepEqual(selected.json.uncaptured.map((item) => item.capture), ["pricing-toggle"]);
 });
 
 test("the documented recipe example and the fixture recipe validate", () => {

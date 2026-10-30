@@ -117,6 +117,17 @@ function gitError(error) {
   return error.stderr?.toString().trim().split("\n")[0] || error.message;
 }
 
+// The top-level directory of the checkout containing path, or null.
+export function checkoutRoot(path) {
+  try {
+    return realpathSync.native(git(path, ["rev-parse", "--show-toplevel"]).trim());
+  } catch {
+    return null;
+  }
+}
+
+// Reasons never carry Git's own messages, which can contain local paths; the
+// local-only detail field does.
 // HEAD plus a content fingerprint of every changed, added, deleted, or
 // untracked (non-ignored) file. A dirty flag alone cannot tell two dirty trees
 // apart; the per-path blob IDs can, and they let freshness name what changed.
@@ -127,7 +138,7 @@ export function sourceIdentity(path) {
     root = realpathSync.native(git(path, ["rev-parse", "--show-toplevel"]).trim());
     head = git(root, ["rev-parse", "--verify", "HEAD"]).trim();
   } catch (error) {
-    return { available: false, reason: `not a git checkout with a commit: ${gitError(error)}` };
+    return { available: false, reason: "the checkout is missing or has no commit", detail: gitError(error) };
   }
   let branch = null;
   try {
@@ -210,8 +221,14 @@ export function baselineIdentity(base) {
     const head = git(base.repoRoot, ["merge-base", "HEAD", base.ref ?? base.revision]).trim();
     return { available: true, kind: "baseline", root: base.repoRoot, head, dirty: false, changes: {} };
   } catch (error) {
-    return { available: false, reason: `could not resolve the merge base with ${base.ref ?? short(base.revision)}: ${gitError(error)}` };
+    return { available: false, reason: `could not resolve the merge base with ${base.ref ?? short(base.revision)}`, detail: gitError(error) };
   }
+}
+
+// The identity a recorded source has now: the same checkout's current state, or
+// for a baseline, the merge base its base ref selects now.
+export function currentIdentity(source) {
+  return source.kind === "baseline" ? baselineIdentity(source.base) : sourceIdentity(source.root);
 }
 
 export function emptyManifest() {
@@ -232,7 +249,7 @@ export function readManifest(path) {
   return manifest;
 }
 
-function sleep(milliseconds) {
+export function sleep(milliseconds) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
 }
 
@@ -292,23 +309,26 @@ export function currentBasis(record) {
   return record.verifications?.at(-1) ?? record;
 }
 
+// Each reason has a code so the next action can match what would resolve it.
 function sourceReasons(basis, recipe, capture, cache) {
   const reasons = [];
   if (!basis.served?.verified) {
-    reasons.push({ level: "review", text: "the served checkout was not verified for this capture" });
+    reasons.push({ level: "review", code: "served", text: "the served checkout was not verified for this capture" });
   }
-  if (!basis.source) return [...reasons, { level: "review", text: "source identity was not recorded at capture" }];
-  const key = basis.source.kind === "baseline" ? `baseline:${JSON.stringify(basis.source.base)}` : `checkout:${basis.source.root}`;
-  if (!cache.has(key)) {
-    cache.set(key, basis.source.kind === "baseline" ? baselineIdentity(basis.source.base) : sourceIdentity(basis.source.root));
+  if (!basis.source) {
+    return [...reasons, { level: "review", code: "unrecorded", text: "source identity was not recorded at capture" }];
   }
+  const key = JSON.stringify([basis.source.kind, basis.source.root, basis.source.base ?? null]);
+  if (!cache.has(key)) cache.set(key, currentIdentity(basis.source));
   const now = cache.get(key);
-  if (!now.available) return [...reasons, { level: "review", text: `current source identity is unavailable: ${now.reason}` }];
+  if (!now.available) {
+    return [...reasons, { level: "review", code: "unavailable", text: `current source identity is unavailable: ${now.reason}` }];
+  }
   let changed;
   try {
     changed = changedPaths(basis.source, now);
   } catch (error) {
-    return [...reasons, { level: "review", text: error.message }];
+    return [...reasons, { level: "review", code: "unavailable", text: error.message }];
   }
   const direct = globMatcher(capture.inputs);
   const shared = globMatcher(recipe.sources.shared);
@@ -320,11 +340,16 @@ function sourceReasons(basis, recipe, capture, cache) {
     else if (shared(path)) groups.shared.push(path);
     else groups.unknown.push(path);
   }
-  if (groups.direct.length) reasons.push({ level: "stale", text: `capture input changed: ${listPaths(groups.direct)}`, paths: groups.direct });
-  if (groups.shared.length) reasons.push({ level: "review", text: `shared input changed: ${listPaths(groups.shared)}`, paths: groups.shared });
+  if (groups.direct.length) {
+    reasons.push({ level: "stale", code: "input", text: `capture input changed: ${listPaths(groups.direct)}`, paths: groups.direct });
+  }
+  if (groups.shared.length) {
+    reasons.push({ level: "review", code: "shared", text: `shared input changed: ${listPaths(groups.shared)}`, paths: groups.shared });
+  }
   if (groups.unknown.length) {
     reasons.push({
       level: "review",
+      code: "unknown",
       text: `changed outside this capture's declared inputs, impact unknown: ${listPaths(groups.unknown)}`,
       paths: groups.unknown,
     });
@@ -332,10 +357,18 @@ function sourceReasons(basis, recipe, capture, cache) {
   return reasons;
 }
 
-function captureNext(status, captureId, version) {
+// Review caused by an unknown capture source can only be resolved by a new
+// capture; a focused check covers changed paths.
+export const UNVERIFIABLE = new Set(["served", "unrecorded", "unavailable", "recipe"]);
+
+function captureNext(status, captureId, version, reasons) {
   if (status === "fresh") return "reuse";
   const recapture = `capture.mjs --capture ${captureId} --version ${version}`;
   if (status === "stale") return `recapture with ${recapture}`;
+  if (reasons.some((reason) => UNVERIFIABLE.has(reason.code))) {
+    return `recapture with ${recapture} --source <checkout> --served-check "<how you confirmed it>"; ` +
+      "identical pixels keep the original asset";
+  }
   return `recapture with ${recapture} (identical pixels keep the original), or record a focused check with ` +
     `manifest.mjs verify --capture ${captureId} --version ${version} --basis "<what you checked>"`;
 }
@@ -346,20 +379,20 @@ export function assessCapture(manifest, recipe, captureId, version, cache = new 
   const reasons = [...assetIntegrity(manifest.assets[record.asset])];
   const capture = recipe?.captures.get(captureId);
   const basis = currentBasis(record);
-  if (!recipe) reasons.push({ level: "review", text: "the recipe is unavailable, so recipe identity cannot be checked" });
-  else if (!capture) reasons.push({ level: "review", text: "the capture is no longer in the recipe" });
+  if (!recipe) reasons.push({ level: "review", code: "recipe", text: "the recipe is unavailable, so recipe identity cannot be checked" });
+  else if (!capture) reasons.push({ level: "review", code: "recipe", text: "the capture is no longer in the recipe" });
   else {
     const effective = effectiveCapture(capture, version);
-    if (recipeHash(effective) !== basis.recipe) reasons.push({ level: "stale", text: "recipe setup changed for this capture" });
+    if (recipeHash(effective) !== basis.recipe) reasons.push({ level: "stale", code: "recipe", text: "recipe setup changed for this capture" });
     if ((effective.fixture ?? null) !== (basis.fixture ?? null)) {
-      reasons.push({ level: "stale", text: `fixture changed from ${basis.fixture ?? "none"} to ${effective.fixture ?? "none"}` });
+      reasons.push({ level: "stale", code: "fixture", text: `fixture changed from ${basis.fixture ?? "none"} to ${effective.fixture ?? "none"}` });
     }
     reasons.push(...sourceReasons(basis, recipe, capture, cache));
   }
   const status = worst(reasons.map((reason) => reason.level));
   return {
     capture: captureId, version, asset: record.asset, status, reasons,
-    verifiedBy: record.verifications?.length ? basis.basis : null, next: captureNext(status, captureId, version),
+    verifiedBy: record.verifications?.length ? basis.basis : null, next: captureNext(status, captureId, version, reasons),
   };
 }
 
@@ -428,10 +461,7 @@ export function assessManifest(manifest, { recipePath, captures } = {}) {
   const results = [];
   for (const id of selected) {
     const versions = manifest.captures[id]?.versions;
-    if (!versions) {
-      results.push({ capture: id, status: "review", reasons: [{ level: "review", text: "no recorded capture" }], next: "capture it" });
-      continue;
-    }
+    if (!versions) continue;
     for (const version of Object.keys(versions)) results.push(captureStatus(id, version));
   }
   const derived = captures?.length ? [] : Object.keys(manifest.assets)
@@ -440,15 +470,24 @@ export function assessManifest(manifest, { recipePath, captures } = {}) {
   const all = [...results, ...derived];
   const summary = { fresh: 0, review: 0, stale: 0 };
   for (const item of all) summary[item.status] += 1;
+  // Recipe captures with no recorded evidence yet, so new entries are visible.
+  const wanted = captures?.length ? captures : recipe ? [...recipe.captures.keys()] : [];
+  const uncaptured = wanted.filter((id) => !manifest.captures[id]);
+  const baselines = Object.values(manifest.captures)
+    .some((entry) => Object.values(entry.versions ?? {}).some((record) => record.source?.kind === "baseline"));
   return {
     recipe: path ?? null,
-    summary,
+    summary: { ...summary, uncaptured: uncaptured.length },
     captures: results,
     assets: derived,
+    uncaptured: uncaptured.map((id) => ({ capture: id, next: recipe?.captures.has(id)
+      ? `capture it with capture.mjs --capture ${id}` : "add it to the recipe, then capture it" })),
     limitations: [
       ...(limitation ? [limitation] : []),
       `Source fingerprints cover ${SOURCE_SCOPE}.`,
       "Impact is decided from declared inputs and paths, not rendered output; review results need inspection.",
+      ...(baselines ? ["Baseline freshness follows the recorded base ref in this clone. Fetch it first, and recreate " +
+        "the baseline with before-capture.mjs --pr after the pull request is retargeted."] : []),
     ],
     assess: (id) => assessAsset(manifest, id, captureStatus),
   };

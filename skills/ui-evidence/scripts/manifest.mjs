@@ -12,8 +12,8 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { basename, extname, resolve } from "node:path";
 import { effectiveCapture, recipeHash, RecipeError } from "./recipe.mjs";
 import {
-  ProvenanceError, assessCapture, assessManifest, assetsByHash, baselineIdentity, loadRecipeFor, readManifest,
-  referenceMarkdown, sha256File, sourceIdentity, updateManifest,
+  ProvenanceError, UNVERIFIABLE, assessCapture, assessManifest, assetsByHash, currentBasis, currentIdentity,
+  loadRecipeFor, readManifest, referenceMarkdown, sha256File, updateManifest,
 } from "./provenance.mjs";
 
 const HELP = `manifest.mjs - report and extend local evidence provenance
@@ -26,8 +26,9 @@ const HELP = `manifest.mjs - report and extend local evidence provenance
 
   status     Freshness of every capture and derived asset: fresh, stale, or review,
              with reasons and the next action
-  verify     Record a focused check that clears review for one capture version,
-             keeping its original provenance; stale evidence must be recaptured
+  verify     Record a focused check that clears review caused by changed paths for
+             one capture version, keeping its original provenance; stale evidence
+             and an unverified capture source must be recaptured
   add        Record derived files: a compare.mjs result.json, a saved
              prepare-motion.mjs report, or any file with --asset
   reference  Compact capture reference Markdown for the evidence section; it
@@ -96,8 +97,12 @@ function verify(options) {
   if (stale.length) {
     fail(`cannot verify confirmed stale evidence (${stale.map((reason) => reason.text).join("; ")}); ${before.next}`);
   }
-  const record = manifest.captures[id].versions[version];
-  const current = record.verifications?.at(-1) ?? record;
+  const unknown = before.reasons.filter((reason) => UNVERIFIABLE.has(reason.code));
+  if (unknown.length) {
+    fail(`a focused check cannot establish where this capture came from (${unknown.map((reason) => reason.text).join("; ")}); ` +
+      before.next);
+  }
+  const current = currentBasis(manifest.captures[id].versions[version]);
   const effective = effectiveCapture(capture, version);
   const verification = {
     at: new Date().toISOString(), method: "manual", basis: options.basis.trim(),
@@ -116,15 +121,9 @@ function verify(options) {
 // A verification vouches for the source as it is now. Later freshness checks
 // compare against this identity while the original capture record stays intact.
 function currentSource(source) {
-  if (!source) return null;
-  if (source.kind === "baseline") {
-    const now = baselineIdentity(source.base);
-    if (!now.available) fail(`cannot identify the current baseline: ${now.reason}`);
-    return { ...source, head: now.head, changes: {}, dirty: false };
-  }
-  const now = sourceIdentity(source.root);
+  const now = currentIdentity(source);
   if (!now.available) fail(`cannot identify the current source: ${now.reason}`);
-  return now;
+  return source.kind === "baseline" ? { ...source, head: now.head, changes: {}, dirty: false } : now;
 }
 
 function slug(value) {

@@ -367,10 +367,9 @@ async function main() {
   const manifestPath = options.manifest ? resolve(options.manifest) : null;
   const freshness = manifestPath ? publicationFreshness(readManifest(manifestPath), assets) : null;
   const stale = freshness?.assets.filter((item) => item.status === "stale") ?? [];
-  if (stale.length) {
-    fail(`stale evidence: ${stale.map((item) => `${item.refs.join(", ")} (${item.reasons.join("; ")})`).join("; ")}. ` +
-      "Refresh it and record the new asset before publishing; manifest.mjs status lists the next action");
-  }
+  const blocked = stale.length ? `stale evidence: ${stale.map((item) => `${item.refs.join(", ")} (${item.reasons.join("; ")})`).join("; ")}. ` +
+    "Refresh it and record the new asset before publishing; manifest.mjs status lists the next action" : null;
+  if (blocked && !options.dryRun) fail(blocked);
   const issuesPath = `repos/${options.repo}/issues/${options.number}`;
   const targetPath = options.kind === "pr" ? `repos/${options.repo}/pulls/${options.number}` : issuesPath;
   const target = ghJson(["api", targetPath]);
@@ -389,8 +388,16 @@ async function main() {
   }
   blockLocation(current);
   const transport = !assets.length ? "none" : existing || occurrences.some((item) => item.style === "html") ? "direct-attachment" : "native-gh";
-  const plan = { repo: options.repo, target: options.target, mode: options.mode, transport, commentId: existing?.id, assets: assets.map((asset) => ({ refs: asset.refs, bytes: asset.size, media: asset.video ? "video" : "image" })), ...(freshness ? { freshness: { summary: freshness.summary, assets: freshness.assets.map(({ refs, assets: ids, status, reasons }) => ({ refs, assets: ids, status, reasons })), limitations: freshness.limitations } } : {}) };
-  if (options.dryRun) { console.log(JSON.stringify({ ...plan, dryRun: true }, null, 2)); return; }
+  const plan = { repo: options.repo, target: options.target, mode: options.mode, transport, commentId: existing?.id, assets: assets.map((asset) => ({ refs: asset.refs, bytes: asset.size, media: asset.video ? "video" : "image" })) };
+  if (freshness) {
+    const items = freshness.assets.map(({ refs, assets: ids, status, reasons }) => ({ refs, assets: ids, status, reasons }));
+    plan.freshness = { summary: freshness.summary, assets: items, limitations: freshness.limitations };
+  }
+  if (options.dryRun) {
+    console.log(JSON.stringify({ ...plan, dryRun: true, ...(blocked ? { blocked } : {}) }, null, 2));
+    if (blocked) process.exitCode = 1;
+    return;
+  }
   if (transport === "native-gh" && !gh([options.kind, options.mode === "body" ? "edit" : "comment", "--help"]).includes("--attach")) {
     fail("installed gh lacks --attach; upgrade to gh 2.99.0 or newer");
   }

@@ -95,8 +95,9 @@ project chooses to commit it. Rehearse the steps in your session first.
 | `versions` | `before` or `after` overrides for `route`, `steps`, `ready`, `scroll`, `screenshot`, `actions`, and `expect` |
 
 `steps` and `actions` are the browser's own batch arrays, passed through
-unchanged; see `motion.md` for how to write them. The runner owns `set viewport`,
-`set media`, `screenshot`, `record`, and `close`, so a recipe cannot use them.
+unchanged; see `motion.md` for how to write them. The runner owns
+`set viewport`, `set media`, `screenshot`, `record`, and `close`, so a recipe
+cannot use them.
 Viewport, pixel ratio, theme, fixture, and recording settings cannot differ
 between versions. Put a per-version override only where the UI or a selector
 really changed.
@@ -138,7 +139,7 @@ that asset and its original provenance, and records this run as a verification.
 ## Check freshness
 
 `manifest.mjs status` checks every recorded capture and derived asset in one
-pass:
+pass, and lists recipe captures with no recorded evidence under `uncaptured`:
 
 | Status | Meaning | Next |
 | --- | --- | --- |
@@ -157,16 +158,20 @@ Impact is decided from paths and declarations, not from rendered output, so a
 Resolve `review` in one of two ways:
 
 - Recapture it. Identical pixels keep the original asset and add a
-  verification; different pixels replace it.
-- After inspecting the change, record what you checked:
+  verification; different pixels replace it. This is the only way to resolve
+  an unverified served checkout or an unknown source: pass `--source` and
+  `--served-check`.
+- When only changed paths are in question, inspect the change and record what
+  you checked:
 
   ```bash
   node "<skill-root>/scripts/manifest.mjs" verify --manifest "$EVIDENCE_DIR/manifest.json" \
     --capture settings-profile --basis "pricing.html is a separate page; settings does not load it"
   ```
 
-`verify` refuses stale evidence. Later checks compare against the verified
-source, while the original capture record stays intact.
+`verify` refuses stale evidence and captures whose source is unknown. Later
+checks compare against the verified source, while the original capture record
+stays intact.
 
 Refresh only what status lists as `stale` or unresolved `review`. Leave fresh
 evidence and its published references alone.
@@ -202,9 +207,12 @@ node "<skill-root>/scripts/publish.mjs" --repo owner/project --target pr:123 \
 ```
 
 `reference` writes a compact `<sub>` line per capture with revisions, the base
-branch, fixture, recipe identity, and freshness, and lists unresolved limitations. It
-never includes local paths, base URLs, or session names. With `--manifest`, the
-publisher reports freshness for every referenced file, refuses stale evidence
-before uploading, and, after readback, records which assets map to which hosted
-URLs. A failed or partial publication is recorded as unverified with its error.
-Publishing without `--manifest` is unchanged.
+branch, fixture, recipe identity, and freshness, and lists unresolved
+limitations. It never includes local paths, base URLs, or session names.
+
+With `--manifest`, the publisher reports freshness for every referenced file.
+Stale evidence is refused before uploading; a dry run still prints the plan with
+a `blocked` reason. After readback, the manifest records which assets map to
+which hosted URLs. A failed or partial publication is recorded as unverified
+with its error. Publishing without `--manifest` is unchanged; use it only for
+evidence you deliberately publish without a freshness check.

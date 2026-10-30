@@ -621,12 +621,17 @@ test("reports manifest freshness in the plan and refuses stale evidence before u
 
   const stale = manifestFor(f, { raw: { file: "raw.png" },
     screen: { file: "screen.png", derivedFrom: [{ id: "raw", sha256: "0".repeat(64) }] } });
+  const staleDry = run(f, ["--manifest", stale, "--dry-run"]);
+  assert.notEqual(staleDry.status, 0);
+  const blockedPlan = JSON.parse(staleDry.stdout);
+  assert.match(blockedPlan.blocked, /stale evidence: screen\.png \(source asset raw was refreshed/);
+  assert.equal(blockedPlan.freshness.assets[0].status, "stale");
   const refused = run(f, ["--manifest", stale]);
   assert.notEqual(refused.status, 0);
   assert.match(refused.stderr, /stale evidence: screen\.png \(source asset raw was refreshed/);
   assert.equal(refused.github.body, "Introduction.\n");
   assert.deepEqual(refused.github.uploads, []);
-  assert.equal(refused.github.calls.length, dry.github.calls.length, "stale evidence is refused before reading or writing the target");
+  assert.equal(refused.github.calls.length, staleDry.github.calls.length, "stale evidence is refused before reading or writing the target");
   assert.deepEqual(JSON.parse(readFileSync(stale, "utf8")).publications, []);
 });
 

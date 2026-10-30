@@ -17,7 +17,8 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { effectiveCapture, loadRecipe, recipeHash, RecipeError } from "./recipe.mjs";
 import {
-  ProvenanceError, insideCheckout, pngSize, readManifest, samePixels, sha256File, sourceIdentity, updateManifest,
+  ProvenanceError, checkoutRoot, insideCheckout, pngSize, readManifest, samePixels, sha256File, sleep, sourceIdentity,
+  updateManifest,
 } from "./provenance.mjs";
 
 const HELP = `capture.mjs - capture one recipe state with provenance
@@ -141,15 +142,10 @@ function closeOwned(session) {
   if (!browser(session, ["close"]).ok) return false;
   const started = Date.now();
   while (Date.now() - started < 5000) {
-    const info = browser(session, ["session", "info", "--json"]);
-    try {
-      if (JSON.parse(info.stdout)?.data?.active === false) return true;
-    } catch {
-      return true;
-    }
-    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100);
+    if (!sessionActive(session)) return true;
+    sleep(100);
   }
-  return true;
+  return false;
 }
 
 // Run batch commands with --bail and return each command's result. A failure
@@ -223,7 +219,8 @@ function checkState(observed, effective, base) {
   };
 }
 
-function served(identity, base, servedCheck) {
+// Whether the capture is known to come from the identified checkout.
+function servedEvidence(identity, base, servedCheck) {
   if (servedCheck) return { verified: true, basis: servedCheck };
   if (identity?.available && base.protocol === "file:" && insideCheckout(fileURLToPath(base), identity.root)) {
     return { verified: true, basis: "file URL inside the source checkout" };
@@ -247,17 +244,21 @@ function main() {
   let identity = null;
   if (sourcePath) {
     identity = sourceIdentity(resolve(sourcePath));
-    if (!identity.available) fail(`${baseline ? "--baseline path" : "--source"} cannot be identified: ${identity.reason}`);
+    if (!identity.available) {
+      fail(`${baseline ? "--baseline path" : "--source"} cannot be identified: ${identity.reason} (${identity.detail})`);
+    }
     if (baseline && identity.head !== baseline.mergeBase) {
       fail(`the baseline checkout is at ${identity.head.slice(0, 10)}, not the recorded merge base ${baseline.mergeBase.slice(0, 10)}`);
     }
-    for (const root of [identity.root, baseline?.repoRoot].filter(Boolean)) {
-      for (const [label, path] of [["--out-dir", outDir], ["--manifest", manifestPath]]) {
-        if (path && insideCheckout(path, root)) fail(`${label} must be outside the source checkout`);
-      }
+  }
+  // Runtime records hold local paths, so they never go inside a checkout:
+  // the source, the baseline's repository, or the one this runs from.
+  for (const root of [identity?.root, baseline?.repoRoot, checkoutRoot(process.cwd())].filter(Boolean)) {
+    for (const [label, path] of [["--out-dir", outDir], ["--manifest", manifestPath]]) {
+      if (path && insideCheckout(path, root)) fail(`${label} must be outside the source checkout`);
     }
   }
-  const servedBy = served(identity, base, options.servedCheck);
+  const servedBy = servedEvidence(identity, base, options.servedCheck);
   const extension = effective.kind === "screenshot" ? "png" : effective.record.format;
   const assetId = `${capture.id}.${options.version}`;
   const target = resolve(outDir, `${assetId}.${extension}`);
@@ -276,16 +277,17 @@ function main() {
   const owned = !sessionActive(session);
   const temporary = resolve(outDir, `.${assetId}.${randomBytes(6).toString("hex")}.${extension}`);
   try {
-    return finish({ options, recipe, recipePath, capture, effective, base, url, manifestPath, baseline, identity,
-      servedBy, assetId, target, previousId, previous, session, owned, temporary });
+    return captureAndRecord({ options, recipe, recipePath, capture, effective, base, url, manifestPath, baseline,
+      identity, servedBy, assetId, target, previousId, previous, session, owned, temporary });
   } finally {
     rmSync(temporary, { force: true });
   }
 }
 
-function finish(run) {
+// Everything after validation: drive the browser, then record the result.
+function captureAndRecord(plan) {
   const { options, recipe, recipePath, capture, effective, base, url, manifestPath, baseline, identity, servedBy,
-    assetId, target, previousId, previous, session, owned, temporary } = run;
+    assetId, target, previousId, previous, session, owned, temporary } = plan;
   const warnings = [];
   let state;
   let recording = null;
@@ -314,7 +316,8 @@ function finish(run) {
         const { lifecycle, path: _path, ...stopped } = results.at(-1).result ?? {};
         recording = stopped;
       } catch (error) {
-        browser(session, ["record", "stop"]);
+        // Stop only a take this run started; a caller's recording stays intact.
+        if (error.command !== start) browser(session, ["record", "stop"]);
         if (existsSync(temporary)) {
           const rejected = resolve(dirname(target), `${assetId}.rejected.${effective.record.format}`);
           rmSync(rejected, { force: true });
