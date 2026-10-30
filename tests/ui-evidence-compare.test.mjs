@@ -10,7 +10,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { after, test } from "node:test";
 import {
   anchorToImageRect, chooseLayout, detailWindows, expectedScreenshotSize, planComparison, sectionMarkdown,
-  suggestCrops,
+  segmentCrosses, suggestCrops,
 } from "../skills/ui-evidence/scripts/comparison-layout.mjs";
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -162,9 +162,18 @@ test("crowded edge callouts keep every pin in bounds, apart, and off every chang
         const { x2, y2 } = mark.pin.connector;
         assert.ok(x2 >= mark.outline.x && x2 <= mark.outline.x + mark.outline.width);
         assert.ok(y2 >= mark.outline.y && y2 <= mark.outline.y + mark.outline.height);
+        if (mark.pin.crossing) {
+          assert.match(plan.limitations.join("\n"), new RegExp(`Callout ${mark.id} connector in ${panel.label} crosses`));
+        } else {
+          for (const other of marks.filter((item) => item !== mark)) {
+            assert.ok(!segmentCrosses(mark.pin.connector, pinRect(other.pin)), `connector ${mark.id} crosses pin ${other.id}`);
+            assert.ok(!segmentCrosses(mark.pin.connector, other.rect), `connector ${mark.id} crosses region ${other.id}`);
+          }
+        }
       }
     }
     assert.ok(marks.some((mark) => mark.pin.placement === "margin"), "crowding falls back to the reserved margin");
+    assert.ok(marks.some((mark) => mark.pin.placement === "margin" && !mark.pin.crossing), "most connectors find a clear path");
   }
 });
 
@@ -185,6 +194,24 @@ test("a region nested inside another callout keeps its pin beside it", () => {
   assert.ok(!overlaps(pinRect(inner.pin), inner.rect), "the pin never covers its own region");
   assert.ok(!overlaps(pinRect(outer.pin), outer.rect));
   assert.ok(!overlaps(pinRect(outer.pin), pinRect(inner.pin)));
+});
+
+test("a measurement bracket that cannot fit is reported instead of silently dropped", () => {
+  const plan = planComparison({
+    panels: [{ key: "before", label: "Before", width: 400, height: 300 }, { key: "after", label: "After", width: 400, height: 300 }],
+    callouts: [{ id: 1, color: "#cf222e", text: "full width", measure: "height",
+      marks: { after: { rect: { x: 0, y: 0, width: 400, height: 300 }, measureText: "150 px" } } }],
+    measure: fakeMeasure,
+  });
+  assert.equal(plan.marks[0].bracket, null);
+  assert.match(plan.limitations.join("\n"), /Callout 1 measurement bracket did not fit in After/);
+});
+
+test("connector clipping detects crossings and ignores segments that only pass nearby", () => {
+  const rect = { x: 10, y: 10, width: 10, height: 10 };
+  assert.equal(segmentCrosses({ x1: 0, y1: 15, x2: 30, y2: 15 }, rect), true);
+  assert.equal(segmentCrosses({ x1: 0, y1: 0, x2: 30, y2: 5 }, rect), false);
+  assert.equal(segmentCrosses({ x1: 15, y1: 0, x2: 15, y2: 9 }, rect), false);
 });
 
 test("long labels fall back to the legend and long explanations wrap inside the canvas", () => {
@@ -236,13 +263,13 @@ test("crop suggestions group nearby changed regions and leave distant ones apart
 
 test("generated Markdown neutralizes media syntax in explanations and keeps alt text intact", () => {
   const markdown = sectionMarkdown({
-    title: "Header <script>",
+    title: "Header <script> & &lt;b&gt;",
     comparison: { file: "comparison.png", alt: "Before [left] and after" },
     callouts: [{ id: 4, text: "Shows ![x](secret.png) and <img src=\"a.png\">\nwrapped" }],
     details: [{ file: "detail-callout-4.png", alt: "Detail" }],
     flip: { file: "flip.gif", alt: "Screenshot flip" },
   });
-  assert.match(markdown, /^#### Header &lt;script&gt;/);
+  assert.match(markdown, /^#### Header &lt;script&gt; &amp; &amp;lt;b&amp;gt;/);
   assert.match(markdown, /!\[Before \(left\) and after\]\(comparison\.png\)/);
   assert.match(markdown, /- \*\*4\*\*: Shows \\!\\\[x\\\]\(secret\.png\) and &lt;img src="a\.png"&gt; wrapped/);
   const references = [...markdown.matchAll(/!\[[^\]\n]*\]\(([^)\s]+)\)/g)].map((match) => match[1]);
@@ -347,6 +374,7 @@ test("incompatible or invalid geometry fails with an actionable message before r
     [{ ...base, details: [{ callout: 9 }] }, /callout 9, which does not exist/],
     [{ ...base, flip: { holdMs: 100 } }, /holdMs/],
     [{ ...base, onion: { opacity: 1 } }, /opacity/],
+    [{ ...base, flip: "yes" }, /"flip" must be true, false, or an options object/],
   ];
   for (const [spec, pattern] of cases) {
     const run = compare(dir, spec);

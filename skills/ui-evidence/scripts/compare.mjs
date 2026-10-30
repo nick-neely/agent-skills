@@ -17,7 +17,7 @@ import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   DEFAULT_DISPLAY_WIDTH, PALETTE, anchorToImageRect, asArray, chooseLayout, chromeFor, contains,
-  detailWindows, intersect, planComparison, rectFrom, sectionMarkdown,
+  detailWindows, intersect, planComparison, rectFrom, sectionMarkdown, snapOut,
 } from "./comparison-layout.mjs";
 
 const SKILL_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -168,7 +168,7 @@ function loadPanel(spec, key, specDir) {
 function resolveRegion(value, panel, what) {
   if (value === undefined || value === null) return null;
   if (Array.isArray(value)) {
-    const rect = rectFrom(value, what);
+    const rect = snapOut(rectFrom(value, what));
     if (!contains(panel.bounds, rect)) {
       die(`${what} ${JSON.stringify(value)} extends outside the ${panel.size.width}x${panel.size.height} ${panel.key} image`);
     }
@@ -241,6 +241,9 @@ const labelArgs = (text, pointsize, background, color) =>
   ["-background", background, "-fill", color, "-stroke", "none", "+size", "-font", FONT_PATH,
     "-pointsize", String(pointsize), `label:${imText(text)}`];
 
+const pillArgs = (text, color, chrome) =>
+  [...labelArgs(text, chrome.labelFont, color, "#ffffff"), "-bordercolor", color, "-border", `${chrome.labelPad}x${chrome.labelPad}`];
+
 function drawPlan(plan, images, out) {
   const { chrome } = plan;
   const args = ["-size", `${plan.canvas.width}x${plan.canvas.height}`, "xc:#ffffff"];
@@ -284,15 +287,13 @@ function drawPlan(plan, images, out) {
         "-draw", `line ${line.x1},${line.y1} ${line.x2},${line.y2}`,
         "-draw", horizontal ? `line ${line.x1},${line.y1} ${line.x1},${line.tickTo}` : `line ${line.x1},${line.y1} ${line.tickTo},${line.y1}`,
         "-draw", horizontal ? `line ${line.x2},${line.y2} ${line.x2},${line.tickTo}` : `line ${line.x2},${line.y2} ${line.tickTo},${line.y2}`);
-      place([...labelArgs(bracket.label.text, chrome.labelFont, mark.color, "#ffffff"),
-        "-bordercolor", mark.color, "-border", `${chrome.labelPad}x${chrome.labelPad}`], bracket.label.x, bracket.label.y);
+      place(pillArgs(bracket.label.text, mark.color, chrome), bracket.label.x, bracket.label.y);
     }
   }
   for (const mark of plan.marks) {
     place(pinArgs(mark.id, mark.color, chrome), mark.pin.cx - mark.pin.radius, mark.pin.cy - mark.pin.radius);
     if (mark.label) {
-      place([...labelArgs(mark.label.text, chrome.labelFont, mark.color, "#ffffff"),
-        "-bordercolor", mark.color, "-border", `${chrome.labelPad}x${chrome.labelPad}`], mark.label.x, mark.label.y);
+      place(pillArgs(mark.label.text, mark.color, chrome), mark.label.x, mark.label.y);
     }
   }
   if (plan.legend) {
@@ -438,8 +439,15 @@ function main() {
   if (!["reject", "pad"].includes(mismatch)) die('sizeMismatch must be "reject" or "pad"');
   const matched = sameSize(panels.before.size, panels.after.size);
   const describe = (panel) => `${panel.size.width}x${panel.size.height}`;
-  const flipSpec = spec.flip === true ? {} : spec.flip || null;
-  const onionSpec = spec.onion === true ? {} : spec.onion || null;
+  const aid = (name) => {
+    const value = spec[name];
+    if (value === undefined || value === false) return null;
+    if (value === true) return {};
+    if (value && typeof value === "object" && !Array.isArray(value)) return value;
+    die(`"${name}" must be true, false, or an options object`);
+  };
+  const flipSpec = aid("flip");
+  const onionSpec = aid("onion");
   if (!matched) {
     if (mismatch !== "pad") {
       die(`dimension mismatch: before is ${describe(panels.before)} and after is ${describe(panels.after)}. ` +
@@ -456,7 +464,7 @@ function main() {
 
   let crop = null;
   if (spec.crop !== undefined) {
-    crop = rectFrom(spec.crop, "crop");
+    crop = snapOut(rectFrom(spec.crop, "crop"));
     for (const panel of Object.values(panels)) {
       if (!contains(panel.bounds, crop)) die(`crop ${JSON.stringify(spec.crop)} extends outside the ${describe(panel)} ${panel.key} image`);
     }
@@ -546,11 +554,11 @@ function main() {
     const mainViews = Object.values(panels).map((panel) =>
       ({ panel, label: panel.label, window: crop ?? panel.bounds, zoom: 1 }));
     const comparisonPath = join(outDir, "comparison.png");
-    const main = renderView({
+    const overview = renderView({
       name: "main", views: mainViews, layout: spec.layout ?? "auto", displayWidth, callouts, measure, temp,
       out: comparisonPath,
     });
-    limitations.push(...main.plan.limitations);
+    limitations.push(...overview.plan.limitations);
 
     const details = detailSpecs.map(({ slug, label, context, windows, layout, zoom }) => {
       const suffix = `${label ? ` - ${label}` : ""}${zoom !== 1 ? ` (${zoom}x)` : ""}`;
@@ -559,6 +567,9 @@ function main() {
       const path = join(outDir, `detail-${slug}.png`);
       const view = renderView({ name: `detail-${slug}`, views, layout, displayWidth, callouts, measure, temp, out: path });
       limitations.push(...view.plan.limitations.map((text) => `Detail ${slug}: ${text}`));
+      if (zoom === 1) {
+        limitations.push(`Detail ${slug} is a 1x crop; its window is wider than the readable target, so set "zoom" to enlarge it.`);
+      }
       if (windows.mode === "separate") {
         limitations.push(`Detail ${slug} centres separate windows on each panel's region; ` +
           "positions inside its two panels are not directly comparable.");
@@ -576,7 +587,7 @@ function main() {
     let flip = null;
     let onion = null;
     if (flipSpec || onionSpec) {
-      const width = imageSize(main.images.before).width;
+      const width = imageSize(overview.images.before).width;
       const frameChrome = chromeFor(width, displayWidth);
       const pct = Math.round(opacity * 100);
       const onionText = `Onion skin: ${panels.after.label} at ${pct}% over ${panels.before.label}`;
@@ -588,7 +599,7 @@ function main() {
       if (flipSpec) {
         const centiseconds = Math.round(holdMs / 10);
         const frames = Object.values(panels).map((panel) =>
-          bannered(main.images[panel.key], panel.label, bannerHeight, frameWidth, frameChrome, join(temp, `flip-${panel.key}.png`)));
+          bannered(overview.images[panel.key], panel.label, bannerHeight, frameWidth, frameChrome, join(temp, `flip-${panel.key}.png`)));
         const path = join(outDir, "flip.gif");
         magick(["-delay", String(centiseconds), frames[0], "-delay", String(centiseconds), frames[1], "-loop", "0", path]);
         flip = {
@@ -600,7 +611,7 @@ function main() {
       }
       if (onionSpec) {
         const blended = join(temp, "onion-blend.png");
-        magick([main.images.before, "(", main.images.after, "-alpha", "set", "-channel", "A",
+        magick([overview.images.before, "(", overview.images.after, "-alpha", "set", "-channel", "A",
           "-evaluate", "set", `${pct}%`, "+channel", ")", "-compose", "Over", "-composite", "-alpha", "off", blended]);
         const path = join(outDir, "onion.png");
         bannered(blended, onionText, bannerHeight, frameWidth, frameChrome, path);
@@ -614,7 +625,7 @@ function main() {
 
     const ids = callouts.map((callout) => callout.id);
     const comparisonAlt = spec.alt ?? `${spec.title ? `${spec.title}: ` : ""}${panels.before.label} and ` +
-      `${panels.after.label} screenshots ${placementPhrase(main.plan.layout, panels)}` +
+      `${panels.after.label} screenshots ${placementPhrase(overview.plan.layout, panels)}` +
       (callouts.length ? `, with numbered callouts: ${callouts.map((c) => `${c.id} ${c.text}`).join("; ")}` : "");
     const relative = (path) => path.slice(outDir.length + 1).split("\\").join("/");
     const markdown = sectionMarkdown({
@@ -639,11 +650,11 @@ function main() {
         result: resultPath,
       },
       comparison: {
-        layout: main.plan.layout,
-        canvas: main.plan.canvas,
+        layout: overview.plan.layout,
+        canvas: overview.plan.canvas,
         displayWidth,
-        panels: viewGeometry(main.plan, mainViews),
-        legend: main.plan.legend && [main.plan.legend.x, main.plan.legend.y, main.plan.legend.width, main.plan.legend.height],
+        panels: viewGeometry(overview.plan, mainViews),
+        legend: overview.plan.legend && [overview.plan.legend.x, overview.plan.legend.y, overview.plan.legend.width, overview.plan.legend.height],
         alt: comparisonAlt,
       },
       inputs: Object.fromEntries(Object.values(panels).map((panel) => [panel.key, {
@@ -654,7 +665,7 @@ function main() {
         id: callout.id, text: callout.text, legend: callout.legend, label: callout.label ?? null, color: callout.color,
         measure: callout.measure ?? null, spotlight: callout.spotlight,
         panels: Object.fromEntries(Object.keys(panels).map((key) => {
-          const mark = main.plan.marks.find((item) => item.id === callout.id && item.panel === key);
+          const mark = overview.plan.marks.find((item) => item.id === callout.id && item.panel === key);
           const source = callout.regions[key];
           return [key, source ? {
             source: asArray(source),
@@ -666,7 +677,7 @@ function main() {
         })),
       })),
       calloutIds: ids,
-      details: details.map(({ path, ...detail }) => ({ path, ...detail })),
+      details,
       flip,
       onion,
       limitations,

@@ -1,4 +1,4 @@
-// Pure geometry and layout rules for before/after comparisons.
+// Pure geometry, layout, and Markdown rules for before/after comparisons.
 //
 // Nothing here touches the filesystem, a browser, or ImageMagick. Text sizes
 // come from an injected `measure(text, pointsize, wrapWidth?)` function, so the
@@ -179,6 +179,26 @@ export function chromeFor(contentWidth, displayWidth = DEFAULT_DISPLAY_WIDTH) {
   };
 }
 
+// Liang-Barsky clipping: does the segment pass through the rectangle's interior?
+export function segmentCrosses(segment, rect) {
+  const dx = segment.x2 - segment.x1;
+  const dy = segment.y2 - segment.y1;
+  let low = 0;
+  let high = 1;
+  for (const [p, q] of [[-dx, segment.x1 - rect.x], [dx, right(rect) - segment.x1],
+    [-dy, segment.y1 - rect.y], [dy, bottom(rect) - segment.y1]]) {
+    if (p === 0) {
+      if (q <= 0) return false;
+    } else {
+      const t = q / p;
+      if (p < 0) low = Math.max(low, t);
+      else high = Math.min(high, t);
+      if (low >= high) return false;
+    }
+  }
+  return true;
+}
+
 function nearestPoint(rect, x, y) {
   return {
     x: Math.min(Math.max(x, rect.x), right(rect)),
@@ -195,6 +215,7 @@ class PanelPlacer {
     this.bounds = bounds;
     this.chrome = chrome;
     this.obstacles = [];
+    this.connectors = [];
     // Changed regions block marks, except a region that encloses the one being
     // marked: a badge inside a highlighted row still gets a pin beside it.
     this.regions = [];
@@ -212,7 +233,21 @@ class PanelPlacer {
   }
 
   fits(box) {
-    return contains(this.bounds, box) && !this.blocking().some((other) => intersect(other, box));
+    return contains(this.bounds, box) && !this.blocking().some((other) => intersect(other, box)) &&
+      !this.connectors.some((segment) => segmentCrosses(segment, box));
+  }
+
+  // A connector may end on its own region but must not cross other marks.
+  connectorClear(segment) {
+    const own = this.regions.find((region) => region.rect === this.owner)?.box;
+    return !this.blocking().some((other) => other !== own && segmentCrosses(segment, other));
+  }
+
+  connectorFor(box, rect) {
+    const cx = box.x + this.chrome.radius;
+    const cy = box.y + this.chrome.radius;
+    const to = nearestPoint(expand(rect, this.outlineBy), cx, cy);
+    return { x1: cx, y1: cy, x2: Math.round(to.x), y2: Math.round(to.y) };
   }
 
   // Overlap is a last resort for an impossibly crowded panel. Choose the
@@ -301,6 +336,7 @@ class PanelPlacer {
       { side: "bottom", distance: bottom(panel) - bottom(rect) },
     ].sort((a, b) => a.distance - b.distance);
     const step = d + gap;
+    let crossing = null;
     for (const { side } of sides) {
       const vertical = side !== "bottom";
       const fixed = side === "left" ? bounds.x + gap : side === "right" ? right(panel) + gap : bottom(panel) + gap;
@@ -311,9 +347,12 @@ class PanelPlacer {
         const box = vertical
           ? { x: Math.round(fixed), y: Math.round(start + offset), width: d, height: d }
           : { x: Math.round(start + offset), y: Math.round(fixed), width: d, height: d };
-        if (this.fits(box)) return this.commitPin(box, "margin", rect);
+        if (!this.fits(box)) continue;
+        if (this.connectorClear(this.connectorFor(box, rect))) return this.commitPin(box, "margin", rect);
+        crossing ??= box;
       }
     }
+    if (crossing) return this.commitPin(crossing, "margin-crossing", rect);
     const fallback = this.leastOverlap(adjacent) ??
       { box: fitWindow({ x: rect.x, y: rect.y, width: d, height: d }, { width: right(bounds), height: bottom(bounds) }) };
     return this.commitPin(fallback.box, "overlap", rect);
@@ -324,11 +363,12 @@ class PanelPlacer {
     const cx = box.x + this.chrome.radius;
     const cy = box.y + this.chrome.radius;
     let connector = null;
-    if (placement === "margin") {
-      const to = nearestPoint(expand(rect, this.outlineBy), cx, cy);
-      connector = { x1: cx, y1: cy, x2: Math.round(to.x), y2: Math.round(to.y) };
+    if (placement.startsWith("margin")) {
+      connector = this.connectorFor(box, rect);
+      this.connectors.push(connector);
     }
-    return { cx, cy, radius: this.chrome.radius, placement, connector };
+    return { cx, cy, radius: this.chrome.radius, placement: placement === "margin-crossing" ? "margin" : placement,
+      connector, crossing: placement === "margin-crossing" };
   }
 
   placeLabel(pin, text, measure) {
@@ -419,7 +459,9 @@ export function planComparison({ panels, callouts = [], layout = "auto", display
       placer.owner = item.rect;
       if (item.callout.measure && item.mark.measureText) {
         entries[index].bracket = placer.placeBracket(item.rect, item.callout.measure, item.mark.measureText, measure);
-        if (entries[index].bracket?.placement === "overlap") {
+        if (!entries[index].bracket) {
+          limitations.push(`Callout ${item.callout.id} measurement bracket did not fit in ${panel.label}; the legend carries its value.`);
+        } else if (entries[index].bracket.placement === "overlap") {
           limitations.push(`Callout ${item.callout.id} measurement in ${panel.label} overlaps another mark.`);
         }
       }
@@ -429,6 +471,8 @@ export function planComparison({ panels, callouts = [], layout = "auto", display
       entries[index].pin = placer.placePin(item.rect);
       if (entries[index].pin.placement === "overlap") {
         limitations.push(`Callout ${item.callout.id} pin in ${panel.label} overlaps another mark; the panel is too crowded.`);
+      } else if (entries[index].pin.crossing) {
+        limitations.push(`Callout ${item.callout.id} connector in ${panel.label} crosses another mark; the panel is too crowded.`);
       }
     });
     local.forEach((item, index) => {
@@ -482,11 +526,11 @@ export function planComparison({ panels, callouts = [], layout = "auto", display
   };
 }
 
-const MARKDOWN_SPECIAL = /[\\`*_[\]<>|!#]/g;
+const MARKDOWN_SPECIAL = /[\\`*_[\]<>|!#&]/g;
+const ENTITIES = { "<": "&lt;", ">": "&gt;", "&": "&amp;" };
 
 export function escapeMarkdown(text) {
-  return String(text).replace(/\s+/g, " ").trim().replace(MARKDOWN_SPECIAL, (char) =>
-    char === "<" ? "&lt;" : char === ">" ? "&gt;" : `\\${char}`);
+  return String(text).replace(/\s+/g, " ").trim().replace(MARKDOWN_SPECIAL, (char) => ENTITIES[char] ?? `\\${char}`);
 }
 
 // The publisher reads `![alt](path)`; brackets and newlines would end the alt.

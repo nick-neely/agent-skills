@@ -26,14 +26,18 @@ node "<skill-root>/scripts/anchors.mjs" --session "$AGENT_BROWSER_SESSION" \
   --screenshot "$EVIDENCE_DIR/after.png" --out "$EVIDENCE_DIR/after-anchors.json"
 ```
 
-Add `--full` for a full-page screenshot. `--image <png>` describes a screenshot
+Anchor capture uses agent-browser, which the default
+`preflight.mjs` capture check covers; `--compare` covers rendering only. Add
+`--full` for a full-page screenshot. `--image <png>` describes a screenshot
 you already captured from the current page state instead. The helper only
 evaluates and screenshots in that session; it never opens, navigates, resizes,
 or closes it. It records the viewport, scroll offset, document size, device
 pixel ratio, and screenshot size, then refuses a selector that matches nothing,
 matches several elements, or has no rendered box, listing the candidates.
 Capture the before and after states in their own sessions with the same anchor
-names.
+names. In a scrolled full-page capture, `position: fixed` and sticky elements
+are drawn where they sat in the viewport; verify their pixels or capture them in
+viewport mode.
 
 Rendering later needs only the saved files, not the app. Literal rectangles in
 screenshot pixels work too, for example from `regions.mjs`:
