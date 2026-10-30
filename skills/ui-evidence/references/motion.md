@@ -116,11 +116,127 @@ must preserve essential initial, intermediate, and final states.
 | `limits.maxDuration` | Optional user-chosen ceiling, not a universal duration policy |
 | `review.interval` | Final-output sampling interval, normally 0.5 seconds |
 | `provenance` | Optional local capture revision/state metadata |
+| `annotations` | Optional timed step numbers, captions, and key indicators; see below |
+| `storyboard` | Optional labelled checkpoints; needs `--storyboard-out` |
+| `title`, `summary` | Optional heading and prose for `--markdown-out` |
 
 Output timing is quantized to the chosen frame rate. Initial and final holds
 use the actual source states at the trim boundaries, before resampling. A trim
 too short to represent those states fails with guidance to widen it or raise
 the frame rate.
+
+## Explain the action and result
+
+Add timed annotations when a reviewer needs to know which action happened and
+what it proved, such as a step sequence or a short explanatory clip. All times
+are seconds on the source recording, the same timeline as `trim` and the
+`--inspect` sheet. Read the action and result times from that sheet.
+
+```json
+{
+  "input": "raw.mp4",
+  "trim": { "start": 0.4, "end": 4.6 },
+  "holds": { "start": 0.5, "end": 1.5 },
+  "title": "Yearly pricing persists",
+  "summary": "Choosing Yearly with the keyboard shows the yearly price, and the choice survives a reload.",
+  "annotations": {
+    "events": [
+      { "start": 0.9, "end": 1.6, "step": 1, "key": "ArrowRight", "caption": "Move the plan choice to Yearly", "at": [152, 126, 80, 35], "hold": 1.5 },
+      { "start": 1.6, "end": 2.8, "step": 2, "caption": "The price changes to $120 / year", "at": [58, 172, 190, 46], "hold": 1.5 },
+      { "start": 2.8, "end": 3.4, "caption": "The page reloads" },
+      { "start": 3.4, "end": 99, "step": 3, "caption": "Yearly is still selected after the reload", "at": [152, 126, 80, 35] }
+    ]
+  },
+  "storyboard": {
+    "checkpoints": [
+      { "at": 0.6, "label": "Monthly is selected: $12 / month" },
+      { "at": 2.0, "label": "Yearly is selected: $120 / year" },
+      { "at": 4.4, "label": "After the reload, Yearly is still selected" }
+    ]
+  }
+}
+```
+
+```bash
+node "<skill-root>/scripts/preflight.mjs" --prepare --annotations
+node "<skill-root>/scripts/prepare-motion.mjs" \
+  --spec "$EVIDENCE_DIR/motion.json" \
+  --out "$EVIDENCE_DIR/interaction.mp4" \
+  --review-out "$EVIDENCE_DIR/interaction-review.png" \
+  --storyboard-out "$EVIDENCE_DIR/storyboard.png" \
+  --markdown-out "$EVIDENCE_DIR/section.md"
+```
+
+| Event field | Meaning |
+| --- | --- |
+| `start`, `end` | Source seconds; the event shows on every output frame whose source instant is in `[start, end)` |
+| `step` | Number 1-99 drawn as a pin; its colour is shared by the outline and the caption |
+| `caption` | Up to 160 characters stating what the recording shows; wrapped, at most three lines |
+| `key` | Keys actually pressed, joined by `+`, such as `Control+K`; drawn as keycaps |
+| `at` | `[x, y, width, height]` source rectangle around the control; outlined just outside it |
+| `hold` | Optional 0.2-10 seconds of added reading time; freezes the event's first frame |
+
+Each event needs at least one of `step`, `caption`, `key`, or `at`. A step without `at` shows its pin in
+the caption area. An outline without a step uses a neutral grey, so it is never
+read as a numbered step.
+
+| Annotation option | Meaning |
+| --- | --- |
+| `captions` | `below` (default) adds a caption band under the video so the UI stays visible; `overlay` draws captions over the bottom of the frame and is refused when that area would cover an outlined control |
+| `displayWidth` | Width the clip is read at, default 880 (a GitHub PR body); sizes text and pins |
+
+Time maps to the output like this:
+
+- The start hold shows the source at `trim.start`, so an event active then
+  covers the start hold.
+- The end hold shows the source just before `trim.end`, so an event active
+  then covers the end hold. Set `end` beyond the trim to keep the final caption
+  on screen through the end hold.
+- Between the holds, output time is source time minus `trim.start` plus the
+  start hold, quantized to the frame rate.
+- Coordinates follow the crop and scale. A region partly outside the crop is
+  clipped; the event reports `regionClipped` and the result adds a warning.
+
+Preparation validates every event before encoding. An event outside the trim,
+an end that does not follow its start, geometry outside the source or crop, a
+caption too long to read at the display width, and two captions on the same
+frame each fail with the field to fix. The report's `annotations.events` gives
+each event's output frames and times and says whether it was clipped or covers
+a hold. `timeline` lists each real-time segment and each `presentation-hold`
+with the source instant it shows.
+
+Steps that follow each other quickly are hard to read in real time. Give such
+an event a `hold` to freeze its first frame for that many seconds, with its
+annotations on screen. A held frame shows a "Paused for reading" badge in the
+caption area, `timeline` lists it as an `inserted` presentation hold at its
+source instant, and the generated Markdown says so. Everything else keeps its
+real timing; preparation never changes speed. Do not add holds when timing,
+loading, latency, or animation is the claim. Two holds cannot freeze the same
+frame, and a hold needs its event to start inside the trim.
+
+Captions state what you verified with an assertion or by inspecting the take.
+Do not caption an outcome the recording does not show. Use `key` only for keys
+the take actually pressed, such as `["press", "ArrowRight"]` in the batch. Keep
+native `--cursor` feedback for pointer actions rather than drawing a pointer.
+
+The storyboard is an opt-in reviewer image. Use it when a few still moments
+explain the claim alongside the MP4. Each checkpoint is a source time and a
+label of up to 160 characters, in increasing order, with at most eight
+checkpoints. Panels are extracted from the final prepared output, so they carry
+its redactions and annotations. `storyboard.displayWidth` defaults to
+`annotations.displayWidth`, or 880, and the image is drawn at twice that width.
+Columns default to what keeps each panel readable, and `storyboard.columns`
+(1-4) overrides that. The report lists each checkpoint's frame, output time,
+source time, and panel geometry.
+
+`--markdown-out` writes a publisher-compatible section: the optional `title`
+and `summary`, the standalone video, the timed steps, and the storyboard with
+its numbered labels. It must sit in a directory that contains the video and
+storyboard; paths with spaces are written in the `<path>` form the publisher
+accepts. A GIF gets descriptive alt text from `summary` or `title`. Review
+sheets and previews are never referenced. Inspect the
+complete clip, frames around each annotation boundary, and the storyboard at
+the display width before publishing.
 
 ## Preserve truth and readability
 

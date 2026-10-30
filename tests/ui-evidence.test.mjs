@@ -69,6 +69,9 @@ try {
   const help = run(process.execPath, [prepare, "--help"]);
   assert.match(help, /--inspect/);
   assert.match(help, /--preview-out/);
+  assert.match(help, /--storyboard-out/);
+  assert.match(help, /--markdown-out/);
+  assert.match(help, /--prepare --annotations/);
   assert.match(run(process.execPath, [legacy, "--help"]), /--inspect/);
   const helpWithoutTools = spawnSync(process.execPath, [prepare, "--help"], {
     cwd: repo, encoding: "utf8", env: { ...process.env, PATH: "" },

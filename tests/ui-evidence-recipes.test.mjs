@@ -619,17 +619,37 @@ test("derived outputs from compare and motion reports link to their recorded sou
   const prepared = join(p.evidence, "interaction.mp4");
   writeFileSync(prepared, "prepared video");
   const report = join(p.evidence, "motion-report.json");
+  const storyboard = join(p.evidence, "storyboard.png");
+  writeFileSync(storyboard, "storyboard panels");
   writeFileSync(report, JSON.stringify({ input: stored.assets["pricing-toggle.after"].path, out: prepared,
-    prepared: { duration: 3 }, warnings: [] }));
+    prepared: { duration: 3 }, storyboard: { out: storyboard, checkpoints: [] }, warnings: [] }));
   const motion = p.manifest("add", "--result", report, "--id", "interaction");
   assert.equal(motion.status, 0, motion.stderr);
-  assert.deepEqual(motion.json.recorded[0].derivedFrom.map((item) => item.id), ["pricing-toggle.after"]);
+  assert.deepEqual(motion.json.recorded.map((item) => item.id), ["interaction", "interaction.storyboard"]);
+  assert.deepEqual(motion.json.recorded[1].derivedFrom.map((item) => item.id), ["pricing-toggle.after"]);
   assert.equal(p.stored().assets.interaction.media, "video");
 
   writeFileSync(spec, "{\"title\":\"changed\"}\n");
   const status = p.status();
   assert.match(reasons(status["compare.comparison"]), /preparation inputs changed/);
   assert.equal(status.interaction.status, "fresh");
+  // An input at a recorded path links to that asset only, even when a since
+  // modified copy once had the same bytes.
+  const copy = join(p.evidence, "settings-copy.png");
+  cpSync(stored.assets["settings-profile.after"].path, copy);
+  assert.equal(p.manifest("add", "--asset", copy, "--id", "settings-copy", "--from", "settings-profile.after").status, 0);
+  writeFileSync(copy, "modified copy");
+  const pathFirst = join(p.evidence, "path-first");
+  mkdirSync(pathFirst);
+  writeFileSync(join(pathFirst, "comparison.png"), "path-first comparison");
+  writeFileSync(join(pathFirst, "result.json"), JSON.stringify({
+    outputs: { comparison: join(pathFirst, "comparison.png"), details: [] },
+    inputs: { before: { image: stored.assets["settings-profile.after"].path }, after: { image: stored.assets["pricing-yearly.after"].path } },
+  }));
+  const linked = p.manifest("add", "--result", join(pathFirst, "result.json"));
+  assert.equal(linked.status, 0, linked.stderr);
+  assert.deepEqual(linked.json.recorded[0].derivedFrom.map((item) => item.id).sort(), ["pricing-yearly.after", "settings-profile.after"]);
+
   // An input that matches no recorded asset is kept, so the output is never
   // reported fresh and a later change to that input is detected.
   const untracked = join(p.evidence, "untracked-after.png");

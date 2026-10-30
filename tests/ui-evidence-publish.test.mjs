@@ -2,10 +2,11 @@ import { after, test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdtempSync, readFileSync, rmSync, symlinkSync, truncateSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, truncateSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, parse, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { motionMarkdown } from "../skills/ui-evidence/scripts/motion-annotations.mjs";
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const publish = join(repo, "skills", "ui-evidence", "scripts", "publish.mjs");
@@ -682,4 +683,38 @@ test("records hosted references after readback and reports partial publication f
   assert.match(record.error, /simulated native failure/);
   assert.deepEqual(record.unresolved, ["second.png"]);
   assert.deepEqual(record.assets.map((item) => item.url), [null, null], "unverified readback maps no hosted references");
+});
+
+test("publishes a generated motion section with a playable video and a storyboard", () => {
+  const section = motionMarkdown({
+    title: "Yearly pricing", summary: "Selecting Yearly shows the yearly price after a reload.", video: "interaction.mp4",
+    events: [{ step: 1, caption: "Select <Yearly> [now]", output: { start: 0.5, end: 1.5 } }],
+    storyboard: { file: "storyboard.png", checkpoints: [{ index: 1, at: 1.2, output: 0.7, label: "Price ![x](y.png) shows" }] },
+  });
+  const f = fixture(section);
+  writeFileSync(join(f.dir, "interaction.mp4"), "video");
+  writeFileSync(join(f.dir, "storyboard.png"), "storyboard");
+  writeFileSync(join(f.dir, "y.png"), "must not upload");
+  const dry = JSON.parse(run(f, ["--dry-run"]).stdout);
+  assert.deepEqual(dry.assets.map((asset) => [asset.refs, asset.media]), [[["interaction.mp4"], "video"], [["storyboard.png"], "image"]]);
+  const result = run(f);
+  assert.equal(result.status, 0, result.stderr);
+  const output = JSON.parse(result.stdout);
+  assert.equal(output.readback.verified, true);
+  assert.match(result.github.body, /\n\nhttps:\/\/github\.com\/user-attachments\/assets\/asset-1\n\n/);
+  assert.match(result.github.body, /!\[Storyboard of 1 moment from the clip: 1 Price[^\]]*\]\(https:\/\/github\.com\/user-attachments\/assets\/asset-2\)/);
+  assert.match(result.github.body, /^Introduction\.\n\n<!-- ui-evidence:start -->\n\n#### Yearly pricing\n\nSelecting Yearly/);
+  assert.doesNotMatch(result.github.body, /\]\((?:interaction\.mp4|storyboard\.png)\)|^!\[\]\(interaction/m);
+  const edit = result.github.calls.find((call) => call[0] === "pr" && call[1] === "edit" && !call.includes("--help"));
+  assert.equal(edit.filter((arg) => arg === "--attach").length, 2, "escaped label markup is not uploaded");
+
+  // Generated links to paths with spaces and parentheses use the form the publisher accepts.
+  const spaced = fixture(motionMarkdown({ summary: "A clip in a folder with spaces.", video: "clips/my clip.mp4",
+    storyboard: { file: "story (1).png", checkpoints: [{ index: 1, at: 1, output: 0.5, label: "One" }] } }));
+  mkdirSync(join(spaced.dir, "clips"));
+  writeFileSync(join(spaced.dir, "clips", "my clip.mp4"), "video");
+  writeFileSync(join(spaced.dir, "story (1).png"), "storyboard");
+  const plan = run(spaced, ["--dry-run"]);
+  assert.equal(plan.status, 0, plan.stderr);
+  assert.deepEqual(JSON.parse(plan.stdout).assets.map((asset) => asset.refs[0]), ["clips/my clip.mp4", "story (1).png"]);
 });

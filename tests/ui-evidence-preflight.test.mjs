@@ -39,6 +39,7 @@ function fixture(settings = {}) {
       }
       if (settings.media && name === "ffmpeg") {
         if (args.includes("-encoders")) return ok(settings.encoders ?? " V....D libx264 H.264\n V..... gif GIF");
+        if (args.includes("-filters")) return ok(settings.filters ?? " TS overlay  VV->V  Overlay a video\n .. pad  V->V  Pad the input");
         if (args.includes("-version")) return ok();
       }
       if (settings.media && !settings.captureOnly && ["ffprobe", "magick"].includes(name) && args.includes("-version")) return ok();
@@ -73,6 +74,7 @@ test("help returns before running dependency checks", () => {
     const result = tools.run("--help");
     assert.equal(result.status, 0);
     assert.match(result.stdout, /--prepare/);
+    assert.match(result.stdout, /--annotations/);
     assert.equal(tools.noCalls(), true);
   } finally {
     tools.cleanup();
@@ -345,7 +347,8 @@ test("doctor distinguishes missing Chrome from malformed diagnostic JSON", () =>
 test("invalid or conflicting operation flags are rejected before checks", () => {
   const tools = fixture();
   try {
-    for (const args of [["--motion", "--publish"], ["--prepare", "--format", "webm"], ["--format", "gif"]]) {
+    for (const args of [["--motion", "--publish"], ["--prepare", "--format", "webm"], ["--format", "gif"],
+      ["--annotations"], ["--compare", "--annotations"], ["--motion", "--annotations"]]) {
       const result = tools.run(...args);
       assert.equal(result.status, 2);
     }
@@ -383,5 +386,33 @@ test("comparison preflight checks only ImageMagick and the bundled font", () => 
   } finally {
     tools.cleanup();
     missing.cleanup();
+  }
+});
+
+test("annotated preparation adds only ImageMagick drawing and the FFmpeg overlay and pad filters", () => {
+  const tools = fixture({ media: true, browserMissing: true });
+  try {
+    const plain = JSON.parse(tools.run("--prepare", "--json").stdout);
+    assert.equal(plain.checks.some((check) => check.name === "FFmpeg overlay/pad"), false);
+    assert.equal(plain.checks.some((check) => check.name === "ImageMagick"), false);
+    const result = tools.run("--prepare", "--annotations", "--json");
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    const report = JSON.parse(result.stdout);
+    assert.equal(report.annotations, true);
+    assert.equal(report.checks.find((check) => check.name === "FFmpeg overlay/pad").ok, true);
+    assert.equal(report.checks.find((check) => check.name === "ImageMagick").ok, true);
+    assert.equal(report.checks.some((check) => check.name === "agent-browser" || check.name === "gh CLI"), false);
+  } finally {
+    tools.cleanup();
+  }
+  const limited = fixture({ media: true, browserMissing: true, filters: " TS overlay  VV->V  Overlay a video" });
+  try {
+    const result = limited.run("--prepare", "--annotations", "--json");
+    assert.equal(result.status, 1);
+    const check = JSON.parse(result.stdout).checks.find((item) => item.name === "FFmpeg overlay/pad");
+    assert.equal(check.ok, false);
+    assert.match(check.detail, /lacks the pad filter/);
+  } finally {
+    limited.cleanup();
   }
 });

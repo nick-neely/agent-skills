@@ -19,6 +19,7 @@ import {
   DEFAULT_DISPLAY_WIDTH, PALETTE, anchorToImageRect, asArray, chooseLayout, chromeFor, contains,
   detailWindows, intersect, planComparison, rectFrom, sectionMarkdown, snapOut,
 } from "./comparison-layout.mjs";
+import { CHROME, geometry, imText, numberedPinArgs, textMeasurer } from "./magick-args.mjs";
 
 const SKILL_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const FONT_PATH = join(SKILL_ROOT, "assets", "DejaVuSans.ttf");
@@ -36,10 +37,10 @@ Prints the structured result as JSON. Run scripts/preflight.mjs --compare to
 verify dependencies first.
 `;
 
-const HEADER_BACKGROUND = "#24292f";
-const LEGEND_BACKGROUND = "#f6f8fa";
-const PANEL_BORDER = "#d0d7de";
-const TEXT = "#1f2328";
+const HEADER_BACKGROUND = CHROME.header;
+const LEGEND_BACKGROUND = CHROME.panel;
+const PANEL_BORDER = CHROME.border;
+const TEXT = CHROME.text;
 const REDACTION_BLOCK = "#111827";
 
 function die(message) {
@@ -90,34 +91,12 @@ function magick(args) {
   }
 }
 
-// label:, caption:, and -annotate expand `%` escapes, and a leading `@` reads
-// a file. Spec text is data, so neutralize both.
-function imText(text) {
-  const escaped = String(text).replace(/\\/g, "\\\\").replace(/%/g, "%%");
-  return escaped.startsWith("@") ? `\\${escaped}` : escaped;
-}
-
 function imageSize(path) {
   const [width, height] = magick([`${path}[0]`, "-format", "%w %h", "info:"]).trim().split(/\s+/).map(Number);
   return { width, height };
 }
 
-function makeMeasure() {
-  const cache = new Map();
-  return (text, pointsize, wrapWidth) => {
-    const key = JSON.stringify([text, pointsize, wrapWidth ?? null]);
-    if (!cache.has(key)) {
-      const args = ["-font", FONT_PATH, "-pointsize", String(pointsize)];
-      if (wrapWidth) args.push("-size", `${Math.floor(wrapWidth)}x`, `caption:${imText(text)}`);
-      else args.push(`label:${imText(text)}`);
-      const [width, height] = magick([...args, "-format", "%w %h", "info:"]).trim().split(/\s+/).map(Number);
-      cache.set(key, { width, height });
-    }
-    return cache.get(key);
-  };
-}
-
-const geometry = (x, y) => `${x < 0 ? "-" : "+"}${Math.abs(Math.round(x))}${y < 0 ? "-" : "+"}${Math.abs(Math.round(y))}`;
+const makeMeasure = () => textMeasurer(magick, FONT_PATH);
 const sameSize = (a, b) => a.width === b.width && a.height === b.height;
 const formatPx = (value) => `${Math.round(value * 10) / 10} px`;
 
@@ -232,16 +211,7 @@ function extract(panel, window, zoom, out) {
   return out;
 }
 
-function pinArgs(id, color, chrome) {
-  const d = chrome.radius * 2;
-  const c = (d - 1) / 2;
-  const digits = String(id).length;
-  const pointsize = Math.max(6, Math.round(chrome.pinFont * (digits >= 3 ? 0.62 : digits === 2 ? 0.8 : 1)));
-  return ["-size", `${d}x${d}`, "xc:none", "-fill", color, "-stroke", "#ffffff", "-strokewidth", String(chrome.ring),
-    "-draw", `circle ${c},${c} ${c},${chrome.ring / 2}`, "-stroke", "none", "-fill", "#ffffff",
-    "-font", FONT_PATH, "-pointsize", String(pointsize), "-gravity", "center", "-annotate", "+0+0", String(id),
-    "-gravity", "NorthWest"];
-}
+const pinArgs = (id, color, chrome) => numberedPinArgs(id, color, chrome, FONT_PATH);
 
 const labelArgs = (text, pointsize, background, color) =>
   ["-background", background, "-fill", color, "-stroke", "none", "+size", "-font", FONT_PATH,
