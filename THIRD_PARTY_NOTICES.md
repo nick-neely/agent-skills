@@ -8,10 +8,12 @@ instructions from [t3dotgg/tstack](https://github.com/t3dotgg/tstack), MIT licen
 at commit `7de017b3fc9d50c03cf3ecb98fb71e0ca65a78bd`. Each directory includes the
 upstream license.
 
-The adaptations retain the existing babysit PR-bot budget, separate event
-notification from repository readiness policy, and use a portable REST event
-waiter instead of the upstream bot-specific readiness watcher. `file-pr` calls
-the separately installed `pr` skill for its body format. `sol-loop` retains
+The adaptations give babysit three routine PR-bot rounds, with evidenced
+high-impact extensions bounded at five total, a persistent finding ledger and
+focused follow-up reviews. They separate event notification from repository
+readiness policy and use a portable REST event waiter instead of the upstream
+bot-specific readiness watcher. `file-pr` calls the separately installed `pr`
+skill for its body format. `sol-loop` retains
 upstream's Sol requirement, concrete reviewer routes, scope checks, budget
 extensions and push gate. It judges findings by material impact, keeps its
 reviewer brief and routing reference separate, and makes public attribution
