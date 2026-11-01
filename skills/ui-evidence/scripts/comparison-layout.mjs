@@ -247,23 +247,29 @@ const CHANGE_TOLERANCE = 24;
 const SHIFT_TOLERANCE = 3;
 
 // The bounding box of the pixels inside `rect` of image `a` that match no
-// pixel of image `b` within SHIFT_TOLERANCE of the same coordinates, or null
-// when every pixel finds a match. A callout region often names a whole row or
-// card; this finds the change inside it, so a pin can sit on the change
-// instead of the container's corner. Pixels outside either image are skipped.
-export function changedBounds(a, b, rect) {
-  const area = intersect(rect, { x: 0, y: 0, width: Math.min(a.width, b.width), height: Math.min(a.height, b.height) });
+// pixel of image `b` within SHIFT_TOLERANCE of the same place, or null when
+// every pixel finds a match. `offset` moves that place in `b`, for a region
+// that sits elsewhere in the other screenshot. A callout region often names a
+// whole row or card; this finds the change inside it, so a pin can sit on the
+// change instead of the container's corner. Pixels outside either image are
+// skipped.
+export function changedBounds(a, b, rect, offset = { x: 0, y: 0 }) {
+  const area = intersect(rect, {
+    x: Math.max(0, -offset.x), y: Math.max(0, -offset.y),
+    width: Math.min(a.width, b.width - offset.x) - Math.max(0, -offset.x),
+    height: Math.min(a.height, b.height - offset.y) - Math.max(0, -offset.y),
+  });
   if (!area) return null;
   const same = (i, j) => Math.abs(a.data[i] - b.data[j]) <= CHANGE_TOLERANCE &&
     Math.abs(a.data[i + 1] - b.data[j + 1]) <= CHANGE_TOLERANCE && Math.abs(a.data[i + 2] - b.data[j + 2]) <= CHANGE_TOLERANCE;
   const matched = (x, y) => {
     const i = (y * a.width + x) * 3;
-    if (same(i, (y * b.width + x) * 3)) return true;
+    if (same(i, ((y + offset.y) * b.width + x + offset.x) * 3)) return true;
     for (let dy = -SHIFT_TOLERANCE; dy <= SHIFT_TOLERANCE; dy += 1) {
-      const by = y + dy;
+      const by = y + offset.y + dy;
       if (by < 0 || by >= b.height) continue;
       for (let dx = -SHIFT_TOLERANCE; dx <= SHIFT_TOLERANCE; dx += 1) {
-        const bx = x + dx;
+        const bx = x + offset.x + dx;
         if (bx >= 0 && bx < b.width && same(i, (by * b.width + bx) * 3)) return true;
       }
     }
@@ -283,6 +289,17 @@ export function changedBounds(a, b, rect) {
     }
   }
   return left === Infinity ? null : { x: left, y: top, width: rightmost - left + 1, height: lowest - top + 1 };
+}
+
+// The measured CSS pixel values a callout's text does not name. A claim that
+// gives pixel sizes ("padding grows from 12 to 20 px") should name what its
+// region measures; a mismatch usually means the region is the whole row
+// rather than the span the claim describes. Text without pixel sizes is not
+// checked.
+export function unnamedMeasurements(text, values) {
+  if (!/\d\s*(?:css\s*)?(?:px|pixels?)\b/i.test(text)) return [];
+  const named = [...text.matchAll(/\d+(?:\.\d+)?/g)].map((match) => Number(match[0]));
+  return values.filter((value) => !named.some((number) => Math.abs(number - value) <= 0.5));
 }
 
 // Lexicographic order of equal-length number arrays: is `a` before `b`?
@@ -408,15 +425,17 @@ class PanelPlacer {
     const away = this.clearance + gap;
     const { panel } = this;
     const nearer = rect.x + rect.width / 2 - panel.x < right(panel) - (rect.x + rect.width / 2) ? "left" : "right";
-    const c = this.clearance;
+    const clear = this.clearance;
     const sides = axis === "width"
-      ? [["above", rect.y - away], ["below", bottom(rect) + away],
-        ["below", Math.max(bottom(panel), bottom(rect) + c) + tick, "margin"]]
-      : [["left", rect.x - away], ["right", right(rect) + away],
-        ...[nearer, nearer === "left" ? "right" : "left"].map((side) => [side, side === "left"
-          ? Math.min(panel.x - 1, rect.x - c) - tick
-          : Math.max(right(panel), right(rect) + c) + tick, "margin"])];
-    const candidates = sides.map(([side, at, where = "beside"]) => {
+      ? [{ side: "above", at: rect.y - away }, { side: "below", at: bottom(rect) + away },
+        { side: "below", at: Math.max(bottom(panel), bottom(rect) + clear) + tick, margin: true }]
+      : [{ side: "left", at: rect.x - away }, { side: "right", at: right(rect) + away },
+        ...[nearer, nearer === "left" ? "right" : "left"].map((side) => ({
+          side,
+          at: side === "left" ? Math.min(panel.x - 1, rect.x - clear) - tick : Math.max(right(panel), right(rect) + clear) + tick,
+          margin: true,
+        }))];
+    const candidates = sides.map(({ side, at, margin = false }) => {
       let line;
       let labelBox;
       if (side === "above" || side === "below") {
@@ -437,7 +456,7 @@ class PanelPlacer {
         width: Math.max(1, Math.max(...xs) - Math.min(...xs)),
         height: Math.max(1, Math.max(...ys) - Math.min(...ys)),
       };
-      return { side, margin: where === "margin", line, label: { ...labelBox, text }, box: union(lineBox, labelBox) };
+      return { side, margin, line, label: { ...labelBox, text }, parts: [lineBox, labelBox], box: union(lineBox, labelBox) };
     });
     let chosen = candidates.find((candidate) => this.fits(candidate.box));
     let placement = "clear";
@@ -446,15 +465,26 @@ class PanelPlacer {
       placement = "overlap";
     }
     if (!chosen) return null;
-    this.obstacles.push(chosen.box);
+    // The line and its value block other marks separately, so the pin can
+    // sit right beside the value.
+    this.obstacles.push(...chosen.parts);
     return { side: chosen.side, margin: chosen.margin, line: chosen.line, label: chosen.label, placement };
   }
 
-  placePin(rect) {
+  // `value` is the box of this callout's measurement value, when drawn: the
+  // pin sits beside it first, so the number and the bracket read as one mark.
+  placePin(rect, value = null) {
     const { radius, gap } = this.chrome;
     const d = radius * 2;
     const c = this.clearance;
     const at = (x, y) => ({ box: { x: Math.round(x), y: Math.round(y), width: d, height: d } });
+    if (value) {
+      const middle = value.y + value.height / 2 - radius;
+      const beside = [at(right(value) + gap / 2, middle), at(value.x - gap / 2 - d, middle),
+        at(value.x + value.width / 2 - radius, bottom(value) + gap / 2), at(value.x + value.width / 2 - radius, value.y - gap / 2 - d)]
+        .find((candidate) => this.fits(candidate.box));
+      if (beside) return this.commitPin(beside.box, "adjacent", rect);
+    }
     // Corners first: a pin touching a corner reads as belonging to that box.
     const adjacent = [
       at(rect.x, rect.y - c - d),
@@ -563,9 +593,9 @@ export function planComparison(options) {
   const callouts = options.callouts?.length ?? 0;
   for (let lanes = 1; ; lanes *= 2) {
     let plan = planWithLanes(options, lanes, false);
-    if (plan?.missingBrackets) plan = planWithLanes(options, lanes, true) ?? plan;
+    if (plan?.crampedBrackets) plan = planWithLanes(options, lanes, true) ?? plan;
     if (plan) {
-      const { missingBrackets, ...result } = plan;
+      const { crampedBrackets, ...result } = plan;
       return result;
     }
     if (lanes > callouts) {
@@ -636,7 +666,8 @@ function planWithLanes({
   const sorted = [...callouts].sort((a, b) => a.id - b.id);
   const marks = [];
   const spotlights = [];
-  let missingBrackets = 0;
+  // Brackets that found no blank space: dropped or overlapping another mark.
+  let crampedBrackets = 0;
   for (const panel of planned) {
     const placer = new PanelPlacer({ x: panel.x, y: panel.y, width: panel.width, height: panel.height },
       panel.bounds, chrome, panel.surface, lanes);
@@ -668,8 +699,8 @@ function planWithLanes({
       placer.owner = item.rect;
       if (item.callout.measure && item.mark.measureText) {
         entries[index].bracket = placer.placeBracket(item.rect, item.callout.measure, item.mark.measureText, measure);
+        if (entries[index].bracket?.placement !== "clear") crampedBrackets += 1;
         if (!entries[index].bracket) {
-          missingBrackets += 1;
           limitations.push(`Callout ${item.callout.id} measurement bracket did not fit in ${panel.label}; the Markdown list carries its value.`);
         } else if (entries[index].bracket.placement === "overlap") {
           limitations.push(`Callout ${item.callout.id} measurement in ${panel.label} overlaps another mark.`);
@@ -678,7 +709,7 @@ function planWithLanes({
     });
     local.forEach((item, index) => {
       placer.owner = item.target;
-      entries[index].pin = placer.placePin(item.target);
+      entries[index].pin = placer.placePin(item.target, entries[index].bracket?.label);
     });
     if (entries.some((entry) => !entry.pin)) return null;
     local.forEach((item, index) => {
@@ -709,7 +740,7 @@ function planWithLanes({
     marks,
     spotlights,
     limitations,
-    missingBrackets,
+    crampedBrackets,
   };
 }
 

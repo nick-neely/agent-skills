@@ -10,7 +10,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { after, test } from "node:test";
 import {
   anchorToImageRect, changedBounds, chooseLayout, detailWindows, expectedScreenshotSize, pixelSurface, planComparison,
-  sectionMarkdown, segmentCrosses, suggestCrops,
+  sectionMarkdown, segmentCrosses, suggestCrops, unnamedMeasurements,
 } from "../skills/ui-evidence/scripts/comparison-layout.mjs";
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -344,7 +344,8 @@ test("marks keep unannotated neighbouring UI readable in both layouts and use gu
     for (const box of [pinRect(mark.pin), mark.label, mark.bracket?.label].filter(Boolean)) {
       assert.ok(!overlaps(box, panel), `callout ${mark.id} covers unverified screenshot pixels in ${mark.panel}`);
     }
-    assert.equal(mark.pin.placement, "margin");
+    // A measured callout's pin sits beside its value, itself in the margin.
+    assert.equal(mark.pin.placement, mark.bracket ? "adjacent" : "margin");
   }
   // Blank pixels around a region still take an adjacent pin, label, and bracket.
   const open = planComparison({ panels: blankPanels(400, 130), callouts: [callouts[0]], measure: fakeMeasure });
@@ -379,7 +380,19 @@ test("changed bounds find the change inside a region and ignore antialiasing noi
   assert.ok(found.x >= 125 && found.x + found.width <= 180, `a small reflow is not the change: ${JSON.stringify(found)}`);
   assert.equal(changedBounds(original, raw(400, 200, [{ rect: [22, 54, 100, 24], color: [0x1f, 0x23, 0x28] },
     { rect: [340, 54, 40, 20], color: [0x1f, 0x6f, 0xeb] }]), row), null, "content moved 2 px has no focus");
+  // A row moved 60 px down is compared with its own new place, not its old one.
+  const moved = raw(400, 200, [{ rect: [20, 112, 100, 24], color: [0x1f, 0x23, 0x28] }, { rect: [340, 114, 40, 20], color: [0x1f, 0x6f, 0xeb] },
+    { rect: [130, 114, 44, 20], color: [0xdd, 0xf4, 0xff] }]);
+  assert.deepEqual(changedBounds(moved, original, { ...row, y: 100 }, { x: 0, y: -60 }), { x: 130, y: 114, width: 44, height: 20 });
+  assert.equal(changedBounds(original, moved, { ...row, y: 180 }, { x: 0, y: 60 }), null, "a region past the other image has no focus");
   assert.equal(changedBounds(before, raw(200, 50, []), row), null, "pixels outside either image are skipped");
+});
+
+test("measured values a claim does not name are found, so a region that is the whole row is caught", () => {
+  assert.deepEqual(unnamedMeasurements("Notification row padding increases from 12 to 20 CSS pixels", [50, 66]), [50, 66]);
+  assert.deepEqual(unnamedMeasurements("The gap narrows from 16px to 8px.", [16, 8]), []);
+  assert.deepEqual(unnamedMeasurements("Height 12.5 px", [12.4]), []);
+  assert.deepEqual(unnamedMeasurements("Save sits before Cancel.", [92]), [], "text without pixel sizes is not checked");
 });
 
 test("a plain pin points at the changed pixels inside a wide region instead of its corner", () => {
@@ -463,6 +476,9 @@ test("a measurement with no blank space beside its region draws its bracket in t
           "the bracket sits below the panel");
       }
       assert.ok(!overlaps(pinRect(mark.pin), bracket.label), "the pin keeps clear of the value");
+      const gapToValue = Math.max(bracket.label.x - (mark.pin.cx + mark.pin.radius), mark.pin.cx - mark.pin.radius - (bracket.label.x + bracket.label.width),
+        bracket.label.y - (mark.pin.cy + mark.pin.radius), mark.pin.cy - mark.pin.radius - (bracket.label.y + bracket.label.height));
+      assert.ok(gapToValue <= plan.chrome.gap, `${axis} ${layout}: the pin sits beside its value, ${gapToValue} px away`);
     }
   }
 
@@ -1069,6 +1085,14 @@ test("a measurement among busy rows draws its bracket and value in the margin an
     assert.ok(ink > lw * lh * 0.4, `${key}: the value pill is rendered in the callout colour`);
   }
   assert.match(readFileSync(join(run.out, "section.md"), "utf8"), /- \*\*1\*\*: The first row's top padding grows from 12 to 20 px\. Measured height: Before 12 px, After 20 px\./);
+
+  // Measuring the whole row against a padding claim is reported.
+  const row = compare(dir, {
+    before: { image: "before.png" }, after: { image: "after.png" },
+    callouts: [{ id: 1, text: "Row padding grows from 12 to 20 px", measure: "height", before: [0, 80, 1280, 50], after: [0, 80, 1280, 66] }],
+  });
+  assert.equal(row.status, 0, row.stderr);
+  assert.match(row.result.limitations.join("\n"), /Callout 1 measures 50 px and 66 px, which its text does not name/);
 });
 
 test("explicit measurements and outlines render in matched detail crops", media, () => {

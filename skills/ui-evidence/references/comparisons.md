@@ -45,7 +45,7 @@ honest.
 
 ## Lead with a readable detail
 
-At the 880 px PR width, a full-page capture shrinks a small change until the
+At the default 880 px `displayWidth`, a full-page capture shrinks a small change until the
 reviewer cannot find it. When that happens, add a `details` entry: the section
 leads with the enlarged detail, so the reviewer sees the change first, then
 shows the comparison as context for where it lives. Crop the comparison to the

@@ -17,7 +17,7 @@ import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   DEFAULT_DISPLAY_WIDTH, PALETTE, anchorToImageRect, asArray, changedBounds, chooseLayout, chromeFor, contains,
-  detailWindows, intersect, pixelSurface, planComparison, rectFrom, sectionMarkdown, snapOut,
+  detailWindows, intersect, pixelSurface, planComparison, rectFrom, sectionMarkdown, snapOut, unnamedMeasurements,
 } from "./comparison-layout.mjs";
 import { CHROME, geometry, imText, numberedPinArgs, textMeasurer } from "./magick-args.mjs";
 
@@ -108,7 +108,8 @@ function imageSize(path) {
 
 const makeMeasure = () => textMeasurer(magick, FONT_PATH);
 const sameSize = (a, b) => a.width === b.width && a.height === b.height;
-const formatPx = (value) => `${Math.round(value * 10) / 10} px`;
+const roundPx = (value) => Math.round(value * 10) / 10;
+const formatPx = (value) => `${roundPx(value)} px`;
 
 function readJson(path, what) {
   if (!existsSync(path)) die(`no such ${what}: ${path}`);
@@ -328,7 +329,7 @@ function validateCallouts(spec, panels) {
       for (const panel of [panels.before, panels.after]) {
         const rect = callout.regions[panel.key];
         if (!rect) continue;
-        callout.measured[panel.key] = Math.round((rect[callout.measure] / panel.dpr) * 10) / 10;
+        callout.measured[panel.key] = roundPx(rect[callout.measure] / panel.dpr);
         parts.push(`${panel.label} ${formatPx(rect[callout.measure] / panel.dpr)}`);
       }
     }
@@ -350,7 +351,13 @@ function findFocus(callouts, panels) {
     callout.focus = {};
     for (const [key, other] of [["before", "after"], ["after", "before"]]) {
       const rect = callout.regions[key];
-      if (rect) callout.focus[key] = changedBounds(pixels[key], pixels[other], rect);
+      // A region given separately in each panel is compared with its
+      // counterpart, so a moved element is not compared with whatever now
+      // occupies its old place.
+      const there = callout.regions[other];
+      if (!rect) continue;
+      const offset = there ? { x: there.x - rect.x, y: there.y - rect.y } : { x: 0, y: 0 };
+      callout.focus[key] = changedBounds(pixels[key], pixels[other], rect, offset);
     }
   }
 }
@@ -372,9 +379,11 @@ function viewCallouts(callouts, views) {
         height: Math.max(1, Math.round(source.height * view.zoom)),
       });
       const focus = callout.focus?.[key] && intersect(callout.focus[key], visible);
+      // Rounding can push a focus touching the region's edge 1 px past it.
+      const shown = local(visible);
       marks[key] = {
-        rect: local(visible),
-        focus: focus ? local(focus) : undefined,
+        rect: shown,
+        focus: (focus && intersect(local(focus), shown)) || undefined,
         measureText: callout.measure && contains(view.window, rect)
           ? formatPx(rect[callout.measure] / view.panel.dpr) : undefined,
       };
@@ -474,6 +483,13 @@ function main() {
   }
 
   const callouts = validateCallouts(spec, panels);
+  for (const callout of callouts) {
+    const unnamed = callout.measured ? unnamedMeasurements(callout.text, Object.values(callout.measured)) : [];
+    if (unnamed.length) {
+      limitations.push(`Callout ${callout.id} measures ${unnamed.map(formatPx).join(" and ")}, which its text does not name; ` +
+        "make each region exactly the span the claim measures, such as the padding rather than the row.");
+    }
+  }
   for (const callout of callouts) {
     for (const panel of Object.values(panels)) {
       const rect = callout.regions[panel.key];
