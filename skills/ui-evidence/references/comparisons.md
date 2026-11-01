@@ -13,7 +13,8 @@ node "<skill-root>/scripts/compare.mjs" --spec "$EVIDENCE_DIR/compare.json" \
 
 You still choose the claims, prove the two captures show comparable states
 (see [before-after.md](before-after.md)), and review every output. The script
-owns layout, scaling, pin placement, legends, and file naming.
+owns layout, scaling, pin and bracket placement, the Markdown callout list, and
+file naming.
 
 ## Choose the annotation
 
@@ -23,7 +24,7 @@ understand a change, so the panels keep the app's real appearance:
 | Need | Treatment |
 | --- | --- |
 | The before/after already explains the change | Clean labelled comparison: no `callouts` |
-| A note adds useful context | Callout with `id`, a region, and `text`: a small numbered pin, with the note in the legend below |
+| A note adds useful context | Callout with `id`, a region, and `text`: a small numbered pin, with the note in the Markdown list under the image |
 | A subtle or ambiguous target needs emphasis | Add `outline: true`, or `spotlight: true` to dim the rest of the panel |
 | Dimensions or spacing are the claim | Add `measure` |
 
@@ -35,6 +36,22 @@ a visibly new badge needs no "New badge" tag. A pin is enough to locate a small
 target that is plain once found. Reserve outlines for targets that stay hard to
 see with a pin beside them, such as a one-pixel border or a slight colour
 shift, and pair them with a detail view when the target is tiny.
+
+Make each region the changed element itself, such as the badge, button, or
+gap, not the row, card, or section around it. When a plain pin's region is
+larger than the change, the script finds the changed pixels inside it and pins
+those, but a tight region is clearer and keeps outlines and measurements
+honest.
+
+## Lead with a readable detail
+
+At the default 880 px `displayWidth`, a full-page capture shrinks a small change until the
+reviewer cannot find it. When that happens, add a `details` entry: the section
+leads with the enlarged detail, so the reviewer sees the change first, then
+shows the comparison as context for where it lives. Keep the comparison wide
+enough to show the containing component and the layout around it, such as its
+heading, rather than the whole page. Never put two full-width captures side by side: each half renders
+below half size. The `auto` layout stacks them.
 
 ## Capture anchors with the screenshots
 
@@ -130,9 +147,9 @@ Each callout has a stable integer `id`, a `text` explanation, and a region in
 one or both panels: `before`, `after`, or `region` for both. Reuse one ID for
 the same change in both versions; a region in only one panel marks an addition
 or removal. A region says where the change is. By default it gets a pin beside
-it and its text in the legend, and the target's pixels stay exactly as
-captured. The pin number and legend carry the meaning, so colour is never the
-only cue. Each option below is explicit emphasis; pick it for a purpose from
+the changed pixels inside it and its text in the Markdown list, and the
+target's pixels stay exactly as captured. The pin number and list carry the
+meaning, so colour is never the only cue. Each option below is explicit emphasis; pick it for a purpose from
 [Choose the annotation](#choose-the-annotation).
 
 - `outline: true` draws a box in the callout colour just outside the region.
@@ -140,22 +157,27 @@ only cue. Each option below is explicit emphasis; pick it for a purpose from
   without boxes; add `outline: true` to a callout whose target needs one.
 - `label`: an optional short tag beside the pin. When it cannot fit without
   covering another mark, surrounding UI, or leaving the panel, it is dropped and
-  the legend keeps the explanation; the result lists that limitation.
+  the Markdown list keeps the explanation; the result lists that limitation.
 - `spotlight: true` dims the rest of that panel around the region.
-- `measure: "width"` or `"height"` adds the before and after values to the
-  legend and draws a bracket with the size in CSS pixels where it fits on blank
-  space. For a spacing claim, make the region the gap itself.
+- `measure: "width"` or `"height"` draws a bracket with the region's size in CSS
+  pixels and adds the before and after values to the Markdown list. The value
+  is the region's own size, so make the region exactly the span the claim
+  names: for "row padding grows from 12 to 20 px", the padding, not the row.
+  Check `measured` in the result against the claim before publishing.
 
-Explanations always go to the legend under the panels and to the Markdown list,
-never onto the UI. Marks must not hide the unannotated UI around a change, such
-as a neighbouring button or heading. A pin, label, or bracket covers screenshot
-pixels only where the rendered panel is blank: one flat colour, with a small
-margin. Otherwise the pin moves into a reserved margin beside the panel, with a
-connector line that crosses no other mark and as little UI as possible; the
-margins widen when a crowded panel needs more room. The label and bracket are
-dropped, and the legend keeps their text. Placement is
-deterministic, so the same inputs give the same image. The result lists each
-dropped label or bracket and each connector that still crosses UI.
+Explanations go only to the Markdown list under the image, never onto the
+image, so the reviewer reads each one once. The image carries panel headers,
+numbered pins, and measurement values. Marks must not hide the unannotated UI
+around a change, such as a neighbouring button or heading. A pin, label, or
+bracket covers screenshot pixels only where the rendered panel is blank: one
+flat colour, with a small margin. Otherwise the pin moves into a reserved
+margin beside the panel, with a connector line that crosses no other mark and
+as little UI as possible, and a bracket moves into the margin beside or below
+the panel at the same span, with its ticks at the panel edge. The margins
+widen when a crowded panel or a measurement value needs more room. A label
+that does not fit is dropped. Placement is deterministic, so the same inputs
+give the same image. The result lists each dropped label or bracket and each
+connector that still crosses UI.
 
 ### Details
 
@@ -177,15 +199,21 @@ the region or 24 CSS pixels), `zoom` (`auto` or 1 to 8), and `layout`.
 `--out-dir` receives `comparison.png`, `detail-<id>.png`, `flip.gif`,
 `onion.png`, `section.md`, and `result.json`; stdout repeats the result. The
 result lists every output, the canvas and per-panel geometry (`canvas` and
-`source` rectangles plus `scale`), callout IDs with source rectangles, pin
+`source` rectangles plus `scale`), callout IDs with source rectangles, each
+plain pin's `focus` (the changed pixels it points at), `measured` values, pin
 placement, outlines, labels, and brackets, detail windows, and `limitations` to
 mention in the PR when relevant.
 
-The combined image stands on its own: labelled panels at one scale, plus pins
-and a legend when there are callouts. Without callouts it has neither. Chrome
-scales with the canvas so it reads at the rendered PR width. Wide captures stack
-and tall captures sit side by side; crop or add a detail when the
-change is still too small to read at that width.
+The combined image holds labelled panels at one scale, plus numbered pins when
+there are callouts. Chrome scales with the canvas so it reads at the rendered
+PR width. Wide captures stack. Tall captures sit side by side only while each
+half stays at least half size at `displayWidth`; an explicit `side-by-side`
+past that is reported as a limitation. Crop or add a detail when the change is
+still too small to read at that width.
+
+`section.md` lists any details first, then the comparison, then one entry per
+callout. Edit its wording if needed, but keep the numbered list as the only
+place the explanations appear.
 
 `flip.gif` alternates the two labelled screenshots with the configured hold.
 Describe it as a screenshot comparison; claims about real motion need a
