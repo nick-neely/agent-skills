@@ -85,8 +85,9 @@ For a complete run from capture to publication dry run, follow
 [example-comparison.md](references/example-comparison.md) or
 [example-recording.md](references/example-recording.md).
 
-Crop to the containing component with enough surrounding UI to place the
-change, and redact unrelated identifying data before upload. The change must
+Crop to the containing component with the layout around it, such as the
+heading above a card, so the reviewer sees where the change lives. Redact
+unrelated identifying data before upload. The change must
 be readable at the PR's width of about 880 px. Never place two full-width
 screenshots side by side, as in a Markdown table; see
 [Lead with a readable detail](references/comparisons.md#lead-with-a-readable-detail). Start

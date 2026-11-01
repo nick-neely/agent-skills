@@ -48,9 +48,9 @@ honest.
 At the default 880 px `displayWidth`, a full-page capture shrinks a small change until the
 reviewer cannot find it. When that happens, add a `details` entry: the section
 leads with the enlarged detail, so the reviewer sees the change first, then
-shows the comparison as context for where it lives. Crop the comparison to the
-containing component plus enough surrounding UI to place it, rather than the
-whole page. Never put two full-width captures side by side: each half renders
+shows the comparison as context for where it lives. Keep the comparison wide
+enough to show the containing component and the layout around it, such as its
+heading, rather than the whole page. Never put two full-width captures side by side: each half renders
 below half size. The `auto` layout stacks them.
 
 ## Capture anchors with the screenshots
