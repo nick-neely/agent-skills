@@ -113,6 +113,11 @@ reviewer can tell which panel is new. Leave out the restated task or PR, praise,
 capture method, viewport, and tables or paragraphs repeating what the media
 show. State a limitation only when it is specific and true.
 
+Embed each clip as a standalone `![](clip.mp4)` with blank lines around it.
+Only that form becomes a playable video on the PR; a link such as
+`[Watch](clip.mp4)` leaves the reviewer a dead link to a local file. See
+[Choose a readable layout](references/publishing.md#choose-a-readable-layout).
+
 ## Review and publish
 
 Review every final screenshot and the complete motion evidence with sampled
