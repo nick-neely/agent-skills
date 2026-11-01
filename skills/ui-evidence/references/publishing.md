@@ -56,7 +56,10 @@ Video alt text is not supported. Keep the action and result in nearby prose;
 avoid autoplay-dependent explanations. Stack before/after videos with labels
 so the reviewer can control each player. Use an after-only clip when sufficient.
 
-For static before/after, a Markdown table can use native uploads:
+For static before/after, prefer one `compare.mjs` image. A Markdown table can
+use native uploads, but each column renders at about half the PR width, so use
+one only for narrow captures, such as a mobile viewport or a cropped component,
+never for two full-width screenshots:
 
 ```markdown
 | Before | After |

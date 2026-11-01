@@ -6,7 +6,7 @@
 // compare.mjs with real font metrics.
 
 // Dark enough for a white pin number on every entry. The same ID keeps the same
-// colour in both panels, detail views, and the legend; the number still carries
+// colour in both panels and detail views; the number still carries
 // the meaning, never the colour alone.
 export const PALETTE = ["#cf222e", "#0969da", "#1a7f37", "#9a6700", "#8250df", "#bf3989"];
 
@@ -151,13 +151,15 @@ export function detailWindows({ before, after, sizes, context, separate = false 
 }
 
 // Wide captures stack so each panel keeps the full rendered width; tall or
-// square captures sit side by side so both stay on screen together.
-export function chooseLayout(requested, size) {
+// square captures sit side by side so both stay on screen together, unless
+// each half would then render below half its size. `maxSideBySideWidth` is
+// that limit in source pixels: the display width times the pixel ratio.
+export function chooseLayout(requested, size, maxSideBySideWidth = Infinity) {
   if (requested === "side-by-side" || requested === "stacked") return requested;
   if (requested !== undefined && requested !== "auto") {
     throw new Error(`layout must be "auto", "side-by-side", or "stacked", got ${JSON.stringify(requested)}`);
   }
-  return size.width <= size.height * 1.25 ? "side-by-side" : "stacked";
+  return size.width <= size.height * 1.25 && size.width <= maxSideBySideWidth ? "side-by-side" : "stacked";
 }
 
 // Chrome scales with the canvas so it reads at the width GitHub renders the
@@ -236,6 +238,53 @@ export function pixelSurface({ width, height, data }) {
   };
 }
 
+// Largest per-channel difference, out of 255, that still counts as unchanged,
+// so antialiasing noise does not register as a change.
+const CHANGE_TOLERANCE = 24;
+// How far, in source pixels, content may shift and still count as unchanged.
+// A badge that makes its row a pixel taller nudges the row's text, toggle,
+// and divider; that reflow is not the change a reviewer needs to find.
+const SHIFT_TOLERANCE = 3;
+
+// The bounding box of the pixels inside `rect` of image `a` that match no
+// pixel of image `b` within SHIFT_TOLERANCE of the same coordinates, or null
+// when every pixel finds a match. A callout region often names a whole row or
+// card; this finds the change inside it, so a pin can sit on the change
+// instead of the container's corner. Pixels outside either image are skipped.
+export function changedBounds(a, b, rect) {
+  const area = intersect(rect, { x: 0, y: 0, width: Math.min(a.width, b.width), height: Math.min(a.height, b.height) });
+  if (!area) return null;
+  const same = (i, j) => Math.abs(a.data[i] - b.data[j]) <= CHANGE_TOLERANCE &&
+    Math.abs(a.data[i + 1] - b.data[j + 1]) <= CHANGE_TOLERANCE && Math.abs(a.data[i + 2] - b.data[j + 2]) <= CHANGE_TOLERANCE;
+  const matched = (x, y) => {
+    const i = (y * a.width + x) * 3;
+    if (same(i, (y * b.width + x) * 3)) return true;
+    for (let dy = -SHIFT_TOLERANCE; dy <= SHIFT_TOLERANCE; dy += 1) {
+      const by = y + dy;
+      if (by < 0 || by >= b.height) continue;
+      for (let dx = -SHIFT_TOLERANCE; dx <= SHIFT_TOLERANCE; dx += 1) {
+        const bx = x + dx;
+        if (bx >= 0 && bx < b.width && same(i, (by * b.width + bx) * 3)) return true;
+      }
+    }
+    return false;
+  };
+  let left = Infinity;
+  let top = Infinity;
+  let rightmost = -Infinity;
+  let lowest = -Infinity;
+  for (let y = area.y; y < bottom(area); y += 1) {
+    for (let x = area.x; x < right(area); x += 1) {
+      if (matched(x, y)) continue;
+      left = Math.min(left, x);
+      top = Math.min(top, y);
+      rightmost = Math.max(rightmost, x);
+      lowest = Math.max(lowest, y);
+    }
+  }
+  return left === Infinity ? null : { x: left, y: top, width: rightmost - left + 1, height: lowest - top + 1 };
+}
+
 // Lexicographic order of equal-length number arrays: is `a` before `b`?
 function ranksBefore(a, b) {
   const index = a.findIndex((value, i) => value !== b[i]);
@@ -255,6 +304,9 @@ function nearestPoint(rect, x, y) {
 // screenshot pixels only where `surface` shows them blank, so marks never hide
 // the surrounding UI that gives the change its context. Without a surface no
 // screenshot pixel is known to be safe, and marks use the gutters.
+const outlineOffset = (chrome) => Math.ceil(chrome.stroke / 2) + 1;
+const markClearance = (chrome) => outlineOffset(chrome) + chrome.stroke;
+
 class PanelPlacer {
   constructor(panel, bounds, chrome, surface = null, lanes = 1) {
     this.panel = panel;
@@ -270,8 +322,8 @@ class PanelPlacer {
     this.owner = null;
     // An outline, when requested, sits just outside its region. Marks keep
     // clear of that stroke either way, so placement does not depend on it.
-    this.outlineBy = Math.ceil(chrome.stroke / 2) + 1;
-    this.clearance = this.outlineBy + chrome.stroke;
+    this.outlineBy = outlineOffset(chrome);
+    this.clearance = markClearance(chrome);
   }
 
   blocking() {
@@ -343,23 +395,37 @@ class PanelPlacer {
     return best;
   }
 
+  // A bracket sits beside its region on blank pixels when it can. Otherwise
+  // it moves into the reserved margin at the same height (for a height) or
+  // below the panel at the same horizontal span (for a width), with its ticks
+  // pointing at the panel edge, so the dimension still reads without covering
+  // surrounding UI.
   placeBracket(rect, axis, text, measure) {
     const { gap, labelFont, labelPad } = this.chrome;
     const size = measure(text, labelFont);
     const label = { width: Math.ceil(size.width) + labelPad * 2, height: Math.ceil(size.height) + labelPad * 2 };
     const tick = gap;
     const away = this.clearance + gap;
-    const sides = axis === "width" ? ["above", "below"] : ["left", "right"];
-    const candidates = sides.map((side) => {
+    const { panel } = this;
+    const nearer = rect.x + rect.width / 2 - panel.x < right(panel) - (rect.x + rect.width / 2) ? "left" : "right";
+    const c = this.clearance;
+    const sides = axis === "width"
+      ? [["above", rect.y - away], ["below", bottom(rect) + away],
+        ["below", Math.max(bottom(panel), bottom(rect) + c) + tick, "margin"]]
+      : [["left", rect.x - away], ["right", right(rect) + away],
+        ...[nearer, nearer === "left" ? "right" : "left"].map((side) => [side, side === "left"
+          ? Math.min(panel.x - 1, rect.x - c) - tick
+          : Math.max(right(panel), right(rect) + c) + tick, "margin"])];
+    const candidates = sides.map(([side, at, where = "beside"]) => {
       let line;
       let labelBox;
       if (side === "above" || side === "below") {
-        const y = side === "above" ? rect.y - away : bottom(rect) + away;
+        const y = at;
         line = { x1: rect.x, y1: y, x2: right(rect), y2: y, tickTo: side === "above" ? y + tick : y - tick };
         const labelY = side === "above" ? y - gap / 2 - label.height : y + gap / 2;
         labelBox = { x: Math.round(rect.x + rect.width / 2 - label.width / 2), y: Math.round(labelY), ...label };
       } else {
-        const x = side === "left" ? rect.x - away : right(rect) + away;
+        const x = at;
         line = { x1: x, y1: rect.y, x2: x, y2: bottom(rect), tickTo: side === "left" ? x + tick : x - tick };
         const labelX = side === "left" ? x - gap / 2 - label.width : x + gap / 2;
         labelBox = { x: Math.round(labelX), y: Math.round(rect.y + rect.height / 2 - label.height / 2), ...label };
@@ -371,7 +437,7 @@ class PanelPlacer {
         width: Math.max(1, Math.max(...xs) - Math.min(...xs)),
         height: Math.max(1, Math.max(...ys) - Math.min(...ys)),
       };
-      return { side, line, label: { ...labelBox, text }, box: union(lineBox, labelBox) };
+      return { side, margin: where === "margin", line, label: { ...labelBox, text }, box: union(lineBox, labelBox) };
     });
     let chosen = candidates.find((candidate) => this.fits(candidate.box));
     let placement = "clear";
@@ -381,7 +447,7 @@ class PanelPlacer {
     }
     if (!chosen) return null;
     this.obstacles.push(chosen.box);
-    return { side: chosen.side, line: chosen.line, label: chosen.label, placement };
+    return { side: chosen.side, margin: chosen.margin, line: chosen.line, label: chosen.label, placement };
   }
 
   placePin(rect) {
@@ -479,20 +545,29 @@ class PanelPlacer {
   }
 }
 
-// Plan one comparison image: panel slots, headers, marks, and legend, all in
-// final canvas pixels. `panels` carry their output size and, optionally, a
-// `surface` from pixelSurface() over their rendered pixels; callout marks carry
-// rectangles in panel-local output pixels. Throws when the callouts cannot all
-// be numbered without covering the screenshot.
+// Plan one comparison image: panel slots, headers, and marks, all in final
+// canvas pixels. `panels` carry their output size and, optionally, a `surface`
+// from pixelSurface() over their rendered pixels; callout marks carry
+// rectangles in panel-local output pixels, plus an optional `focus`: the
+// changed pixels inside a plain pin's region, which the pin points at instead.
+// Explanations are not drawn; they belong in the Markdown beside the image.
+// Throws when the callouts cannot all be numbered without covering the
+// screenshot.
 export function planComparison(options) {
   if (typeof options.measure !== "function") throw new Error("planComparison needs a measure function");
   // A pin that fits neither beside its region nor in a gutter lane would have
   // to cover UI or another pin, so widen the gutters instead. Every lane adds
-  // free slots, so as many lanes as callouts always suffice in practice.
+  // free slots, so as many lanes as callouts always suffice in practice. A
+  // measurement with no blank space beside its region widens them for a
+  // bracket in the margin.
   const callouts = options.callouts?.length ?? 0;
   for (let lanes = 1; ; lanes *= 2) {
-    const plan = planWithLanes(options, lanes);
-    if (plan) return plan;
+    let plan = planWithLanes(options, lanes, false);
+    if (plan?.missingBrackets) plan = planWithLanes(options, lanes, true) ?? plan;
+    if (plan) {
+      const { missingBrackets, ...result } = plan;
+      return result;
+    }
     if (lanes > callouts) {
       throw new Error(`${callouts} callouts are too crowded to number without covering the screenshot; ` +
         "split them across detail views or comparisons");
@@ -501,15 +576,33 @@ export function planComparison(options) {
 }
 
 // The plan with this many gutter lanes, or null when a pin finds no free slot.
-function planWithLanes({ panels, callouts = [], layout = "auto", displayWidth = DEFAULT_DISPLAY_WIDTH, measure }, lanes) {
+// `bracketRoom` widens the gutters to hold the widest measurement label.
+function planWithLanes({
+  panels, callouts = [], layout = "auto", displayWidth = DEFAULT_DISPLAY_WIDTH, devicePixelRatio = 1, measure,
+}, lanes, bracketRoom) {
   const maxWidth = Math.max(...panels.map((panel) => panel.width));
   const maxHeight = Math.max(...panels.map((panel) => panel.height));
-  const chosen = chooseLayout(layout, { width: maxWidth, height: maxHeight });
+  const readableWidth = displayWidth * devicePixelRatio;
+  const chosen = chooseLayout(layout, { width: maxWidth, height: maxHeight }, readableWidth);
   const contentWidth = chosen === "side-by-side" ? maxWidth * panels.length : maxWidth;
   const chrome = chromeFor(contentWidth, displayWidth);
   const { headerPad, headerFont, gap } = chrome;
-  const gutter = chrome.gutter + (lanes - 1) * (chrome.radius * 2 + gap);
+  let gutter = chrome.gutter + (lanes - 1) * (chrome.radius * 2 + gap);
+  if (bracketRoom) {
+    // A margin bracket needs its region's clearance, its tick, a gap, and its
+    // label between the panel edge and the placement bounds, which stop one
+    // gap short of the slot.
+    const labels = callouts.flatMap((callout) => Object.values(callout.marks ?? {}))
+      .filter((mark) => mark.measureText)
+      .map((mark) => measure(mark.measureText, chrome.labelFont));
+    const label = Math.max(0, ...labels.map((size) => Math.ceil(Math.max(size.width, size.height)) + chrome.labelPad * 2));
+    gutter = Math.max(gutter, label + markClearance(chrome) + Math.ceil(gap * 2.5) + 1);
+  }
   const limitations = [];
+  if (chosen === "side-by-side" && maxWidth > readableWidth) {
+    limitations.push(`Side by side, each ${maxWidth} px panel renders below half size at the ${displayWidth} px PR width; ` +
+      "stack the panels or crop to the change.");
+  }
 
   const headerSizes = panels.map((panel) => measure(panel.label, headerFont));
   const headerHeight = Math.ceil(Math.max(...headerSizes.map((size) => size.height))) + headerPad * 2;
@@ -543,18 +636,24 @@ function planWithLanes({ panels, callouts = [], layout = "auto", displayWidth = 
   const sorted = [...callouts].sort((a, b) => a.id - b.id);
   const marks = [];
   const spotlights = [];
+  let missingBrackets = 0;
   for (const panel of planned) {
     const placer = new PanelPlacer({ x: panel.x, y: panel.y, width: panel.width, height: panel.height },
       panel.bounds, chrome, panel.surface, lanes);
+    const absolute = (rect) => ({ x: panel.x + rect.x, y: panel.y + rect.y, width: rect.width, height: rect.height });
     const local = sorted
       .map((callout) => ({ callout, mark: callout.marks?.[panel.key] }))
       .filter(({ mark }) => mark)
-      .map(({ callout, mark }) => ({
-        callout,
-        mark,
-        rect: { x: panel.x + mark.rect.x, y: panel.y + mark.rect.y, width: mark.rect.width, height: mark.rect.height },
-      }));
-    placer.regions = local.map((item) => ({ rect: item.rect, box: expand(item.rect, placer.clearance) }));
+      .map(({ callout, mark }) => {
+        const rect = absolute(mark.rect);
+        // The pin points at the changed pixels inside a plain region, which
+        // keep it clear; the rest of that region is open to its own pin.
+        const focus = mark.focus && contains(mark.rect, mark.focus) &&
+          (mark.focus.width < mark.rect.width || mark.focus.height < mark.rect.height) ? absolute(mark.focus) : null;
+        return { callout, mark, rect, target: focus ?? rect };
+      });
+    placer.regions = local.flatMap((item) => [item.rect, ...(item.target !== item.rect ? [item.target] : [])])
+      .map((rect) => ({ rect, box: expand(rect, placer.clearance) }));
     const entries = local.map((item) => ({
       id: item.callout.id,
       color: item.callout.color,
@@ -570,15 +669,16 @@ function planWithLanes({ panels, callouts = [], layout = "auto", displayWidth = 
       if (item.callout.measure && item.mark.measureText) {
         entries[index].bracket = placer.placeBracket(item.rect, item.callout.measure, item.mark.measureText, measure);
         if (!entries[index].bracket) {
-          limitations.push(`Callout ${item.callout.id} measurement bracket did not fit in ${panel.label}; the legend carries its value.`);
+          missingBrackets += 1;
+          limitations.push(`Callout ${item.callout.id} measurement bracket did not fit in ${panel.label}; the Markdown list carries its value.`);
         } else if (entries[index].bracket.placement === "overlap") {
           limitations.push(`Callout ${item.callout.id} measurement in ${panel.label} overlaps another mark.`);
         }
       }
     });
     local.forEach((item, index) => {
-      placer.owner = item.rect;
-      entries[index].pin = placer.placePin(item.rect);
+      placer.owner = item.target;
+      entries[index].pin = placer.placePin(item.target);
     });
     if (entries.some((entry) => !entry.pin)) return null;
     local.forEach((item, index) => {
@@ -590,10 +690,10 @@ function planWithLanes({ panels, callouts = [], layout = "auto", displayWidth = 
     });
     local.forEach((item, index) => {
       if (!item.callout.label) return;
-      placer.owner = item.rect;
+      placer.owner = item.target;
       entries[index].label = placer.placeLabel(entries[index].pin, item.callout.label, measure);
       if (!entries[index].label) {
-        limitations.push(`Callout ${item.callout.id} label did not fit in ${panel.label}; the legend carries its text.`);
+        limitations.push(`Callout ${item.callout.id} label did not fit in ${panel.label}; the Markdown list carries its text.`);
       }
     });
     const holes = local.filter((item) => item.callout.spotlight).map((item) => expand(item.rect, gap));
@@ -601,41 +701,15 @@ function planWithLanes({ panels, callouts = [], layout = "auto", displayWidth = 
     marks.push(...entries);
   }
 
-  let legend = null;
-  let height = slotsBottom;
-  if (sorted.length) {
-    const { radius, legendFont } = chrome;
-    const x = chrome.gutter;
-    const width = canvasWidth - chrome.gutter * 2;
-    const textX = x + radius * 2 + gap * 2;
-    const textWidth = width - (textX - x);
-    let y = slotsBottom + gap;
-    const items = sorted.map((callout) => {
-      const text = callout.legend ?? callout.text;
-      const size = measure(text, legendFont, textWidth);
-      const itemHeight = Math.max(radius * 2, Math.ceil(size.height));
-      const item = {
-        id: callout.id,
-        color: callout.color,
-        pin: { cx: x + radius, cy: y + radius, radius },
-        text: { x: textX, y, width: textWidth, height: Math.ceil(size.height), value: text, pointsize: legendFont },
-      };
-      y += itemHeight + gap;
-      return item;
-    });
-    legend = { x, y: slotsBottom, width, height: y - slotsBottom, items };
-    height = y;
-  }
-
   return {
     layout: chosen,
-    canvas: { width: canvasWidth, height: height + chrome.gutter / 2 },
+    canvas: { width: canvasWidth, height: slotsBottom + chrome.gutter / 2 },
     chrome,
     panels: planned.map(({ bounds, surface, ...panel }) => panel),
     marks,
     spotlights,
-    legend,
     limitations,
+    missingBrackets,
   };
 }
 
@@ -654,16 +728,18 @@ export function escapeAlt(text) {
 }
 
 // Publisher-compatible section. Every image uses a relative path under the
-// output directory and descriptive alt text.
+// output directory and descriptive alt text. Enlarged details lead, so the
+// reviewer sees the change first, and the comparison follows to show where
+// it lives. The callout list is the only place their explanations appear.
 export function sectionMarkdown({ title, comparison, callouts = [], details = [], flip = null, onion = null }) {
   const lines = [];
   if (title) lines.push(`#### ${escapeMarkdown(title)}`, "");
+  for (const detail of details) lines.push(`![${escapeAlt(detail.alt)}](${detail.file})`, "");
   lines.push(`![${escapeAlt(comparison.alt)}](${comparison.file})`, "");
   if (callouts.length) {
     for (const callout of callouts) lines.push(`- **${callout.id}**: ${escapeMarkdown(callout.legend ?? callout.text)}`);
     lines.push("");
   }
-  for (const detail of details) lines.push(`![${escapeAlt(detail.alt)}](${detail.file})`, "");
   if (flip || onion) {
     lines.push("<details><summary>Screenshot comparison aids</summary>", "");
     if (flip) lines.push(`![${escapeAlt(flip.alt)}](${flip.file})`, "");

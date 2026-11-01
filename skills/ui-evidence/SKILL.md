@@ -85,7 +85,12 @@ For a complete run from capture to publication dry run, follow
 [example-comparison.md](references/example-comparison.md) or
 [example-recording.md](references/example-recording.md).
 
-Crop to the claim and redact unrelated identifying data before upload. Start
+Crop to the claim and redact unrelated identifying data before upload. The
+reviewer reads at about 880 px, so check that the change is readable there.
+Never place two full-width screenshots side by side, as in a Markdown table:
+each shrinks below half size. Stack them, crop to the changed component, or
+let `compare.mjs` choose; for a small change in a large view, lead with an
+enlarged detail and follow it with the view that shows where it lives. Start
 clean and annotate only what helps a reviewer find or understand a change; an
 image with no callouts is a complete result.
 [Choose the annotation](references/comparisons.md#choose-the-annotation) ranks
@@ -93,6 +98,17 @@ the marks from pin to outline or spotlight to measurement. Add a final-state
 screenshot only when independently useful. Start with a soft budget of six
 assets and two clips; preserve requested coverage and collapse secondary
 evidence when more is needed.
+
+## Write the section
+
+The pull request already describes the change; the evidence shows it. Give
+each asset one or two sentences, or a few short bullets: what changed, where,
+and what to look at, by callout number when there are pins. Label each version
+truthfully by revision or state. For a copy change, quote the old and new
+wording with its direction, for example `"Save" -> "Save changes"`, so the
+reviewer can tell which panel is new. Leave out the restated task or PR, praise,
+capture method, viewport, and tables or paragraphs repeating what the media
+show. State a limitation only when it is specific and true.
 
 ## Review and publish
 

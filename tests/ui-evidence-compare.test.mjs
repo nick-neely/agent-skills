@@ -9,8 +9,8 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { after, test } from "node:test";
 import {
-  anchorToImageRect, chooseLayout, detailWindows, expectedScreenshotSize, pixelSurface, planComparison, sectionMarkdown,
-  segmentCrosses, suggestCrops,
+  anchorToImageRect, changedBounds, chooseLayout, detailWindows, expectedScreenshotSize, pixelSurface, planComparison,
+  sectionMarkdown, segmentCrosses, suggestCrops,
 } from "../skills/ui-evidence/scripts/comparison-layout.mjs";
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -135,6 +135,13 @@ test("anchor rectangles map viewport and full-page captures at non-unit pixel ra
 test("layout keeps matched scale and stacks wide captures but pairs tall ones", () => {
   assert.equal(chooseLayout("auto", { width: 1280, height: 800 }), "stacked");
   assert.equal(chooseLayout("auto", { width: 390, height: 844 }), "side-by-side");
+  // A tall full-width page would shrink each half below half size at PR width.
+  assert.equal(chooseLayout("auto", { width: 1280, height: 3000 }, 880), "stacked");
+  assert.equal(chooseLayout("auto", { width: 780, height: 1688 }, 880 * 2), "side-by-side", "pixel ratio scales the limit");
+  const tall = (layout) => planComparison({ panels: blankPanels(1280, 3000), layout, measure: fakeMeasure });
+  assert.equal(tall("auto").layout, "stacked");
+  assert.match(tall("side-by-side").limitations.join("\n"), /each 1280 px panel renders below half size at the 880 px PR width/);
+  assert.deepEqual(planComparison({ panels: blankPanels(390, 844), layout: "side-by-side", measure: fakeMeasure }).limitations, []);
   assert.equal(chooseLayout("side-by-side", { width: 1280, height: 800 }), "side-by-side");
   assert.throws(() => chooseLayout("grid", { width: 1, height: 1 }), /layout must be/);
   for (const [layout, size] of [["side-by-side", [390, 844]], ["stacked", [1280, 800]]]) {
@@ -210,7 +217,6 @@ test("a callout outlines its region only on request and places the same marks ei
   const [, outlined] = emphasised.marks;
   assert.ok(outlined.outline.x < outlined.rect.x && outlined.outline.width > outlined.rect.width, "the outline sits outside its region");
   assert.deepEqual(emphasised.marks.map((mark) => mark.pin), quiet.marks.map((mark) => mark.pin), "pins do not move");
-  assert.deepEqual(emphasised.legend, quiet.legend);
 });
 
 test("crowded edge callouts over busy or unknown UI widen the gutters instead of covering it", () => {
@@ -326,9 +332,9 @@ test("marks keep unannotated neighbouring UI readable in both layouts and use gu
     }
     assert.ok(plan.marks.every((mark) => mark.pin.placement !== "overlap"));
     const badgeMark = plan.marks.find((mark) => mark.id === 2);
-    assert.equal(badgeMark.label, null, "a label that would cover the heading or leave the panel moves to the legend");
-    assert.match(plan.limitations.join("\n"), /Callout 2 label did not fit in after; the legend carries its text/);
-    assert.deepEqual(plan.legend.items.map((item) => item.id), [1, 2], "stable IDs stay in the legend");
+    assert.equal(badgeMark.label, null, "a label that would cover the heading or leave the panel is left to the Markdown");
+    assert.match(plan.limitations.join("\n"), /Callout 2 label did not fit in after; the Markdown list carries its text/);
+    assert.equal(plan.legend, undefined, "explanations stay out of the image");
   }
 
   // Without pixels, no screenshot pixel is known to be safe: every mark sits in a gutter.
@@ -349,6 +355,67 @@ test("marks keep unannotated neighbouring UI readable in both layouts and use gu
   assert.deepEqual(open.limitations, []);
 });
 
+test("changed bounds find the change inside a region and ignore antialiasing noise", () => {
+  const raw = (width, height, shapes) => {
+    const data = Buffer.alloc(width * height * 3, 255);
+    for (const { rect: [x0, y0, w, h], color } of shapes) {
+      for (let y = y0; y < y0 + h; y += 1) for (let x = x0; x < x0 + w; x += 1) data.set(color, (y * width + x) * 3);
+    }
+    return { width, height, data };
+  };
+  const row = { x: 0, y: 40, width: 400, height: 48 };
+  const before = raw(400, 200, [{ rect: [20, 52, 100, 24], color: [0x1f, 0x23, 0x28] }]);
+  const after = raw(400, 200, [{ rect: [20, 52, 100, 24], color: [0x1f, 0x23, 0x28] },
+    { rect: [130, 54, 44, 20], color: [0xdd, 0xf4, 0xff] }, { rect: [300, 60, 4, 4], color: [0xf0, 0xf0, 0xf0] }]);
+  assert.deepEqual(changedBounds(after, before, row), { x: 130, y: 54, width: 44, height: 20 }, "a faint difference is not a change");
+  // Where the badge will appear, blank pixels near its edge still match blank pixels just outside it.
+  assert.deepEqual(changedBounds(before, after, row), { x: 133, y: 57, width: 38, height: 14 }, "both panels find the same place");
+  assert.equal(changedBounds(before, before, row), null);
+  // The badge makes its row taller, so the label and toggle shift down 2 px.
+  const reflowed = raw(400, 200, [{ rect: [20, 54, 100, 24], color: [0x1f, 0x23, 0x28] },
+    { rect: [340, 56, 40, 20], color: [0x1f, 0x6f, 0xeb] }, { rect: [130, 54, 44, 20], color: [0xdd, 0xf4, 0xff] }]);
+  const original = raw(400, 200, [{ rect: [20, 52, 100, 24], color: [0x1f, 0x23, 0x28] }, { rect: [340, 54, 40, 20], color: [0x1f, 0x6f, 0xeb] }]);
+  const found = changedBounds(reflowed, original, row);
+  assert.ok(found.x >= 125 && found.x + found.width <= 180, `a small reflow is not the change: ${JSON.stringify(found)}`);
+  assert.equal(changedBounds(original, raw(400, 200, [{ rect: [22, 54, 100, 24], color: [0x1f, 0x23, 0x28] },
+    { rect: [340, 54, 40, 20], color: [0x1f, 0x6f, 0xeb] }]), row), null, "content moved 2 px has no focus");
+  assert.equal(changedBounds(before, raw(200, 50, []), row), null, "pixels outside either image are skipped");
+});
+
+test("a plain pin points at the changed pixels inside a wide region instead of its corner", () => {
+  // A settings row whose label gains a badge; the region names the whole row.
+  const row = { x: 0, y: 40, width: 400, height: 48 };
+  const badge = { x: 130, y: 54, width: 44, height: 20 };
+  const shapes = (withBadge) => [
+    { rect: [20, 52, 100, 24], color: [255, 255, 255], text: true },
+    { rect: [340, 52, 40, 24], color: [0x1f, 0x6f, 0xeb] },
+    { rect: [0, 39, 400, 1], color: [0xd0, 0xd7, 0xde] }, { rect: [0, 88, 400, 1], color: [0xd0, 0xd7, 0xde] },
+    { rect: [20, 10, 160, 24], color: [255, 255, 255], text: true },
+    ...(withBadge ? [{ rect: [badge.x, badge.y, badge.width, badge.height], color: [0xdd, 0xf4, 0xff] }] : []),
+  ];
+  const panels = [{ key: "before", label: "Before", width: 400, height: 130, surface: paint(400, 130, shapes(false)) },
+    { key: "after", label: "After", width: 400, height: 130, surface: paint(400, 130, shapes(true)) }];
+  const plan = (focus) => planComparison({ panels, measure: fakeMeasure,
+    callouts: [{ id: 1, color: "#cf222e", text: "Weekly summary gains a badge.",
+      marks: { before: { rect: row, focus }, after: { rect: row, focus } } }] });
+  const distance = (mark) => {
+    const panel = plan(badge).panels.find((item) => item.key === mark.panel);
+    const cx = panel.x + badge.x + badge.width / 2;
+    const cy = panel.y + badge.y + badge.height / 2;
+    return Math.hypot(mark.pin.cx - cx, mark.pin.cy - cy);
+  };
+  for (const mark of plan(badge).marks) {
+    const panel = plan(badge).panels.find((item) => item.key === mark.panel);
+    const target = { ...badge, x: badge.x + panel.x, y: badge.y + panel.y };
+    assert.ok(distance(mark) <= badge.width / 2 + mark.pin.radius * 3, `the ${mark.panel} pin sits beside the badge`);
+    assert.ok(!overlaps(pinRect(mark.pin), target), "the pin never covers the change");
+    assert.deepEqual(mark.rect, { ...row, x: row.x + panel.x, y: row.y + panel.y }, "the region itself is unchanged");
+  }
+  for (const mark of plan(undefined).marks) {
+    assert.ok(distance(mark) > 120, `without a focus the pin keeps to the row's corner, ${Math.round(distance(mark))} px from the badge`);
+  }
+});
+
 test("pixel surfaces treat flat colour as blank and edges, text, or unknown pixels as occupied", () => {
   const surface = paint(40, 40, [{ rect: [20, 0, 20, 40], color: [0xf6, 0xf8, 0xfa] }, { rect: [0, 14, 24, 26], color: [255, 255, 255], text: true }]);
   assert.equal(surface.blank({ x: 0, y: 0, width: 20, height: 12 }), true);
@@ -359,15 +426,62 @@ test("pixel surfaces treat flat colour as blank and edges, text, or unknown pixe
   assert.equal(edge.blank({ x: 0, y: 0, width: 10, height: 10 }), false, "a border line is occupied");
 });
 
-test("a measurement bracket that cannot fit is reported instead of silently dropped", () => {
-  const plan = planComparison({
-    panels: [{ key: "before", label: "Before", width: 400, height: 300 }, { key: "after", label: "After", width: 400, height: 300 }],
-    callouts: [{ id: 1, color: "#cf222e", text: "full width", measure: "height",
-      marks: { after: { rect: { x: 0, y: 0, width: 400, height: 300 }, measureText: "150 px" } } }],
-    measure: fakeMeasure,
-  });
-  assert.equal(plan.marks[0].bracket, null);
-  assert.match(plan.limitations.join("\n"), /Callout 1 measurement bracket did not fit in After/);
+test("a measurement with no blank space beside its region draws its bracket in the margin", () => {
+  // Settings rows: text, a toggle, and a divider on every row, edge to edge.
+  const rows = (height) => [0, 1, 2].flatMap((index) => [
+    { rect: [20, index * height + 10, 120, height - 20], color: [255, 255, 255], text: true },
+    { rect: [340, index * height + 12, 40, height - 24], color: [0x1f, 0x6f, 0xeb] },
+    { rect: [0, (index + 1) * height - 1, 400, 1], color: [0xd0, 0xd7, 0xde] },
+  ]);
+  const panelsWith = (height) => ["before", "after"].map((key) =>
+    ({ key, label: key, width: 400, height: height * 3, surface: paint(400, height * 3, rows(height)) }));
+  for (const [axis, layout] of [["height", "stacked"], ["height", "side-by-side"], ["width", "stacked"]]) {
+    const plan = planComparison({
+      panels: panelsWith(66),
+      callouts: [{ id: 1, color: "#cf222e", text: "Rows gain padding.", measure: axis,
+        marks: { before: { rect: { x: 0, y: 0, width: 400, height: 50 }, measureText: "50 px" },
+          after: { rect: { x: 0, y: 0, width: 400, height: 66 }, measureText: "66 px" } } }],
+      layout, measure: fakeMeasure,
+    });
+    assert.deepEqual(plan.limitations, [], `${axis} ${layout}: every bracket is drawn`);
+    for (const mark of plan.marks) {
+      const panel = plan.panels.find((item) => item.key === mark.panel);
+      const { bracket } = mark;
+      assert.ok(bracket, `${axis} ${layout}: ${mark.panel} bracket is drawn`);
+      assert.ok(!overlaps(bracket.label, panel), "the value covers no screenshot pixels");
+      assert.ok(bracket.label.x >= 0 && bracket.label.x + bracket.label.width <= plan.canvas.width);
+      assert.ok(bracket.label.y + bracket.label.height <= plan.canvas.height);
+      const { line } = bracket;
+      if (axis === "height") {
+        assert.deepEqual([line.y1, line.y2], [mark.rect.y, mark.rect.y + mark.rect.height], "the bracket spans the measured height");
+        for (const x of [line.x1, line.tickTo]) assert.ok(x >= panel.x + panel.width || x < panel.x, "the bracket sits beside the panel");
+        assert.ok(Math.min(Math.abs(line.tickTo - panel.x), Math.abs(line.tickTo - panel.x - panel.width)) <= plan.chrome.gap * 2,
+          "its ticks point at the panel edge");
+      } else {
+        assert.deepEqual([line.x1, line.x2], [mark.rect.x, mark.rect.x + mark.rect.width], "the bracket spans the measured width");
+        assert.ok(line.tickTo >= panel.y + panel.height && line.tickTo - panel.y - panel.height <= plan.chrome.gap * 2,
+          "the bracket sits below the panel");
+      }
+      assert.ok(!overlaps(pinRect(mark.pin), bracket.label), "the pin keeps clear of the value");
+    }
+  }
+
+  // A region inside busy rows takes its bracket to the margin at the same height.
+  const inner = planComparison({ panels: panelsWith(66), measure: fakeMeasure,
+    callouts: [{ id: 1, color: "#cf222e", text: "Row padding grows.", measure: "height",
+      marks: { after: { rect: { x: 20, y: 66, width: 360, height: 10 }, measureText: "10 px" } } }] });
+  const innerMark = inner.marks[0];
+  assert.ok(innerMark.bracket?.margin, "the bracket moves into the margin");
+  assert.deepEqual([innerMark.bracket.line.y1, innerMark.bracket.line.y2], [innerMark.rect.y, innerMark.rect.y + 10]);
+  assert.deepEqual(inner.limitations, []);
+
+  // Blank surroundings keep the bracket beside its region, with no wider margin.
+  const open = planComparison({ panels: blankPanels(400, 198), measure: fakeMeasure,
+    callouts: [{ id: 1, color: "#cf222e", text: "Gap widened.", measure: "height",
+      marks: { after: { rect: { x: 180, y: 80, width: 40, height: 30 }, measureText: "30 px" } } }] });
+  assert.equal(open.marks[0].bracket.margin, false);
+  const plain = planComparison({ panels: blankPanels(400, 198), measure: fakeMeasure });
+  assert.equal(open.canvas.width, plain.canvas.width);
 });
 
 test("connector clipping detects crossings and ignores segments that only pass nearby", () => {
@@ -377,7 +491,7 @@ test("connector clipping detects crossings and ignores segments that only pass n
   assert.equal(segmentCrosses({ x1: 15, y1: 0, x2: 15, y2: 9 }, rect), false);
 });
 
-test("long labels fall back to the legend and long explanations wrap inside the canvas", () => {
+test("long labels fall back to the Markdown list and explanations never reach the image", () => {
   const long = "A long explanation that should never be squeezed onto the screenshot itself. ".repeat(4);
   const plan = planComparison({
     panels: blankPanels(120, 80),
@@ -393,12 +507,9 @@ test("long labels fall back to the legend and long explanations wrap inside the 
   const fitted = plan.marks.find((mark) => mark.id === 2).label;
   assert.ok(fitted && fitted.text === "ok");
   assert.ok(!plan.marks.some((mark) => mark.panel === "after" && mark.id === 2), "one-sided callouts stay one-sided");
-  const [first, second] = plan.legend.items;
-  assert.equal(first.text.value, long);
-  assert.ok(first.text.height > plan.chrome.legendFont * 2, "long legend text wraps to several lines");
-  assert.ok(second.pin.cy - second.pin.radius >= first.text.y + first.text.height, "legend items never overlap");
-  assert.ok(first.text.x + first.text.width <= plan.canvas.width);
-  assert.ok(plan.legend.y + plan.legend.height <= plan.canvas.height);
+  assert.equal(plan.legend, undefined);
+  const lowest = Math.max(...plan.panels.map((panel) => panel.y + panel.height));
+  assert.ok(plan.canvas.height - lowest <= plan.chrome.gutter * 1.5, "no legend area follows the panels");
 });
 
 test("detail windows share coordinates by default and stay equal-sized at image edges", () => {
@@ -440,7 +551,8 @@ test("generated Markdown neutralizes media syntax in explanations and keeps alt 
   assert.match(markdown, /!\[Before \(left\) and after &lt;img src="x\.png"&gt;\]\(comparison\.png\)/);
   assert.match(markdown, /- \*\*4\*\*: Shows \\!\\\[x\\\]\(secret\.png\) and &lt;img src="a\.png"&gt; wrapped/);
   const references = [...markdown.matchAll(/!\[[^\]\n]*\]\(([^)\s]+)\)/g)].map((match) => match[1]);
-  assert.deepEqual(references, ["comparison.png", "detail-callout-4.png", "flip.gif"]);
+  assert.deepEqual(references, ["detail-callout-4.png", "comparison.png", "flip.gif"], "the enlarged detail leads and the comparison shows where it lives");
+  assert.ok(markdown.indexOf("- **4**") > markdown.indexOf("(comparison.png)"), "the callout list follows the images it numbers");
   assert.match(markdown, /<details><summary>Screenshot comparison aids<\/summary>/);
 });
 
@@ -667,7 +779,7 @@ test("saved anchors resolve through capture metadata without a live page", media
   assert.match(mismatched.stderr, /recorded for a 600x900 screenshot/);
 });
 
-test("crowded edge callouts on a small canvas render with a legend for text that cannot fit", media, () => {
+test("crowded edge callouts on a small canvas keep their explanations in the Markdown, once", media, () => {
   const dir = caseDir();
   image(join(dir, "before.png"), 80, 60, [{ color: "#ff0000", rect: [0, 0, 8, 8] }]);
   image(join(dir, "after.png"), 80, 60, [{ color: "#0000ff", rect: [0, 0, 8, 8] }]);
@@ -687,10 +799,14 @@ test("crowded edge callouts on a small canvas render with a legend for text that
       assert.notEqual(panel.pin.placement, "overlap");
     }
   }
-  assert.match(run.result.limitations.join("\n"), /label did not fit/);
-  const legend = run.result.comparison.legend;
-  assert.ok(legend[3] > rects.length * 3 * 16, "wrapped legend grows with its text");
-  assert.ok(legend[1] + legend[3] <= canvas.height);
+  assert.match(run.result.limitations.join("\n"), /label did not fit in Before; the Markdown list carries its text/);
+  assert.equal(run.result.comparison.legend, undefined, "the image carries numbers, not explanations");
+  const lowest = Math.max(...Object.values(run.result.comparison.panels).map(({ canvas: [, y, , height] }) => y + height));
+  assert.ok(canvas.height - lowest < 60, "no legend area follows the panels");
+  const markdown = readFileSync(join(run.out, "section.md"), "utf8");
+  const sentence = "The explanation is long enough to wrap across several legend lines at this width.";
+  assert.equal(markdown.split(sentence).length - 1, rects.length * 3, "each explanation appears once, in its list item");
+  assert.deepEqual([...markdown.matchAll(/^- \*\*(\d+)\*\*/gm)].map((match) => Number(match[1])), [1, 2, 3, 4, 5, 6]);
 });
 
 // Raw RGB pixels of a whole image.
@@ -849,12 +965,13 @@ test("clean, pin-only, and emphasised comparisons keep targets, neighbours, and 
       assert.deepEqual(result.calloutIds, callouts.map((callout) => callout.id));
       const markdown = readFileSync(result.outputs.markdown, "utf8");
       if (mode === "clean") {
-        assert.equal(result.comparison.legend, null, `${where}: no empty legend`);
         assert.doesNotMatch(markdown, /^- /m, `${where}: no empty callout list`);
         assert.deepEqual(result.limitations, []);
         continue;
       }
-      assert.ok(result.comparison.legend, `${where}: callouts keep their legend`);
+      for (const callout of result.callouts) {
+        assert.ok(markdown.includes(`- **${callout.id}**: `), `${where}: callout ${callout.id} keeps its Markdown entry`);
+      }
       assert.ok(result.callouts.every((callout) => Object.values(callout.panels).every((panel) => !panel || panel.pin)), "every region keeps its pin");
       for (const callout of result.callouts) {
         const requested = callouts.find((item) => item.id === callout.id);
@@ -876,6 +993,82 @@ test("clean, pin-only, and emphasised comparisons keep targets, neighbours, and 
       }
     }
   }
+});
+
+// Settings rows at 1280 px: a label, a toggle, and a divider per row. `pad`
+// is the vertical padding inside each row; `badge` adds a pill after the
+// first label.
+function settingsRows(path, { pad = 12, badge = false } = {}) {
+  const row = 26 + pad * 2;
+  const shapes = [{ color: "#1f2328", rect: [40, 20, 260, 30] }];
+  for (let index = 0; index < 3; index += 1) {
+    const top = 80 + index * row;
+    shapes.push({ color: "#1f2328", rect: [60, top + pad + 6, 180, 14] }, { color: "#1f6feb", rect: [1160, top + pad, 52, 26] },
+      { color: "#d0d7de", rect: [0, top + row - 1, 1280, 1] });
+  }
+  if (badge) shapes.push({ color: "#ddf4ff", rect: [252, 80 + pad + 2, 48, 22] });
+  return image(path, 1280, 320, shapes);
+}
+
+test("a pin on a whole-row region sits beside the change inside it", media, () => {
+  const dir = caseDir();
+  settingsRows(join(dir, "before.png"));
+  settingsRows(join(dir, "after.png"), { badge: true });
+  const run = compare(dir, {
+    before: { image: "before.png" }, after: { image: "after.png" },
+    callouts: [{ id: 1, text: "Weekly summary gains a New badge.", region: [40, 80, 1200, 50] }],
+  });
+  assert.equal(run.status, 0, run.stderr);
+  const [callout] = run.result.callouts;
+  assert.deepEqual(callout.panels.after.focus, [252, 94, 48, 22], "the badge inside the row is found");
+  for (const [key, panel] of Object.entries(callout.panels)) {
+    const [fx, fy, fw, fh] = panel.focus;
+    assert.ok(fx >= 252 && fy >= 94 && fx + fw <= 300 && fy + fh <= 116, `${key}: the change inside the row is found`);
+    const view = run.result.comparison.panels[key];
+    const badge = viewRect(view, panel.focus);
+    const [cx, cy] = panel.pin.center;
+    const distance = Math.hypot(cx - (badge.x + badge.width / 2), cy - (badge.y + badge.height / 2));
+    assert.ok(distance < badge.width / 2 + panel.pin.radius * 3, `${key}: pin is ${Math.round(distance)} px from the badge`);
+    const row = viewRect(view, [40, 80, 1200, 50]);
+    assert.ok(Math.hypot(cx - (row.x + row.width), cy - row.y) > 400, `${key}: pin is not at the row's far corner`);
+  }
+
+  // An outlined region keeps its pin beside the outline it draws.
+  const outlined = compare(dir, {
+    before: { image: "before.png" }, after: { image: "after.png" },
+    callouts: [{ id: 1, text: "Row emphasised.", region: [40, 80, 1200, 50], outline: true }],
+  });
+  assert.equal(outlined.status, 0, outlined.stderr);
+  assert.equal(outlined.result.callouts[0].panels.after.focus, null);
+});
+
+test("a measurement among busy rows draws its bracket and value in the margin and reports both values", media, () => {
+  const dir = caseDir();
+  settingsRows(join(dir, "before.png"), { pad: 12 });
+  settingsRows(join(dir, "after.png"), { pad: 20 });
+  const run = compare(dir, {
+    before: { image: "before.png" }, after: { image: "after.png" },
+    callouts: [{ id: 1, text: "The first row's top padding grows from 12 to 20 px", measure: "height",
+      before: [0, 80, 1280, 12], after: [0, 80, 1280, 20] }],
+  });
+  assert.equal(run.status, 0, run.stderr);
+  const [callout] = run.result.callouts;
+  assert.deepEqual(callout.measured, { before: 12, after: 20 });
+  assert.equal(callout.legend, "The first row's top padding grows from 12 to 20 px. Measured height: Before 12 px, After 20 px.");
+  assert.deepEqual(run.result.limitations, []);
+  const output = pixels(run.result.outputs.comparison);
+  const color = rgbOf(callout.color);
+  for (const [key, panel] of Object.entries(callout.panels)) {
+    assert.ok(panel.bracket, `${key}: the measurement is drawn, not only listed`);
+    const view = run.result.comparison.panels[key];
+    const [px, , pw] = view.canvas;
+    const [lx, ly, lw, lh] = panel.bracket.label;
+    assert.ok(lx + lw <= px || lx >= px + pw, `${key}: the value sits in the margin, off the screenshot`);
+    let ink = 0;
+    for (let y = ly; y < ly + lh; y += 1) for (let x = lx; x < lx + lw; x += 1) if (near(output.at(x, y), color)) ink += 1;
+    assert.ok(ink > lw * lh * 0.4, `${key}: the value pill is rendered in the callout colour`);
+  }
+  assert.match(readFileSync(join(run.out, "section.md"), "utf8"), /- \*\*1\*\*: The first row's top padding grows from 12 to 20 px\. Measured height: Before 12 px, After 20 px\./);
 });
 
 test("explicit measurements and outlines render in matched detail crops", media, () => {

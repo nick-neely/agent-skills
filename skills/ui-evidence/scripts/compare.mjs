@@ -16,7 +16,7 @@ import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  DEFAULT_DISPLAY_WIDTH, PALETTE, anchorToImageRect, asArray, chooseLayout, chromeFor, contains,
+  DEFAULT_DISPLAY_WIDTH, PALETTE, anchorToImageRect, asArray, changedBounds, chooseLayout, chromeFor, contains,
   detailWindows, intersect, pixelSurface, planComparison, rectFrom, sectionMarkdown, snapOut,
 } from "./comparison-layout.mjs";
 import { CHROME, geometry, imText, numberedPinArgs, textMeasurer } from "./magick-args.mjs";
@@ -38,9 +38,7 @@ verify dependencies first.
 `;
 
 const HEADER_BACKGROUND = CHROME.header;
-const LEGEND_BACKGROUND = CHROME.panel;
 const PANEL_BORDER = CHROME.border;
-const TEXT = CHROME.text;
 const REDACTION_BLOCK = "#111827";
 
 function die(message) {
@@ -92,13 +90,16 @@ function magick(args, { encoding = "utf8", maxBuffer = 64 * 1024 * 1024 } = {}) 
   }
 }
 
-// Raw 8-bit RGB pixels of a rendered panel, so marks can avoid covering its UI.
-function surfaceOf(path) {
+// Raw 8-bit RGB pixels of an image.
+function pixelsOf(path) {
   const { width, height } = imageSize(path);
   const data = magick([`${path}[0]`, "-alpha", "off", "-depth", "8", "rgb:-"],
     { encoding: null, maxBuffer: width * height * 3 + 1024 * 1024 });
-  return pixelSurface({ width, height, data });
+  return { width, height, data };
 }
+
+// A rendered panel's pixels, so marks can avoid covering its UI.
+const surfaceOf = (path) => pixelSurface(pixelsOf(path));
 
 function imageSize(path) {
   const [width, height] = magick([`${path}[0]`, "-format", "%w %h", "info:"]).trim().split(/\s+/).map(Number);
@@ -282,18 +283,6 @@ function drawPlan(plan, images, out) {
       place(pillArgs(mark.label.text, mark.color, chrome), mark.label.x, mark.label.y);
     }
   }
-  if (plan.legend) {
-    const legend = plan.legend;
-    args.push("-fill", LEGEND_BACKGROUND, "-stroke", "none",
-      "-draw", rectangle({ x: 0, y: legend.y, width: plan.canvas.width, height: plan.canvas.height - legend.y }),
-      "-fill", "none", "-stroke", PANEL_BORDER, "-strokewidth", "1", "-draw", `line 0,${legend.y} ${plan.canvas.width},${legend.y}`);
-    for (const item of legend.items) {
-      place(pinArgs(item.id, item.color, chrome), item.pin.cx - item.pin.radius, item.pin.cy - item.pin.radius);
-      place(["-background", LEGEND_BACKGROUND, "-fill", TEXT, "-stroke", "none", "-font", FONT_PATH,
-        "-pointsize", String(item.text.pointsize), "-size", `${item.text.width}x`, `caption:${imText(item.text.value)}`],
-      item.text.x, item.text.y);
-    }
-  }
   magick([...args, "-strip", out]);
 }
 
@@ -332,16 +321,38 @@ function validateCallouts(spec, panels) {
   }).sort((a, b) => a.id - b.id);
   callouts.forEach((callout, index) => {
     callout.color = PALETTE[index % PALETTE.length];
+    callout.measured = null;
     const parts = [];
     if (callout.measure) {
+      callout.measured = {};
       for (const panel of [panels.before, panels.after]) {
         const rect = callout.regions[panel.key];
-        if (rect) parts.push(`${panel.label} ${formatPx(rect[callout.measure] / panel.dpr)}`);
+        if (!rect) continue;
+        callout.measured[panel.key] = Math.round((rect[callout.measure] / panel.dpr) * 10) / 10;
+        parts.push(`${panel.label} ${formatPx(rect[callout.measure] / panel.dpr)}`);
       }
     }
-    callout.legend = parts.length ? `${callout.text} Measured ${callout.measure}: ${parts.join(", ")}.` : callout.text;
+    const sentence = /[.!?]$/.test(callout.text) ? callout.text : `${callout.text}.`;
+    callout.legend = parts.length ? `${sentence} Measured ${callout.measure}: ${parts.join(", ")}.` : callout.text;
   });
   return callouts;
+}
+
+// Where each plain pin's region changed between the two screenshots, in
+// source pixels, so the pin can point at the change rather than a corner of
+// the row or card the region names. Outlined, spotlit, and measured regions
+// are drawn or measured as given, so their pins stay beside the region.
+function findFocus(callouts, panels) {
+  const plain = callouts.filter((callout) => !callout.outline && !callout.spotlight && !callout.measure);
+  if (!plain.length) return;
+  const pixels = { before: pixelsOf(panels.before.source), after: pixelsOf(panels.after.source) };
+  for (const callout of plain) {
+    callout.focus = {};
+    for (const [key, other] of [["before", "after"], ["after", "before"]]) {
+      const rect = callout.regions[key];
+      if (rect) callout.focus[key] = changedBounds(pixels[key], pixels[other], rect);
+    }
+  }
 }
 
 // Map source-pixel callouts into one view's panel-local output pixels. A
@@ -350,16 +361,20 @@ function viewCallouts(callouts, views) {
   return callouts.map((callout) => {
     const marks = {};
     for (const view of views) {
-      const rect = callout.regions[view.panel.key];
+      const key = view.panel.key;
+      const rect = callout.regions[key];
       const visible = rect && intersect(rect, view.window);
       if (!visible) continue;
-      marks[view.panel.key] = {
-        rect: {
-          x: Math.round((visible.x - view.window.x) * view.zoom),
-          y: Math.round((visible.y - view.window.y) * view.zoom),
-          width: Math.max(1, Math.round(visible.width * view.zoom)),
-          height: Math.max(1, Math.round(visible.height * view.zoom)),
-        },
+      const local = (source) => ({
+        x: Math.round((source.x - view.window.x) * view.zoom),
+        y: Math.round((source.y - view.window.y) * view.zoom),
+        width: Math.max(1, Math.round(source.width * view.zoom)),
+        height: Math.max(1, Math.round(source.height * view.zoom)),
+      });
+      const focus = callout.focus?.[key] && intersect(callout.focus[key], visible);
+      marks[key] = {
+        rect: local(visible),
+        focus: focus ? local(focus) : undefined,
         measureText: callout.measure && contains(view.window, rect)
           ? formatPx(rect[callout.measure] / view.panel.dpr) : undefined,
       };
@@ -380,6 +395,7 @@ function renderView({ name, views, layout, displayWidth, callouts, measure, temp
       width: Math.round(view.window.width * view.zoom), height: Math.round(view.window.height * view.zoom),
     })),
     callouts: visible, layout, displayWidth, measure,
+    devicePixelRatio: views[0].panel.dpr * views[0].zoom,
   });
   drawPlan(plan, images, out);
   return { plan, images, visible };
@@ -514,7 +530,7 @@ function main() {
       before: regions.before, after: regions.after, context, separate: raw.separate === true,
       sizes: { before: panels.before.size, after: panels.after.size },
     });
-    const layout = chooseLayout(raw.layout ?? "auto", windows.before);
+    const layout = chooseLayout(raw.layout ?? "auto", windows.before, displayWidth * panels.after.dpr);
     let zoom = raw.zoom ?? "auto";
     if (zoom === "auto") {
       const target = layout === "side-by-side" ? displayWidth / 2 : displayWidth;
@@ -537,6 +553,7 @@ function main() {
   const measure = makeMeasure();
   try {
     for (const panel of Object.values(panels)) panel.source = redact(panel, redactions[panel.key], temp);
+    findFocus(callouts, panels);
 
     const mainViews = Object.values(panels).map((panel) =>
       ({ panel, label: panel.label, window: crop ?? panel.bounds, zoom: 1 }));
@@ -618,7 +635,7 @@ function main() {
     const ids = callouts.map((callout) => callout.id);
     const comparisonAlt = spec.alt ?? `${spec.title ? `${spec.title}: ` : ""}${panels.before.label} and ` +
       `${panels.after.label} screenshots ${placementPhrase(overview.plan.layout, panels)}` +
-      (callouts.length ? `, with numbered callouts: ${callouts.map((c) => `${c.id} ${c.text}`).join("; ")}` : "");
+      (callouts.length ? `, with numbered callout${ids.length > 1 ? "s" : ""} ${ids.join(", ")} explained below` : "");
     const relative = (path) => path.slice(outDir.length + 1).split("\\").join("/");
     const markdown = sectionMarkdown({
       title: spec.title,
@@ -646,7 +663,6 @@ function main() {
         canvas: overview.plan.canvas,
         displayWidth,
         panels: viewGeometry(overview.plan, mainViews),
-        legend: overview.plan.legend && [overview.plan.legend.x, overview.plan.legend.y, overview.plan.legend.width, overview.plan.legend.height],
         alt: comparisonAlt,
       },
       inputs: Object.fromEntries(Object.values(panels).map((panel) => [panel.key, {
@@ -655,7 +671,7 @@ function main() {
       }])),
       callouts: callouts.map((callout) => ({
         id: callout.id, text: callout.text, legend: callout.legend, label: callout.label ?? null, color: callout.color,
-        measure: callout.measure ?? null, outline: callout.outline, spotlight: callout.spotlight,
+        measure: callout.measure ?? null, measured: callout.measured, outline: callout.outline, spotlight: callout.spotlight,
         panels: Object.fromEntries(Object.keys(panels).map((key) => {
           const mark = overview.plan.marks.find((item) => item.id === callout.id && item.panel === key);
           const source = callout.regions[key];
@@ -665,7 +681,8 @@ function main() {
             outline: mark?.outline ? asArray(mark.outline) : null,
             pin: mark ? { center: [mark.pin.cx, mark.pin.cy], radius: mark.pin.radius, placement: mark.pin.placement } : null,
             label: mark?.label ? asArray(mark.label) : null,
-            bracket: mark?.bracket ? { side: mark.bracket.side, label: asArray(mark.bracket.label) } : null,
+            focus: callout.focus?.[key] ? asArray(callout.focus[key]) : null,
+            bracket: mark?.bracket ? { side: mark.bracket.side, margin: mark.bracket.margin, label: asArray(mark.bracket.label) } : null,
           } : null];
         })),
       })),
