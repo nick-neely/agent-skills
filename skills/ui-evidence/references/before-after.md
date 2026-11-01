@@ -20,8 +20,11 @@ fetch it, publish after-only evidence and state the limitation. Pass the saved
 JSON to `capture.mjs --baseline` when capturing from a recipe.
 
 Capture a base revision only when its comparison helps the reviewer. A new
-screen may need after-only evidence. A feature toggle in the changed code is
-not a substitute for rendering the actual baseline revision.
+screen may need after-only evidence. For an interaction, the starting state
+before the input comes from the changed revision, and a base capture does not
+replace it; see [motion.md](motion.md#show-the-interaction-from-its-start). A
+feature toggle in the changed code is not a substitute for rendering the actual
+baseline revision.
 
 ## Start and identify the servers
 

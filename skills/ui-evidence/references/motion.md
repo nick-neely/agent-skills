@@ -239,6 +239,17 @@ sheets and previews are never referenced. Inspect the
 complete clip, frames around each annotation boundary, and the storyboard at
 the display width before publishing.
 
+## Show the interaction from its start
+
+For an interaction, show it starting on the changed revision, before the input,
+in the same view as the result, so the reviewer sees the control they would
+use. Trim a clip to open on that state and use the start hold to give time to
+read it. With stills, capture both the starting state and the result from the
+changed revision. A base-revision capture shows what the change replaced; add it
+only when the old layout matters, never in place of the starting state. Keep
+the whole affected area in frame in both the starting and ending states, such
+as every row of a list that the input filters.
+
 ## Preserve truth and readability
 
 Keep each clip focused, often 5-20 seconds. Let the claim determine its length;
