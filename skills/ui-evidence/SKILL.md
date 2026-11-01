@@ -14,7 +14,10 @@ directory for `<skill-root>`.
 ## Choose the evidence
 
 Name the visible claims and the states that prove them. Cover the surfaces the
-user requested. One coherent image or clip can prove related claims.
+user requested. One coherent image or clip can prove related claims. For an
+interaction, show its starting state on the changed revision, before the input,
+in the same view as the result; a base-revision capture does not replace it.
+See [Show the interaction from its start](references/motion.md#show-the-interaction-from-its-start).
 
 | Medium | Use |
 | --- | --- |
