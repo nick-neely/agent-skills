@@ -15,8 +15,10 @@ directory for `<skill-root>`.
 
 Name the visible claims and the states that prove them. Cover the surfaces the
 user requested. One coherent image or clip can prove related claims. For an
-interaction, show its starting state on the changed revision, before the input,
-in the same view as the result; a base-revision capture does not replace it.
+interaction, show its starting state on the changed revision, before the first
+input (the focused control, for keys), then each state the claim names, in
+order, in the same view as the result; a base-revision capture does not replace
+any of them.
 See [Show the interaction from its start](references/motion.md#show-the-interaction-from-its-start).
 
 | Medium | Use |

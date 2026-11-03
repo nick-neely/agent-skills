@@ -241,12 +241,17 @@ the display width before publishing.
 
 ## Show the interaction from its start
 
-For an interaction, show it starting on the changed revision, before the input,
-in the same view as the result, so the reviewer sees the control they would
-use. Trim a clip to open on that state and use the start hold to give time to
-read it. With stills, capture both the starting state and the result from the
-changed revision. A base-revision capture shows what the change replaced; add it
-only when the old layout matters, never in place of the starting state. Keep
+For an interaction, show it starting on the changed revision, before the first
+input, in the same view as the result, so the reviewer sees the control they
+would use. Start recording before that input, since the first response can be
+immediate, then trim the clip to open on that state and use the start hold to
+give time to read it. For keyboard input, the starting state is the control
+already focused, focus visible, before the first key. Then show each state the
+claim names, in order, long enough to read: the item a key lands on before the
+next key, or a choice before the step that should keep it. With stills, capture
+the starting state and each named state from the changed revision, in that
+order. A base-revision capture shows what the change replaced; add it only when
+the old layout matters, never in place of the starting state or a step. Keep
 the whole affected area in frame in both the starting and ending states, such
 as every row of a list that the input filters.
 
