@@ -18,7 +18,16 @@ user requested. One coherent image or clip can prove related claims. For an
 interaction, show its starting state on the changed revision, before the first
 input (the focused control, for keys), then each state the claim names, in
 order, in the same view as the result; a base-revision capture does not replace
-any of them.
+any of them. Before capturing, list those states in order. Make the first one a
+changed-revision capture taken before any click or key, and deliver it; the
+base revision is the separate, optional "before" of before/after, even when it
+shows the same action. When the claim is that the UI returns to where it began,
+as with cancel, undo, close, or reset, the start and end captures together are
+the proof. For a transient state, such as a highlight, toast, or animation,
+capture it while visible and capture the settled state after it ends, or record
+a clip through both. Use one viewport and one crop for every state, sized to
+hold the whole affected area in its largest state; open each cropped file and
+confirm that every item the caption names is fully visible.
 See [Show the interaction from its start](references/motion.md#show-the-interaction-from-its-start).
 
 | Medium | Use |
