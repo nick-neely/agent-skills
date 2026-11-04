@@ -25,6 +25,12 @@ expect_invalid broken-skill-root-reference 'Broken <skill-root> reference'
 expect_invalid em-dash-found 'Em dash found'
 expect_invalid hardcoded-skill-install-path 'Hardcoded skill-install path'
 expect_invalid readme-skill-list-mismatch 'README Skills section'
+expect_invalid empty-folded-description 'Folded description requires indented content'
+expect_invalid overlong-folded-description 'Frontmatter description exceeds 1024 characters'
+expect_invalid quoted-overlong-folded-description 'Frontmatter description exceeds 1024 characters'
+expect_invalid clipped-overlong-folded-description 'Frontmatter description exceeds 1024 characters'
+expect_invalid folded-description-unknown-key 'Unknown frontmatter key'
+node "$repo/scripts/validate-skills.mjs" "$repo/tests/fixtures/folded-description" >/dev/null
 
 # Windows does not expose POSIX executable bits through stat. The validator
 # must honor the portable mode recorded by Git instead of the working tree.
@@ -74,5 +80,7 @@ node "$repo/tests/ui-evidence-examples.test.mjs"
 node "$repo/tests/implement-stack.test.mjs"
 node "$repo/tests/implement-program.test.mjs"
 node "$repo/tests/pr-wait.test.mjs"
+
+node --test "$repo"/tests/uat-*.test.mjs
 
 printf 'Behavior tests passed.\n'

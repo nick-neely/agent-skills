@@ -81,14 +81,27 @@ function parseFrontmatter(path) {
     return { text, fields: {} };
   }
   const fields = {};
-  for (const line of lines.slice(1, end)) {
+  for (let index = 1; index < end; index += 1) {
+    const line = lines[index];
     const match = line.match(/^([a-z][a-z0-9-]*):\s*(.+)$/);
     if (!match) {
       fail(`Malformed YAML frontmatter line in ${path}: ${line}`);
       continue;
     }
     if (fields[match[1]] !== undefined) fail(`Duplicate frontmatter key ${match[1]}: ${path}`);
-    fields[match[1]] = match[2].replace(/^["']|["']$/g, "");
+    let value = match[2];
+    // Accept folded descriptions without changing the skill's YAML. Keep the
+    // parsed value so the existing length and duplicate-key checks still apply.
+    const foldedDescription = match[1] === "description" && /^>-?$/.test(value);
+    if (foldedDescription) {
+      const folded = [];
+      while (index + 1 < end && /^ {2}\S/.test(lines[index + 1])) {
+        folded.push(lines[++index].slice(2));
+      }
+      value = folded.join(" ") + (value === ">" && folded.length ? "\n" : "");
+      if (!folded.length) fail(`Folded description requires indented content: ${path}`);
+    }
+    fields[match[1]] = foldedDescription ? value : value.replace(/^["']|["']$/g, "");
   }
   return { text, fields };
 }

@@ -55,6 +55,8 @@ Skills that shell out have their own runtime dependencies, listed in each
   and publish it to the issue tracker.
 - [`to-tickets`](skills/to-tickets/) - Break a spec or plan into tracer-bullet
   tickets that declare their blocking edges.
+- [`uat`](skills/uat/) - Test acceptance criteria and explore user workflows
+  with agent-browser, retaining reproducible findings and responsive checks.
 - [`ui-evidence`](skills/ui-evidence/) - Capture, prepare, annotate, compare, and publish
   UI screenshots and video into a pull request or issue.
 - [`visual-verification`](skills/visual-verification/) - Screenshot, inspect,
