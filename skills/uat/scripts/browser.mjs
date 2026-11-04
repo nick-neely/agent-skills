@@ -11,6 +11,8 @@ const usage = 'Usage: node browser.mjs <run-dir> <agent-browser args...>';
 export const reservedFlags = Object.freeze([
   '--config', '--session', '--profile', '--cdp', '--auto-connect', '--state',
   '--restore', '--namespace', '--headed', '--idle-timeout',
+  '--session-name', '--provider', '-p', '--extension', '--init-script',
+  '--enable', '--args',
 ]);
 
 // Fallback for an incomplete installation that has only the npm .cmd shim.

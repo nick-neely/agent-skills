@@ -5,7 +5,7 @@
 Run once per UAT run, after discovery and before any browser launch:
 
 ```text
-node "<skill-directory>/scripts/new-run.mjs" --label "<ticket-or-feature>" --mode fresh|persistent --project "<project>" [--target "<url>"] [--output "<absolute-dir>"]
+node "<skill-root>/scripts/new-run.mjs" --label "<ticket-or-feature>" --mode fresh|persistent --project "<project>" [--target "<url>"] [--output "<absolute-dir>"]
 ```
 
 - Runs live under `~/.uat/runs/<project>/`, outside every repository, so they persist for retests and later planning without touching the tested project.
@@ -30,11 +30,11 @@ Create only the folders the run uses, with stable scenario and finding IDs in de
   findings/F01-stale-validation/error-state.png
 ```
 
-Request logs (method, URL, status, timing) and the bodies of failing responses are useful evidence; request headers, cookies, tokens and full HAR captures stay out.
+Request method, status, timing, sanitized URLs and relevant excerpts of failing responses can be useful evidence. Before saving or sharing them, remove credentials, tokens and private records, including secrets in URL paths or query strings and response bodies; omit content that cannot be safely redacted. Request headers, cookies and full HAR captures stay out.
 
 Link evidence relative to `report.md` so the folder stays readable when copied, using the filenames the CLI actually wrote. A retest links its original report and finding IDs, relatively when possible; across Windows drives use an absolute path and note that both run folders must travel together.
 
-Capture only content appropriate to the test data, and review screenshots and clips for unintended private content before handoff. If a shareable copy needs redaction, keep the raw evidence private and label the copy as redacted. Publishing or uploading a run needs separate authorization.
+Capture only content appropriate to the test data, and review all evidence for unintended private content before handoff. If a shareable copy needs redaction, keep the raw evidence private and label the copy as redacted. Publishing or uploading a run needs separate authorization.
 
 ## Record an interactive reproduction
 

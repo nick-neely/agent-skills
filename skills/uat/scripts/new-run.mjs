@@ -54,7 +54,8 @@ export function sanitizeProject(project = '') {
   return windowsReserved.test(clean) ? `project-${clean}` : clean;
 }
 
-// Hostname plus non-default port, e.g. localhost-4200 or devone.example.com.
+// Readable prefix plus a digest of the origin and exact role. Paths, query
+// strings and URL credentials do not select a different persistent browser.
 export function targetKey(target, role) {
   let url;
   try {
@@ -70,10 +71,14 @@ export function targetKey(target, role) {
   if (!key || key === '.' || key === '..') throw new UsageError('--target has no usable hostname');
   // Windows rejects device names such as con or aux.corp as folder names.
   if (windowsReserved.test(key.split('.')[0])) key = `host-${key}`;
-  if (role === undefined) return key;
-  const suffix = role.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
-  if (!suffix) throw new UsageError('--role has no usable characters');
-  return `${key}-${suffix}`;
+  if (role !== undefined) {
+    const suffix = role.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
+    if (!suffix) throw new UsageError('--role has no usable characters');
+    key = `${key}-${suffix}`;
+  }
+  const identity = JSON.stringify([url.protocol, url.hostname, url.port, role ?? null]);
+  const digest = createHash('sha256').update(identity).digest('hex').slice(0, 16);
+  return `${key.slice(0, 16).replace(/[.-]+$/g, '')}-${digest}`;
 }
 
 // SHA-256 over every file in the skill (except .DS_Store), sorted by
@@ -296,7 +301,9 @@ export function newRun(options, deps) {
     }
     // Keep-alive: one stable session per target that stays running between
     // runs, so session-storage logins (and IdP session cookies) survive.
-    session = `uat-${options.profileKey}`;
+    // Keep the session short for Unix-domain socket paths; the digest is
+    // already unique to the origin and role used by this profile.
+    session = `uat-${options.profileKey.slice(-16)}`;
     Object.assign(config, { profile: profile.path, idleTimeout: '0' });
     profileResult = {
       path: profile.path,

@@ -129,7 +129,8 @@ test('run config, session and browser-selection flags are refused in both forms'
       assert.match(result.stderr, new RegExp(`${flag} is not allowed: the run config and session are supplied by browser.mjs`));
     }
   }
-  assert.ok(['--config', '--session', '--profile', '--cdp', '--auto-connect', '--state', '--restore']
+  assert.ok(['--config', '--session', '--profile', '--cdp', '--auto-connect', '--state', '--restore',
+    '--session-name', '--provider', '-p', '--extension', '--init-script', '--enable', '--args']
     .every((flag) => reservedFlags.includes(flag)));
   assert.equal(calls.length, 0);
   assert.equal(run(['fill', '#name', '--sessions']).code, 0);

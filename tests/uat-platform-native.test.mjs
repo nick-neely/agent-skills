@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { checkSetup, runCommand } from '../skills/uat/scripts/check-setup.mjs';
-import { main } from '../skills/uat/scripts/new-run.mjs';
+import { main, targetKey } from '../skills/uat/scripts/new-run.mjs';
 
 const windowsOnly = process.platform !== 'win32' ? 'Native Windows integration' : false;
 const skillDir = fileURLToPath(new URL('../skills/uat/', import.meta.url));
@@ -99,7 +99,7 @@ for (const location of ['home', 'project', 'profile']) {
       symlinkSync(elsewhere, join(home, '.uat', 'runs', 'general'), 'junction');
     } else {
       mkdirSync(join(home, '.uat', 'profiles'), { recursive: true });
-      symlinkSync(elsewhere, join(home, '.uat', 'profiles', 'localhost-4200'), 'junction');
+      symlinkSync(elsewhere, join(home, '.uat', 'profiles', targetKey('http://localhost:4200')), 'junction');
       args = ['--label', 'junction', '--mode', 'persistent', '--target', 'http://localhost:4200'];
     }
     const result = run(args);

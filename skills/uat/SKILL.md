@@ -13,13 +13,13 @@ description: >-
 
 # UAT
 
-Turn a user goal and acceptance criteria into browser-tested evidence in one invocation: gather the context yourself, plan, test and report. Ask only for criteria, decisions or access you cannot establish safely. Resolve packaged paths relative to this skill directory.
+Turn a user goal and acceptance criteria into browser-tested evidence in one invocation: gather the context yourself, plan, test and report. Ask only for criteria, decisions or access you cannot establish safely. Substitute this skill directory's absolute path for `<skill-root>`.
 
 ## Terms
 
 - **Oracle**: the source of expected results. The oracle is the business requirement or the user's explicit clarification; source code, an implementer's test plan and current UI behavior are not. A rule the oracle leaves open stays unresolved.
 - **Carried authorization**: a request to test a feature, in a confirmed non-production environment with confirmed test data, authorizes the ordinary reversible interactions the test needs: validation inputs, uploads, and creating, editing or removing dedicated test records. Act within it without reconfirming. Scope below lists what it does not cover.
-- **Owned browser**: a browser the agent launches under the session name `new-run.mjs` reports, configured only by a `browser-config.json` that `new-run.mjs` wrote. In persistent mode it is the target's keep-alive session, possibly launched by an earlier run. Every browser call goes through `node "<skill-directory>/scripts/browser.mjs" "<run-folder>" <command>`, which supplies the run's config and session and drops inherited overrides; the references write this as `ab <command>`. See [authentication](references/authentication.md).
+- **Owned browser**: a browser the agent launches under the session name `new-run.mjs` reports, configured only by a `browser-config.json` that `new-run.mjs` wrote. In persistent mode it is the target's keep-alive session, possibly launched by an earlier run. Every browser call goes through `node "<skill-root>/scripts/browser.mjs" "<run-folder>" <command>`, which supplies the run's config and session and drops inherited overrides; the references write this as `ab <command>`. See [authentication](references/authentication.md).
 - **Readback**: observing the actual result of a non-idempotent action (saved record, cart, order list) before retrying it. After a timeout, error or lost session, readback comes first; retry only when it shows the action did not complete.
 - **Operator**: the human running the session. The operator handles SSO, MFA, missing privilege and policy decisions; the agent handles the rest.
 
@@ -27,7 +27,7 @@ Turn a user goal and acceptance criteria into browser-tested evidence in one inv
 
 1. **Choose the tester.** If you implemented the change or its solution is in your context, hand off per [independent testing](references/independent-testing.md). A tester that received that handoff, or a clean conversation, continues here.
    Done: you are testing without solution context, or the report will label the run implementation-informed.
-2. **Check setup.** Run `node "<skill-directory>/scripts/check-setup.mjs"`. If `ready` is false, repair per [setup](references/setup.md).
+2. **Check setup.** Run `node "<skill-root>/scripts/check-setup.mjs"` to inspect readiness. If `ready` is false, repair per [setup](references/setup.md).
    Done: `ready` is true, or the blocker is recorded and you continue discovery while it is resolved.
 3. **Discover** criteria, target and test data per [requirements](references/requirements.md). No browser yet.
    Done: criteria have IDs and sources (or you have asked the user one specific question), the target URL serves the intended app, and you know the test identity and data.
