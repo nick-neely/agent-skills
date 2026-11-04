@@ -31,7 +31,7 @@ test('healthy setup needs only agent-browser and reports versions without raw CL
 
 test('missing tools identify setup work without attempting auth or browser launch', () => {
   const calls = [];
-  const result = checkSetup({ env: {}, run(command, args) {
+  const result = checkSetup({ nodeVersion: '24.0.0', env: {}, run(command, args) {
     calls.push([command, ...args]);
     return missing();
   } });
