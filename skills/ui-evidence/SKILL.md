@@ -18,7 +18,21 @@ user requested. One coherent image or clip can prove related claims. For an
 interaction, show its starting state on the changed revision, before the first
 input (the focused control, for keys), then each state the claim names, in
 order, in the same view as the result; a base-revision capture does not replace
-any of them.
+any of them. Before capturing, list those states in order, starting from the
+view before the first step the task names, even a step that only opens a sheet,
+menu, or editor, and before any default value changes. Make that first state a
+changed-revision capture that shows the default the task changes, such as the
+selected option and the values it sets, and deliver it; the base revision is the
+separate, optional "before" of before/after, even when it shows the same action.
+When the claim is that the UI returns to where it began, as with cancel, undo,
+close, or reset, the start and end captures together are the proof. When the
+task names more than one step, or the flow passes through a transient state such
+as a progress message, highlight, toast, or animation, record one clip from that
+first state through the end; stills miss the states between the ones you list.
+Use one viewport and one crop for every state, sized to hold the whole affected
+area in its largest state, including any count or summary elsewhere on the page
+that the claim names; open each cropped file and confirm that every item the
+caption names is fully visible.
 See [Show the interaction from its start](references/motion.md#show-the-interaction-from-its-start).
 
 | Medium | Use |
