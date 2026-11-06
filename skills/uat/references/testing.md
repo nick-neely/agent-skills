@@ -13,18 +13,18 @@ Consider every lens while planning and again as the feature reveals risks. Pick 
 | Lens | Question and possible probes |
 | --- | --- |
 | Input boundaries | What happens at meaningful limits? Empty or whitespace, zero, negative or fractional quantities, length limits, pasted or Unicode text, duplicates (the same item twice in one input, or an item already present), mixed valid and invalid file rows. |
-| Recovery | Can a user correct invalid input and succeed? Look for stale errors, lost valid work, partial changes and duplicate effects after a failure. |
+| Recovery | Can a user correct invalid input and succeed? Look for stale errors, lost valid work, partial changes and duplicate effects after a failure or a double submit. |
 | Changed intent | What happens when the user changes an earlier choice, edits dependent values, cancels or reopens a step? |
-| Re-entry and saved state | Do back, forward, refresh, leaving and returning, and reopening saved work keep or reset the right state? |
+| Re-entry and saved state | Do back, forward, refresh, leaving and returning, reopening saved work, deep links with edited URL parameters, and the same record open in two tabs keep or reset the right state? |
 | Rule interactions | Can individually valid choices conflict across the permissions, selections and business rules available to this identity? |
 | Result integrity | Does the saved result, list, cart or downloaded file match the operation, including counts, contents and unrelated data? |
-| Responsive usability | Can the user understand and complete the flow, including error and expanded states, at relevant screen sizes? |
+| Responsive usability | Can the user understand and complete the flow, including error and expanded states, at relevant screen sizes and with the keyboard alone? |
 
 The report gives each lens a coverage value: **exercised** (the recorded probes ran, not that the category is exhausted), **blocked**, **not reached** or **not applicable**, with scenario links or a reason, and residual risk. A passing happy path covers none of them.
 
 ## Execute
 
-Load command guidance for the installed CLI with `agent-browser skills get core`; its commands are the ones `ab` passes through. Every call goes through `ab` ([owned browser](authentication.md#configure-the-owned-browser)):
+Load command guidance for the selected CLI with `ab skills get core`; if core instructions are unavailable, use `ab --help`. Its commands are the ones `ab` passes through, including when it selects npx. Every call goes through `ab` ([owned browser](authentication.md#configure-the-owned-browser)):
 
 ```bash
 ab open "TARGET_URL"
@@ -38,7 +38,7 @@ Quote URLs and paths for the host shell (PowerShell or POSIX), including query c
 
 Set the desktop viewport right after the first open, before any scenario or recording: `set viewport 1440 900`, or the product's documented desktop size. The default window leaves about 1280x633 for the page, which crops totals, footers and toasts out of screenshots and clips. Record the size in the report.
 
-Start with the highest-risk acceptance scenarios, bounded so exploration time survives, then adapt the order to what you learn. Take a fresh snapshot after each navigation or state change: `snapshot -i` locates controls; full `snapshot`, screenshots and downloaded files verify results. Wait on a visible completion condition with a bounded timeout. Browser connectivity problems are environment issues until shown otherwise.
+Start with the highest-risk acceptance scenarios, bounded so exploration time survives, then adapt the order to what you learn. Take a fresh snapshot after each navigation or state change: `snapshot -i` locates controls; full `snapshot`, screenshots and downloaded files verify results. Wait on a visible completion condition with a bounded timeout. Browser connectivity problems are environment issues until shown otherwise. Dismiss cookie-consent banners and similar overlays that cover the flow, using the least-permissive choice offered (such as "Reject All"); report one only if it blocks the requested flow or has a significant accessibility defect. Whether such a banner appears can depend on the machine's network, so its absence is not a finding.
 
 Follow anomalies: state a small hypothesis and pick the safe next action that tells explanations apart, such as whether an error is stale or the corrected input is still invalid. Keep the initial plan and label each added probe with what prompted it. Re-read current requirements rather than treating an old report as the oracle, and note repeatable high-value probes as future regression candidates.
 
@@ -77,4 +77,4 @@ For each material candidate defect, attempt a safe reproduction when needed ([re
 
 ## Finish
 
-Stop when the done-conditions are met, at an explicit user time limit, or when no remaining scenario can progress. Preserve recorded outcomes, including blocked statuses; mark unattempted scenarios not run only when omitted for time or scope. Undo test changes whose cleanup is permitted and safe, and record any that remain. Stop recording. Persistent leaves its keep-alive session running per [profiles](profiles.md#during-and-after-the-run); fresh closes only this run's session, which discards its storage.
+Stop when the done-conditions are met, at an explicit user time limit, or when no remaining scenario can progress. Preserve recorded outcomes, including blocked statuses; mark unattempted scenarios not run only when omitted for time or scope. Undo test changes whose cleanup is permitted and safe, and record any that remain. Stop recording. Persistent leaves its keep-alive session running per [profiles](profiles.md#during-and-after-the-run); fresh and headless call `ab close` to close only this run's session. Before handing off a headless run, including a failed or aborted run, remove any remaining `run.statePath` and never share `auth-state.json`; follow [headless cleanup](authentication.md#headless-runs).

@@ -5,13 +5,15 @@
 Run once per UAT run, after discovery and before any browser launch:
 
 ```text
-node "<skill-root>/scripts/new-run.mjs" --label "<ticket-or-feature>" --mode fresh|persistent --project "<project>" [--target "<url>"] [--output "<absolute-dir>"]
+node "<skill-root>/scripts/new-run.mjs" --label "<ticket-or-feature>" --mode persistent|fresh|headless --project "<project>" [--target "<url>"] [--output "<absolute-dir>"]
 ```
 
 - Runs live under `~/.uat/runs/<project>/`, outside every repository, so they persist for retests and later planning without touching the tested project.
 - `--project` groups a project's runs: pass the tested repository's folder name (or another stable name for the app), the same on every run. Omitted, runs go to `general`.
 - `--output` is only for an output location the user explicitly asked for.
 - `--target` is required for persistent mode; see [profiles](profiles.md).
+
+In headless mode, `auth-state.json` is temporary private runtime state, never evidence. Before copying or sharing a run, verify this file is absent; finish and interruption cleanup follow [headless runs](authentication.md#headless-runs).
 
 The script creates a new, uniquely named run folder containing `report.md` (run details prefilled), `browser-config.json` and `run.json`, and prints the same JSON. Every later browser call passes this folder to `ab`. Exit code 1 means a decision is needed: relay its `decision` to the operator.
 

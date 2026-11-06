@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, symlinkSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync, symlinkSync, rmSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -11,6 +11,7 @@ import {
 
 const available = (stdout = 'tool 1.2.3\n') => ({ status: 0, stdout, stderr: '' });
 const missing = () => ({ status: null, error: { code: 'ENOENT' } });
+const npxPrefix = ['--offline', '--no-install', '--logs-max=0', '--package=agent-browser', 'agent-browser'];
 
 test('healthy setup needs only agent-browser and reports versions without raw CLI output', () => {
   const calls = [];
@@ -21,6 +22,7 @@ test('healthy setup needs only agent-browser and reports versions without raw CL
   } });
   assert.equal(result.ready, true);
   assert.equal(result.tools.agentBrowser.version, '1.2.3');
+  assert.equal(result.tools.agentBrowser.launcher, 'agent-browser');
   assert.equal(result.runRoot, join(homedir(), '.uat', 'runs'));
   assert.doesNotMatch(JSON.stringify(result), /sensitive|private/);
   assert.deepEqual(calls, [
@@ -39,8 +41,76 @@ test('missing tools identify setup work without attempting auth or browser launc
   assert.equal(result.tools.agentBrowser.state, 'missing');
   assert.equal(result.actions.length, 2);
   assert.deepEqual(calls, [
-    ['agent-browser', '--version'], ['npm', '--version'],
+    ['agent-browser', '--version'], ['npx', ...npxPrefix, '--version'], ['npm', '--version'],
   ]);
+});
+
+test('a cached npx CLI is ready and uses the same offline launcher for core guidance', () => {
+  const calls = [];
+  const result = checkSetup({ env: {}, run(command, args) {
+    calls.push([command, ...args]);
+    return command === 'agent-browser' ? missing() : available('agent-browser 2.3.4\n');
+  } });
+  assert.equal(result.ready, true);
+  assert.deepEqual(result.tools.agentBrowser, { state: 'available', version: '2.3.4', launcher: 'npx' });
+  assert.equal(result.tools.coreInstructions.state, 'available');
+  assert.equal(result.tools.npm.state, 'not-needed');
+  assert.deepEqual(calls, [
+    ['agent-browser', '--version'],
+    ['npx', ...npxPrefix, '--version'],
+    ['npx', ...npxPrefix, 'skills', 'get', 'core'],
+  ]);
+});
+
+test('offline cache misses and refused installations stay missing without installing', () => {
+  for (const failure of [
+    { status: 1, stderr: 'npm error code ENOTCACHED' },
+    { status: 1, stderr: 'npm error code ECANCELED' },
+    { status: 1, stderr: 'npx canceled due to missing packages and no YES option' },
+    { status: 127, stderr: 'sh: line 1: agent-browser: command not found' },
+  ]) {
+    const calls = [];
+    const result = checkSetup({ env: {}, nodeVersion: '24.0.0', run(command, args) {
+      calls.push([command, ...args]);
+      if (command === 'agent-browser') return missing();
+      if (command === 'npx') return failure;
+      return available();
+    } });
+    assert.equal(result.ready, false);
+    assert.equal(result.tools.agentBrowser.state, 'missing');
+    assert.equal(result.tools.coreInstructions.state, 'not-checked');
+    assert.match(result.actions.join(' '), /prime the npx cache/);
+    assert.deepEqual(calls, [
+      ['agent-browser', '--version'], ['npx', ...npxPrefix, '--version'], ['npm', '--version'],
+    ]);
+  }
+});
+
+test('a broken npx launcher is unavailable, not a request to install', () => {
+  for (const failure of [{ status: 1, stderr: 'broken executable' }, { status: null, error: { code: 'EACCES' } }]) {
+    const calls = [];
+    const result = checkSetup({ env: {}, run(command, args) {
+      calls.push([command, ...args]);
+      return command === 'agent-browser' ? missing() : failure;
+    } });
+    assert.equal(result.ready, false);
+    assert.deepEqual(result.tools.agentBrowser, { state: 'unavailable', launcher: 'npx' });
+    assert.equal(result.tools.npm.state, 'not-needed');
+    assert.match(result.actions.join(' '), /Inspect the npx execution failure/);
+    assert.doesNotMatch(result.actions.join(' '), /Install agent-browser/);
+    assert.deepEqual(calls, [['agent-browser', '--version'], ['npx', ...npxPrefix, '--version']]);
+  }
+});
+
+test('an npx CLI without core guidance remains usable', () => {
+  const result = checkSetup({ env: {}, run(command, args) {
+    if (command === 'agent-browser') return missing();
+    return args.at(-1) === '--version' ? available() : { status: 1 };
+  } });
+  assert.equal(result.ready, true);
+  assert.equal(result.tools.agentBrowser.launcher, 'npx');
+  assert.equal(result.tools.coreInstructions.state, 'unavailable');
+  assert.match(result.actions.join(' '), /installed browser help/);
 });
 
 test('timeouts are execution failures rather than missing-tool installation requests', () => {
@@ -88,7 +158,7 @@ test('Windows checks PATH before invoking a missing npm shim or CLI', () => {
   assert.equal(result.tools.agentBrowser.state, 'missing');
   assert.match(result.actions.join(' '), /Install agent-browser/);
   assert.deepEqual(calls, [
-    ['where.exe', 'agent-browser'], ['where.exe', 'npm'],
+    ['where.exe', 'agent-browser'], ['where.exe', 'npx'], ['where.exe', 'npm'],
   ]);
 });
 
@@ -110,6 +180,24 @@ test('Windows invokes fixed probe names through cmd for npm .cmd shims in paths 
   assert.equal(calls[1].options.shell, undefined);
 });
 
+test('Windows invokes only fixed offline npx probes through cmd', () => {
+  for (const suffix of [['--version'], ['skills', 'get', 'core']]) {
+    const calls = [];
+    const result = runCommand('npx', [...npxPrefix, ...suffix], {
+      platform: 'win32',
+      spawn(exe, args, options) {
+        calls.push({ exe, args, options });
+        return available();
+      },
+    });
+    assert.equal(result.status, 0);
+    assert.deepEqual(calls[0].args, ['npx']);
+    assert.deepEqual(calls[1].args, ['/d', '/s', '/c', `"npx ${[...npxPrefix, ...suffix].join(' ')}"`]);
+    assert.equal(calls[1].options.windowsVerbatimArguments, true);
+    assert.equal(calls[1].options.shell, undefined);
+  }
+});
+
 test('macOS and Linux/WSL probes use executable resolution without a shell', () => {
   for (const platform of ['darwin', 'linux']) {
     runCommand('agent-browser', ['--version'], { platform, spawn(exe, args, options) {
@@ -121,10 +209,46 @@ test('macOS and Linux/WSL probes use executable resolution without a shell', () 
   }
 });
 
+test('offline npx probe does not install a current project that declares the CLI', {
+  skip: process.platform === 'win32' ? 'POSIX npm process fixture; Windows uses the same fixed probe' : false,
+}, (t) => {
+  const found = spawnSync('which', ['npx'], { encoding: 'utf8' });
+  if (found.status !== 0) return t.skip('npm/npx is not installed');
+  const root = mkdtempSync(join(tmpdir(), 'uat-npx-no-install-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const bin = join(root, 'bin');
+  mkdirSync(bin);
+  symlinkSync(process.execPath, join(bin, 'node'));
+  symlinkSync(found.stdout.trim(), join(bin, 'npx'));
+  const env = Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.toLowerCase().startsWith('npm_config_')));
+  Object.assign(env, {
+    HOME: root,
+    PATH: `${bin}:/usr/bin:/bin`,
+    npm_config_cache: join(root, 'cache'),
+    npm_config_prefix: join(root, 'prefix'),
+    npm_config_update_notifier: 'false',
+  });
+  for (const name of ['example', 'agent-browser']) {
+    const project = join(root, name);
+    mkdirSync(project);
+    writeFileSync(join(project, 'package.json'), JSON.stringify({ name, version: '1.0.0', bin: { 'agent-browser': './cli.js' } }));
+    writeFileSync(join(project, 'cli.js'), '#!/usr/bin/env node\nprocess.stdout.write("agent-browser 1.2.3\\n");\n', { mode: 0o755 });
+    runCommand('npx', [...npxPrefix, '--version'], {
+      spawn: (exe, args, options) => spawnSync(exe, args, { ...options, cwd: project, env }),
+    });
+    assert.equal(existsSync(join(root, 'cache', '_npx')), false, `${name} was installed into the npx cache`);
+  }
+});
+
 test('unrecognized probes cannot carry page/ticket text into a shell', () => {
-  assert.throws(() => runCommand('agent-browser', ['--version', '&', 'something'], {
-    platform: 'win32', spawn() { assert.fail('must not spawn'); },
-  }), /Unsupported setup probe/);
+  for (const [command, args] of [
+    ['agent-browser', ['--version', '&', 'something']],
+    ['npx', [...npxPrefix, '--version', '&', 'something']],
+  ]) {
+    assert.throws(() => runCommand(command, args, {
+      platform: 'win32', spawn() { assert.fail('must not spawn'); },
+    }), /Unsupported setup probe/);
+  }
 });
 
 test('symlinked skill paths execute the checker rather than silently succeeding', {
@@ -170,7 +294,7 @@ test('importing from stdin is safe and does not accidentally run probes', () => 
 
 test('npm installation of a missing browser requires Node 24+, not an old working toolchain', () => {
   const result = checkSetup({ nodeVersion: '20.19.0', run(command) {
-    return command === 'agent-browser' ? missing() : available();
+    return command === 'npm' ? available() : missing();
   } });
   assert.match(result.actions.join(' '), /Node 24\+/);
   const installed = checkSetup({ nodeVersion: '20.19.0', run: () => available() });

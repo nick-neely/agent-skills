@@ -6,7 +6,7 @@ Read when `check-setup.mjs` reports `ready: false` or a launch reports a missing
 
 Use the shell and OS where the agent actually runs. WSL is the Linux branch with Linux tools and the WSL home; native Windows uses Windows tools and the Windows home. Keep the two toolchains apart: no Windows `node.exe` or `npm.cmd` with Linux paths, no Windows installs as a WSL repair. If the reported platform conflicts with the session, inspect the shell.
 
-The checker probes only agent-browser, its bundled core reference and, when agent-browser is missing, npm. It installs nothing and launches no browser, so rerun it after repairs. If agent-browser exists outside PATH, fix command discovery rather than installing a second copy.
+The checker probes agent-browser and its bundled core reference. If agent-browser is missing from PATH, it also tries an already available CLI with `npx --offline --no-install --logs-max=0 --package=agent-browser`; if neither is found, it checks npm. It downloads and installs nothing and launches no browser, so rerun it after repairs. If agent-browser exists outside PATH, fix command discovery rather than installing a second copy.
 
 ## Node and npm
 
@@ -14,11 +14,13 @@ Node is required: the skill's scripts (`check-setup.mjs`, `new-run.mjs`, `browse
 
 ## agent-browser
 
-Install only if missing, using the team's approved version if one is specified:
+When the CLI is missing, use the team's approved version if one is specified. Prefer a global install when permitted; it is faster and avoids cmd.exe quoting limits on Windows:
 
 ```text
 npm install --global agent-browser
 ```
+
+Alternatively, prime the npm cache with `npx --yes agent-browser --version`. On native Windows, use `npx.cmd` when PowerShell execution policy blocks `npx.ps1`. Rerun the checker; a successful offline probe reports `tools.agentBrowser.launcher: "npx"`. When agent-browser is absent from PATH, `ab` uses `npx --yes agent-browser`, which may fetch the CLI; the checker itself never fetches it.
 
 If the global install fails on permissions, use a user-owned prefix instead of sudo:
 
@@ -29,7 +31,7 @@ A PATH change in one tool call may not reach the next, so pass the needed PATH e
 
 ## Browser by platform
 
-Pick the branch before running any browser installer; the npm package does not imply Chrome for Testing is available on the host.
+Pick the branch before running any browser installer; the npm package does not imply Chrome for Testing is available on the host. The commands below use the global launcher. If the checker selected npx, replace `agent-browser` with `npx --yes agent-browser` (or `npx.cmd --yes agent-browser` on native Windows).
 
 - **Linux/WSL x64:** `agent-browser install`; if browser libraries are missing, `agent-browser install --with-deps`, which may need sudo through the distro package manager (ask only for missing privilege). Keep the Chrome sandbox enabled.
 - **Linux/WSL ARM64:** Chrome for Testing has no Linux ARM64 build, so skip the installer. Install an approved native Chromium package for the distro and add its absolute path to each run's `browser-config.json` as `"executablePath"` before the first launch; verify that browser launches.

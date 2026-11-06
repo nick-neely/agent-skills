@@ -1,6 +1,6 @@
 # UAT report: <feature or ticket>
 
-The agent fills every field; write `unknown` or `n/a` rather than leaving one blank. `new-run.mjs` prefills the fields it knows.
+The agent fills every field; write `unknown` or `n/a` rather than leaving one blank. `new-run.mjs` prefills the fields it knows. Keep these headings and the Run details labels exactly as written so runs can be compared; add sections for request-specific data (such as per-attempt results or a measurement method) where they fit, ahead of Evidence.
 
 ## Summary
 

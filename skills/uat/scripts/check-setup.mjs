@@ -9,6 +9,8 @@ import { fileURLToPath } from 'node:url';
 // enter that shell; no ticket, page, path or other user text is interpolated.
 const allowedProbes = new Set([
   'agent-browser --version', 'agent-browser skills get core',
+  'npx --offline --no-install --logs-max=0 --package=agent-browser agent-browser --version',
+  'npx --offline --no-install --logs-max=0 --package=agent-browser agent-browser skills get core',
   'npm --version',
 ]);
 
@@ -59,27 +61,43 @@ export function findEnvOverrides(env = process.env, platform = process.platform)
   return [...found].sort();
 }
 
-function probe(run, command, args) {
+function probe(run, command, args, { npxCache = false } = {}) {
   const result = run(command, args);
   if (result.error?.code === 'ENOENT') return { state: 'missing' };
+  // npm distinguishes an offline cache miss or refused install from a broken
+  // CLI. Do not expose stderr, which may contain local paths or config.
+  const cacheMiss = /\b(?:ENOTCACHED|ECANCELED)\b|npx canceled due to missing packages/i.test(result.stderr ?? '');
+  const missingCommand = result.status === 127
+    && /agent-browser.*(?:not found|not recognized)/i.test(result.stderr ?? '');
+  if (npxCache && !result.error && !result.signal && result.status !== 0 && (cacheMiss || missingCommand)) {
+    return { state: 'missing' };
+  }
   if (result.error || result.signal || result.status !== 0) return { state: 'unavailable' };
-  const version = args.length === 1 && args[0] === '--version'
+  const version = args.at(-1) === '--version'
     ? result.stdout?.match(/\b\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?\b/)?.[0]
     : undefined;
   return { state: 'available', ...(version ? { version } : {}) };
 }
 
 export function checkSetup({ run = runCommand, nodeVersion = process.versions.node, env = process.env } = {}) {
-  const browser = probe(run, 'agent-browser', ['--version']);
+  let command = 'agent-browser';
+  let prefix = [];
+  let browser = probe(run, command, ['--version']);
+  if (browser.state === 'missing') {
+    command = 'npx';
+    prefix = ['--offline', '--no-install', '--logs-max=0', '--package=agent-browser', 'agent-browser'];
+    browser = probe(run, command, [...prefix, '--version'], { npxCache: true });
+  }
+  if (browser.state !== 'missing') browser = { ...browser, launcher: command };
   const core = browser.state === 'available'
-    ? probe(run, 'agent-browser', ['skills', 'get', 'core'])
+    ? probe(run, command, [...prefix, 'skills', 'get', 'core'])
     : { state: 'not-checked' };
   const npm = browser.state === 'missing'
     ? probe(run, 'npm', ['--version'])
     : { state: 'not-needed' };
   const actions = [];
-  if (browser.state === 'missing') actions.push('Install agent-browser and its browser using references/setup.md.');
-  else if (browser.state !== 'available') actions.push('Inspect the agent-browser execution failure before changing its installation.');
+  if (browser.state === 'missing') actions.push('Install agent-browser or prime the npx cache, then install its browser using references/setup.md.');
+  else if (browser.state !== 'available') actions.push(`Inspect the ${browser.launcher} execution failure before changing its installation.`);
   if (npm.state !== 'available' && browser.state === 'missing') actions.push('Resolve the approved Node/npm toolchain before browser installation.');
   if (browser.state === 'missing' && Number(nodeVersion.split('.')[0]) < 24) actions.push('Current agent-browser npm releases require Node 24+; verify the selected package engines before installation.');
   if (browser.state === 'available' && core.state !== 'available') actions.push('Inspect installed browser help; bundled core instructions are unavailable.');

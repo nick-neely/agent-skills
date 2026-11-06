@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { findEnvOverrides, isEntryPoint } from './check-setup.mjs';
 
-const usage = 'Usage: node new-run.mjs --label <ticket-or-feature> --mode fresh|persistent'
+const usage = 'Usage: node new-run.mjs --label <ticket-or-feature> --mode fresh|persistent|headless'
   + ' [--project <name>] [--output <absolute-dir>]'
   + ' [--target <url>] [--role <suffix>] [--headless]';
 const markerName = '.uat-profile';
@@ -130,9 +130,10 @@ export function parseCli(args) {
     throw new UsageError(error.message);
   }
   if (!values.label) throw new UsageError('--label is required');
-  if (values.mode !== 'fresh' && values.mode !== 'persistent') throw new UsageError('--mode must be fresh or persistent');
+  if (!['fresh', 'persistent', 'headless'].includes(values.mode)) throw new UsageError('--mode must be fresh, persistent or headless');
   if (values.output !== undefined && !isAbsolute(values.output)) throw new UsageError('--output must be an absolute path');
   if (values.mode === 'persistent' && !values.target) throw new UsageError('--mode persistent requires --target <url>');
+  if (values.mode === 'headless' && values.headless) throw new UsageError('--headless does not apply to --mode headless: its sign-in phase is always headed');
   return {
     label: sanitizeLabel(values.label),
     mode: values.mode,
@@ -284,8 +285,12 @@ export function newRun(options, deps) {
   const profile = options.profileKey ? inspectProfile(deps, options.profileKey) : null;
   const selection = selectBase(deps, options);
   const { runId, runDir } = createRunDir(deps, selection, makeRunId);
+  if (options.mode === 'headless' && deps.platform === 'win32' && restrictWindowsAcl(deps, runDir) === 'failed') {
+    throw new Decision('could not restrict the headless run permissions; do not save sign-in state here');
+  }
 
-  // Headed by default: the operator signs in through a visible window.
+  // Headed by default: the operator signs in through a visible window. Headless
+  // mode then tests headless with the state saved after sign-in (browser.mjs).
   const headed = !options.headless;
   let profileResult = null;
   let session = `uat-${runId.slice(-6)}`;
@@ -315,6 +320,14 @@ export function newRun(options, deps) {
   }
   const configPath = join(runDir, 'browser-config.json');
   writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`, { flag: 'wx' });
+  let headlessConfigPath = null;
+  let statePath = null;
+  if (options.mode === 'headless') {
+    headlessConfigPath = join(runDir, 'browser-config.headless.json');
+    statePath = join(runDir, 'auth-state.json');
+    const headlessConfig = { headed: false, autoConnect: false };
+    writeFileSync(headlessConfigPath, `${JSON.stringify(headlessConfig, null, 2)}\n`, { flag: 'wx' });
+  }
 
   const reportPath = join(runDir, 'report.md');
   const fields = {
@@ -324,7 +337,7 @@ export function newRun(options, deps) {
     evidence: evidenceText(selection, runId, runDir),
     browser: profileResult
       ? `${options.mode}, session ${session}, profile ${profileResult.relative} (${profileResult.state})`
-      : `${options.mode}, session ${session}`,
+      : `${options.mode === 'headless' ? 'headless after sign-in' : options.mode}, session ${session}`,
   };
   const template = readFileSync(join(deps.skillDir, 'assets', 'report.md'), 'utf8');
   const report = template.replace(/\{\{(run_id|skill_version|started|evidence|browser)\}\}/g, (_, name) => fields[name]);
@@ -332,6 +345,7 @@ export function newRun(options, deps) {
 
   const result = {
     runId, createdAt: started.toISOString(), skillVersion, runDir, reportPath, configPath,
+    headlessConfigPath, statePath,
     evidenceLocation: selection.evidenceLocation,
     project: selection.project,
     mode: options.mode,
@@ -340,7 +354,7 @@ export function newRun(options, deps) {
     profile: profileResult,
     envOverrides,
   };
-  // Written last: browser.mjs reads the config path and session from here.
+  // Written last: browser.mjs reads the config paths, state path and session from here.
   writeFileSync(join(runDir, 'run.json'), `${JSON.stringify(result, null, 2)}\n`, { flag: 'wx' });
   return result;
 }
