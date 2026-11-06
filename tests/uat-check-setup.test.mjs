@@ -8,10 +8,102 @@ import { fileURLToPath } from 'node:url';
 import {
   checkSetup, envOverridesAction, findEnvOverrides, modeOverrideNames, runCommand,
 } from '../skills/uat/scripts/check-setup.mjs';
+import { main as npxMain, withNpxDirectory } from '../skills/uat/scripts/npx.mjs';
 
 const available = (stdout = 'tool 1.2.3\n') => ({ status: 0, stdout, stderr: '' });
 const missing = () => ({ status: null, error: { code: 'ENOENT' } });
 const npxPrefix = ['--offline', '--no-install', '--logs-max=0', '--package=agent-browser@0.41.1', 'agent-browser'];
+
+test('bootstrap accepts only fixed commands and uses a neutral cwd on each platform', () => {
+  const prefix = ['--yes', '--package=agent-browser@0.41.1', 'agent-browser'];
+  for (const platform of ['darwin', 'linux', 'win32']) {
+    for (const args of [['--version'], ['install'], ['install', '--with-deps']]) {
+      let cwd;
+      const status = npxMain(args, { platform, spawn(exe, argv, options) {
+        cwd = options.cwd;
+        assert.notEqual(cwd, process.cwd());
+        assert.deepEqual(JSON.parse(readFileSync(join(cwd, 'package.json'), 'utf8')), {
+          name: 'uat-browser-runtime', private: true,
+        });
+        assert.equal(options.stdio, 'inherit');
+        assert.equal(options.windowsHide, true);
+        if (platform === 'win32') {
+          assert.equal(exe, 'cmd.exe');
+          assert.deepEqual(argv, ['/d', '/s', '/c', `"npx ${[...prefix, ...args].join(' ')}"`]);
+          assert.equal(options.windowsVerbatimArguments, true);
+        } else {
+          assert.equal(exe, 'npx');
+          assert.deepEqual(argv, [...prefix, ...args]);
+          assert.equal(options.windowsVerbatimArguments, undefined);
+        }
+        return { status: 0 };
+      } });
+      assert.equal(status, 0);
+      assert.equal(existsSync(cwd), false);
+    }
+  }
+});
+
+test('bootstrap rejects unsupported arguments and help performs no spawn', () => {
+  const output = [];
+  const options = { spawn() { assert.fail('unexpected spawn'); },
+    stdout: (text) => output.push(text), stderr: (text) => output.push(text) };
+  assert.equal(npxMain(['--help'], options), 0);
+  for (const args of [[], ['--yes'], ['--version;touch marker'], ['install --with-deps'],
+    ['install', '--with-deps', '&&', 'echo'], ['install', '--with-deps;echo'], ['install', '--help']]) {
+    assert.equal(npxMain(args, options), 2, JSON.stringify(args));
+  }
+  assert.ok(output.every((line) => line.includes('Usage:')));
+});
+
+test('bootstrap propagates command failures and removes its neutral directory', () => {
+  let cwd;
+  let message = '';
+  const status = npxMain(['--version'], { platform: 'linux', stderr: (text) => { message += text; },
+    spawn(exe, args, options) { cwd = options.cwd; throw new Error('spawn failed'); } });
+  assert.equal(status, 1);
+  assert.match(message, /spawn failed/);
+  assert.equal(existsSync(cwd), false);
+  assert.equal(npxMain(['install'], { spawn: () => ({ status: 7 }) }), 7);
+});
+
+test('bootstrap entry point handles help and invalid arguments without a toolchain', () => {
+  const script = fileURLToPath(new URL('../skills/uat/scripts/npx.mjs', import.meta.url));
+  const env = { ...process.env, PATH: '' };
+  const help = spawnSync(process.execPath, [script, '--help'], { env, encoding: 'utf8', timeout: 5000 });
+  assert.equal(help.status, 0, help.stderr);
+  assert.match(help.stdout, /Usage:/);
+  const invalid = spawnSync(process.execPath, [script, '--version;unexpected'], { env, encoding: 'utf8', timeout: 5000 });
+  assert.equal(invalid.status, 2, invalid.stderr);
+  assert.match(invalid.stderr, /Usage:/);
+});
+
+test('only an empty Windows daemon working directory may outlive a call', () => {
+  for (const platform of ['win32', 'linux']) {
+    for (const filesRemain of [false, true]) {
+      for (const code of ['EPERM', 'EBUSY', 'EACCES']) {
+        let cwd;
+        try {
+          const invoke = () => withNpxDirectory((dir) => { cwd = dir; return 42; }, {
+            platform,
+            remove(dir) {
+              if (!filesRemain) rmSync(join(dir, 'package.json'));
+              throw Object.assign(new Error('locked directory'), { code });
+            },
+          });
+          if (platform === 'win32' && !filesRemain && ['EPERM', 'EBUSY'].includes(code)) {
+            assert.equal(invoke(), 42);
+            assert.equal(existsSync(join(cwd, 'package.json')), false);
+          } else {
+            assert.throws(invoke, { code });
+          }
+        } finally {
+          if (cwd) rmSync(cwd, { recursive: true, force: true });
+        }
+      }
+    }
+  }
+});
 
 test('healthy setup needs only agent-browser and reports versions without raw CLI output', () => {
   const calls = [];
