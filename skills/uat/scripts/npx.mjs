@@ -15,6 +15,9 @@ export function withNpxDirectory(run, { platform = process.platform, remove = rm
     writeFileSync(join(cwd, 'package.json'), '{"name":"uat-browser-runtime","private":true}\n', { flag: 'wx', mode: 0o600 });
     return run(cwd);
   } finally {
+    // Windows can reject removing a locked cwd before recursive rm visits its
+    // children. Scrub them explicitly before attempting the directory itself.
+    for (const name of readdirSync(cwd)) remove(join(cwd, name), { recursive: true, force: true });
     try {
       remove(cwd, { recursive: true, force: true });
     } catch (error) {

@@ -87,7 +87,10 @@ test('only an empty Windows daemon working directory may outlive a call', () => 
           const invoke = () => withNpxDirectory((dir) => { cwd = dir; return 42; }, {
             platform,
             remove(dir) {
-              if (!filesRemain) rmSync(join(dir, 'package.json'));
+              if (dir !== cwd && !filesRemain) {
+                rmSync(dir, { recursive: true, force: true });
+                return;
+              }
               throw Object.assign(new Error('locked directory'), { code });
             },
           });
