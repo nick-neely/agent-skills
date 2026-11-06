@@ -28,7 +28,10 @@ When the claim is that the UI returns to where it began, as with cancel, undo,
 close, or reset, the start and end captures together are the proof. When the
 task names more than one step, or the flow passes through a transient state such
 as a progress message, highlight, toast, or animation, record one clip from that
-first state through the end; stills miss the states between the ones you list.
+first state through the settled state after any transient clears, and deliver
+it even when the states look few or a still seems to show them; stills miss the
+states between the ones you list. Embed any stills in that same order, starting
+state first, and do not let stills replace the clip.
 Use one viewport and one crop for every state, sized to hold the whole affected
 area in its largest state, including any count or summary elsewhere on the page
 that the claim names; open each cropped file and confirm that every item the
