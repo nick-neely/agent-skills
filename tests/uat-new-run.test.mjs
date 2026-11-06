@@ -174,6 +174,44 @@ test('report is prefilled from the template and fresh config is headed', (t) => 
   assert.deepEqual(JSON.parse(readFileSync(json.configPath, 'utf8')), { headed: true, autoConnect: false });
   assert.equal(json.session, `uat-${json.runId.slice(-6)}`);
   assert.equal(run(fresh('--headless')).json.headed, false);
+  assert.equal(json.headlessConfigPath, null);
+  assert.equal(json.statePath, null);
+});
+
+test('headless mode signs in headed and writes a headless test config and state path', (t) => {
+  const { run } = setup(t);
+  const { code, json } = run(['--label', 'PRT-1', '--mode', 'headless', '--target', 'https://localhost:4200']);
+  assert.equal(code, 0, JSON.stringify(json));
+  assert.equal(json.mode, 'headless');
+  assert.equal(json.headed, true);
+  assert.equal(json.profile, null);
+  assert.equal(json.session, `uat-${json.runId.slice(-6)}`);
+  assert.deepEqual(JSON.parse(readFileSync(json.configPath, 'utf8')), { headed: true, autoConnect: false });
+  assert.equal(json.headlessConfigPath, join(json.runDir, 'browser-config.headless.json'));
+  assert.deepEqual(JSON.parse(readFileSync(json.headlessConfigPath, 'utf8')), { headed: false, autoConnect: false });
+  assert.equal(json.statePath, join(json.runDir, 'auth-state.json'));
+  assert.equal(existsSync(json.statePath), false);
+  assert.ok(readFileSync(json.reportPath, 'utf8').includes(`- Browser: headless after sign-in, session ${json.session}; desktop viewport:`));
+  assert.deepEqual(JSON.parse(readFileSync(join(json.runDir, 'run.json'), 'utf8')), json);
+  assert.equal(run(['--label', 'x', '--mode', 'headless']).code, 0);
+  assert.equal(existsSync(join(dirname(json.runDir), '..', '..', 'profiles')), false);
+});
+
+test('Windows headless runs secure their folder before auth state can be saved', (t) => {
+  const { run } = setup(t);
+  const calls = [];
+  const options = { platform: 'win32', env: { USERNAME: 'Test User' },
+    icacls: (args) => { calls.push(args); return { status: 0 }; } };
+  const created = run(['--label', 'private state', '--mode', 'headless'], options);
+  assert.equal(created.code, 0, JSON.stringify(created.json));
+  assert.deepEqual(calls, [[created.json.runDir, '/inheritance:r', '/grant:r', 'Test User:(OI)(CI)F']]);
+  assert.equal(existsSync(created.json.statePath), false);
+  let deniedPath;
+  const denied = run(['--label', 'denied state', '--mode', 'headless'], { ...options,
+    icacls: (args) => { deniedPath = args[0]; return { status: 5 }; } });
+  assert.equal(denied.code, 1);
+  assert.match(denied.json.decision, /headless run permissions/);
+  assert.deepEqual(readdirSync(deniedPath), []);
 });
 
 test('persistent mode creates a private marked profile and runs headed', (t) => {
@@ -267,7 +305,7 @@ test('run.json records the printed result with creation time and skill version',
   const { json } = run(fresh());
   assert.deepEqual(Object.keys(json), [
     'runId', 'createdAt', 'skillVersion', 'runDir', 'reportPath', 'configPath',
-    'evidenceLocation', 'project', 'mode', 'session', 'headed', 'profile', 'envOverrides',
+    'headlessConfigPath', 'statePath', 'evidenceLocation', 'project', 'mode', 'session', 'headed', 'profile', 'envOverrides',
   ]);
   assert.equal(json.createdAt, new Date(2026, 10, 3, 14, 30, 0).toISOString());
   assert.equal(json.skillVersion, skillHash(skillDir).slice(0, 12));
@@ -382,6 +420,7 @@ test('usage errors exit 2 without creating anything', (t) => {
     ['--label', 'x', '--mode', 'persistent'],
     fresh('--output', 'relative/dir'), fresh('--unknown'), fresh('positional'),
     fresh('--repo', '.'), fresh('--no-ignore-edit'), fresh('--project'),
+    ['--label', 'x', '--mode', 'headless', '--headless'],
   ]) {
     const { code, json } = run(args);
     assert.equal(code, 2, JSON.stringify(args));

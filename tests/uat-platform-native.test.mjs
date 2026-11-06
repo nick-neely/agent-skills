@@ -124,11 +124,7 @@ test('Windows CLI entry points execute through a junction containing spaces', { 
   assert.ok(existsSync(JSON.parse(run.stdout).reportPath));
 });
 
-test('real Windows icacls produces a protected profile ACL for the current SID', { skip: windowsOnly }, (t) => {
-  const { run } = fixture(t);
-  const result = run(['--label', 'permissions', '--mode', 'persistent', '--target', 'http://localhost:45123']);
-  assert.equal(result.code, 0, JSON.stringify(result.json));
-  assert.equal(result.json.profile.acl, 'applied');
+function assertPrivateWindowsAcl(path) {
   const command = `
     $ErrorActionPreference = 'Stop'
     $a = Get-Acl -LiteralPath $env:UAT_ACL_TEST_PATH
@@ -140,7 +136,7 @@ test('real Windows icacls produces a protected profile ACL for the current SID',
     }) } | ConvertTo-Json -Depth 5 -Compress
   `;
   const acl = spawnSync('pwsh.exe', ['-NoProfile', '-NonInteractive', '-Command', command], {
-    encoding: 'utf8', env: { ...process.env, UAT_ACL_TEST_PATH: result.json.profile.path }, timeout: 15000,
+    encoding: 'utf8', env: { ...process.env, UAT_ACL_TEST_PATH: path }, timeout: 15000,
   });
   assert.equal(acl.status, 0, acl.stderr);
   const actual = JSON.parse(acl.stdout);
@@ -153,6 +149,22 @@ test('real Windows icacls produces a protected profile ACL for the current SID',
   assert.ok(allowed.every((rule) => privateSids.has(rule.sid) && !rule.inherited), acl.stdout);
   assert.ok(allowed.some((rule) => rule.sid === actual.current && rule.rights.includes('FullControl')
     && rule.inheritance.includes('ObjectInherit') && rule.inheritance.includes('ContainerInherit')), acl.stdout);
+}
+
+test('real Windows icacls produces a protected profile ACL for the current SID', { skip: windowsOnly }, (t) => {
+  const { run } = fixture(t);
+  const result = run(['--label', 'permissions', '--mode', 'persistent', '--target', 'http://localhost:45123']);
+  assert.equal(result.code, 0, JSON.stringify(result.json));
+  assert.equal(result.json.profile.acl, 'applied');
+  assertPrivateWindowsAcl(result.json.profile.path);
+});
+
+test('real Windows headless run ACL protects auth state even under a custom output folder', { skip: windowsOnly }, (t) => {
+  const { root, run } = fixture(t);
+  const result = run(['--label', 'headless permissions', '--mode', 'headless', '--output', join(root, 'custom output')]);
+  assert.equal(result.code, 0, JSON.stringify(result.json));
+  assertPrivateWindowsAcl(result.json.runDir);
+  assert.equal(existsSync(result.json.statePath), false);
 });
 
 test('a real Windows ACL failure cannot create a trusted reusable profile', { skip: windowsOnly }, (t) => {

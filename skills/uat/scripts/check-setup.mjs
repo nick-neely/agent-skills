@@ -4,11 +4,14 @@ import { realpathSync } from 'node:fs';
 import { homedir, release } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { npxPackage, withNpxDirectory } from './npx.mjs';
 
 // Windows npm .cmd shims require cmd.exe. Only these fixed probe commands may
 // enter that shell; no ticket, page, path or other user text is interpolated.
 const allowedProbes = new Set([
   'agent-browser --version', 'agent-browser skills get core',
+  `npx --offline --no-install --logs-max=0 --package=${npxPackage} agent-browser --version`,
+  `npx --offline --no-install --logs-max=0 --package=${npxPackage} agent-browser skills get core`,
   'npm --version',
 ]);
 
@@ -21,18 +24,26 @@ export function runCommand(command, args, { platform = process.platform, spawn =
     maxBuffer: 256 * 1024,
     windowsHide: true,
   };
-  if (platform !== 'win32') return spawn(command, args, options);
+  const run = (probeOptions) => {
+    if (platform !== 'win32') return spawn(command, args, probeOptions);
 
-  // cmd.exe reports missing programs as an exit code, not ENOENT. Check PATH
-  // first so absent .exe/.cmd programs are distinguishable from broken ones.
-  const found = spawn('where.exe', [command], options);
-  if (found.error || found.signal) return { ...found, error: { code: 'ESETUPHELPER' } };
-  if (found.status === 1) return { status: null, error: { code: 'ENOENT' } };
-  if (found.status !== 0) return found;
-  const result = spawn('cmd.exe', ['/d', '/s', '/c', `"${probeCommand}"`], {
-    ...options, windowsVerbatimArguments: true,
-  });
-  return result.error ? { ...result, error: { code: 'ESETUPHELPER' } } : result;
+    // cmd.exe reports missing programs as an exit code, not ENOENT. Check PATH
+    // first so absent .exe/.cmd programs are distinguishable from broken ones.
+    const found = spawn('where.exe', [command], probeOptions);
+    if (found.error || found.signal) return { ...found, error: { code: 'ESETUPHELPER' } };
+    if (found.status === 1) return { status: null, error: { code: 'ENOENT' } };
+    if (found.status !== 0) return found;
+    const result = spawn('cmd.exe', ['/d', '/s', '/c', `"${probeCommand}"`], {
+      ...probeOptions, windowsVerbatimArguments: true,
+    });
+    return result.error ? { ...result, error: { code: 'ESETUPHELPER' } } : result;
+  };
+  if (command !== 'npx') return run(options);
+  try {
+    return withNpxDirectory((cwd) => run({ ...options, cwd }));
+  } catch {
+    return { status: null, error: { code: 'ESETUPHELPER' } };
+  }
 }
 
 // Inherited variables that change which browser, profile, state or config a
@@ -59,27 +70,43 @@ export function findEnvOverrides(env = process.env, platform = process.platform)
   return [...found].sort();
 }
 
-function probe(run, command, args) {
+function probe(run, command, args, { npxCache = false } = {}) {
   const result = run(command, args);
   if (result.error?.code === 'ENOENT') return { state: 'missing' };
+  // npm distinguishes an offline cache miss or refused install from a broken
+  // CLI. Do not expose stderr, which may contain local paths or config.
+  const cacheMiss = /\b(?:ENOTCACHED|ECANCELED)\b|npx canceled due to missing packages/i.test(result.stderr ?? '');
+  const missingCommand = result.status === 127
+    && /agent-browser.*(?:not found|not recognized)/i.test(result.stderr ?? '');
+  if (npxCache && !result.error && !result.signal && result.status !== 0 && (cacheMiss || missingCommand)) {
+    return { state: 'missing' };
+  }
   if (result.error || result.signal || result.status !== 0) return { state: 'unavailable' };
-  const version = args.length === 1 && args[0] === '--version'
+  const version = args.at(-1) === '--version'
     ? result.stdout?.match(/\b\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?\b/)?.[0]
     : undefined;
   return { state: 'available', ...(version ? { version } : {}) };
 }
 
 export function checkSetup({ run = runCommand, nodeVersion = process.versions.node, env = process.env } = {}) {
-  const browser = probe(run, 'agent-browser', ['--version']);
+  let command = 'agent-browser';
+  let prefix = [];
+  let browser = probe(run, command, ['--version']);
+  if (browser.state === 'missing') {
+    command = 'npx';
+    prefix = ['--offline', '--no-install', '--logs-max=0', `--package=${npxPackage}`, 'agent-browser'];
+    browser = probe(run, command, [...prefix, '--version'], { npxCache: true });
+  }
+  if (browser.state !== 'missing') browser = { ...browser, launcher: command };
   const core = browser.state === 'available'
-    ? probe(run, 'agent-browser', ['skills', 'get', 'core'])
+    ? probe(run, command, [...prefix, 'skills', 'get', 'core'])
     : { state: 'not-checked' };
   const npm = browser.state === 'missing'
     ? probe(run, 'npm', ['--version'])
     : { state: 'not-needed' };
   const actions = [];
-  if (browser.state === 'missing') actions.push('Install agent-browser and its browser using references/setup.md.');
-  else if (browser.state !== 'available') actions.push('Inspect the agent-browser execution failure before changing its installation.');
+  if (browser.state === 'missing') actions.push('Install agent-browser or prime the npx cache, then install its browser using references/setup.md.');
+  else if (browser.state !== 'available') actions.push(`Inspect the ${browser.launcher} execution failure before changing its installation.`);
   if (npm.state !== 'available' && browser.state === 'missing') actions.push('Resolve the approved Node/npm toolchain before browser installation.');
   if (browser.state === 'missing' && Number(nodeVersion.split('.')[0]) < 24) actions.push('Current agent-browser npm releases require Node 24+; verify the selected package engines before installation.');
   if (browser.state === 'available' && core.state !== 'available') actions.push('Inspect installed browser help; bundled core instructions are unavailable.');
