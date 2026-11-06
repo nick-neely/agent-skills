@@ -60,6 +60,28 @@ exit $LASTEXITCODE
 export const activeMarker = '.headless-active';
 const launchCommands = ['open', 'goto', 'navigate'];
 
+// Global options that consume a value in agent-browser 0.41.1. Locate the
+// command without mistaking an option value (for example input-mode human)
+// for it. Browser-selection options are rejected before this scan.
+const valueFlags = new Set([
+  '--restore-save', '--restore-check-url', '--restore-check-text', '--restore-check-fn',
+  '--headers', '--executable-path', '--cdp-headers', '--proxy', '--proxy-bypass',
+  '--user-agent', '--device', '--color-scheme', '--download-path', '--max-output',
+  '--allowed-domains', '--action-policy', '--confirm-actions', '--engine',
+  '--input-mode', '--screenshot-dir', '--screenshot-quality', '--screenshot-format',
+  '--ca-cert', '--model',
+]);
+
+function commandArgs(args) {
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === '--') return args.slice(index + 1);
+    if (!arg.startsWith('-')) return args.slice(index);
+    if (!arg.includes('=') && (valueFlags.has(arg) || ['true', 'false'].includes(args[index + 1]))) index += 1;
+  }
+  return [];
+}
+
 class UsageError extends Error {}
 
 export function defaultDeps() {
@@ -104,8 +126,7 @@ export function browserPhase(run, runDir, args, exists) {
   if (typeof run.statePath !== 'string' || typeof run.headlessConfigPath !== 'string') {
     return { configPath: run.configPath, stateArgs: [], pending: false, loads: false, saves: false };
   }
-  const at = args.findIndex((arg) => !arg.startsWith('-'));
-  const [name, sub, path] = at < 0 ? [] : args.slice(at);
+  const [name, sub, path] = commandArgs(args);
   const saves = name === 'state' && sub === 'save' && typeof path === 'string'
     && resolve(path) === resolve(run.statePath);
   const pending = !saves && exists(run.statePath);

@@ -246,6 +246,43 @@ test('headless runs sign in with the sign-in config, then load the state once an
   assert.deepEqual(calls[4].argv, [...prefix(headlessConfigPath), '--json', 'goto', url]);
 });
 
+test('headless handoff locates navigation after value-taking and boolean global options', (t) => {
+  for (const args of [
+    ['--input-mode', 'human', 'open', url],
+    ['--json', 'false', '--input-mode', 'smooth', '--max-output', '100', 'goto', url],
+  ]) {
+    const { headlessConfigPath, saveState, statePath, marker, calls, run } = headlessFixture(t);
+    saveState();
+    assert.equal(run(args).code, 0);
+    assert.deepEqual(calls[0].argv, ['--config', headlessConfigPath, '--session', 'uat-abc123', '--state', statePath, ...args]);
+    assert.equal(existsSync(statePath), false);
+    assert.ok(existsSync(marker));
+  }
+});
+
+test('a global option value named open does not consume pending auth state', (t) => {
+  const { configPath, saveState, statePath, marker, calls, run } = headlessFixture(t);
+  saveState();
+  assert.equal(run(['--user-agent', 'open', 'snapshot']).code, 0);
+  assert.equal(calls[0].argv[1], configPath);
+  assert.equal(calls[0].argv.includes('--state'), false);
+  assert.ok(existsSync(statePath));
+  assert.equal(existsSync(marker), false);
+});
+
+test('state save after a value-taking global option still restricts the saved file', (t) => {
+  const { configPath, statePath, calls, run } = headlessFixture(t);
+  const result = run(['--input-mode', 'human', 'state', 'save', statePath], { spawn(command, argv) {
+    calls.push({ command, argv });
+    writeFileSync(statePath, '{}', { mode: 0o644 });
+    return { status: 0 };
+  } });
+  assert.equal(result.code, 0);
+  assert.equal(calls[0].argv[1], configPath);
+  assert.equal(calls[0].argv.includes('--state'), false);
+  if (checkModes) assert.equal(fileMode(statePath), 0o600);
+});
+
 test('headless navigation retains canonical executable, proxy, CA and policy settings', (t) => {
   const { configPath, headlessConfigPath, saveState, statePath, calls, run } = headlessFixture(t);
   const config = { headed: true, autoConnect: false, executablePath: '/approved/chromium',
