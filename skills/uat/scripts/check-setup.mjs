@@ -4,13 +4,14 @@ import { realpathSync } from 'node:fs';
 import { homedir, release } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { npxPackage, withNpxDirectory } from './npx.mjs';
 
 // Windows npm .cmd shims require cmd.exe. Only these fixed probe commands may
 // enter that shell; no ticket, page, path or other user text is interpolated.
 const allowedProbes = new Set([
   'agent-browser --version', 'agent-browser skills get core',
-  'npx --offline --no-install --logs-max=0 --package=agent-browser agent-browser --version',
-  'npx --offline --no-install --logs-max=0 --package=agent-browser agent-browser skills get core',
+  `npx --offline --no-install --logs-max=0 --package=${npxPackage} agent-browser --version`,
+  `npx --offline --no-install --logs-max=0 --package=${npxPackage} agent-browser skills get core`,
   'npm --version',
 ]);
 
@@ -23,18 +24,26 @@ export function runCommand(command, args, { platform = process.platform, spawn =
     maxBuffer: 256 * 1024,
     windowsHide: true,
   };
-  if (platform !== 'win32') return spawn(command, args, options);
+  const run = (probeOptions) => {
+    if (platform !== 'win32') return spawn(command, args, probeOptions);
 
-  // cmd.exe reports missing programs as an exit code, not ENOENT. Check PATH
-  // first so absent .exe/.cmd programs are distinguishable from broken ones.
-  const found = spawn('where.exe', [command], options);
-  if (found.error || found.signal) return { ...found, error: { code: 'ESETUPHELPER' } };
-  if (found.status === 1) return { status: null, error: { code: 'ENOENT' } };
-  if (found.status !== 0) return found;
-  const result = spawn('cmd.exe', ['/d', '/s', '/c', `"${probeCommand}"`], {
-    ...options, windowsVerbatimArguments: true,
-  });
-  return result.error ? { ...result, error: { code: 'ESETUPHELPER' } } : result;
+    // cmd.exe reports missing programs as an exit code, not ENOENT. Check PATH
+    // first so absent .exe/.cmd programs are distinguishable from broken ones.
+    const found = spawn('where.exe', [command], probeOptions);
+    if (found.error || found.signal) return { ...found, error: { code: 'ESETUPHELPER' } };
+    if (found.status === 1) return { status: null, error: { code: 'ENOENT' } };
+    if (found.status !== 0) return found;
+    const result = spawn('cmd.exe', ['/d', '/s', '/c', `"${probeCommand}"`], {
+      ...probeOptions, windowsVerbatimArguments: true,
+    });
+    return result.error ? { ...result, error: { code: 'ESETUPHELPER' } } : result;
+  };
+  if (command !== 'npx') return run(options);
+  try {
+    return withNpxDirectory((cwd) => run({ ...options, cwd }));
+  } catch {
+    return { status: null, error: { code: 'ESETUPHELPER' } };
+  }
 }
 
 // Inherited variables that change which browser, profile, state or config a
@@ -85,7 +94,7 @@ export function checkSetup({ run = runCommand, nodeVersion = process.versions.no
   let browser = probe(run, command, ['--version']);
   if (browser.state === 'missing') {
     command = 'npx';
-    prefix = ['--offline', '--no-install', '--logs-max=0', '--package=agent-browser', 'agent-browser'];
+    prefix = ['--offline', '--no-install', '--logs-max=0', `--package=${npxPackage}`, 'agent-browser'];
     browser = probe(run, command, [...prefix, '--version'], { npxCache: true });
   }
   if (browser.state !== 'missing') browser = { ...browser, launcher: command };

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, writeFileSync, symlinkSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync, symlinkSync, rmSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -11,7 +11,7 @@ import {
 
 const available = (stdout = 'tool 1.2.3\n') => ({ status: 0, stdout, stderr: '' });
 const missing = () => ({ status: null, error: { code: 'ENOENT' } });
-const npxPrefix = ['--offline', '--no-install', '--logs-max=0', '--package=agent-browser', 'agent-browser'];
+const npxPrefix = ['--offline', '--no-install', '--logs-max=0', '--package=agent-browser@0.41.1', 'agent-browser'];
 
 test('healthy setup needs only agent-browser and reports versions without raw CLI output', () => {
   const calls = [];
@@ -195,6 +195,31 @@ test('Windows invokes only fixed offline npx probes through cmd', () => {
     assert.deepEqual(calls[1].args, ['/d', '/s', '/c', `"npx ${[...npxPrefix, ...suffix].join(' ')}"`]);
     assert.equal(calls[1].options.windowsVerbatimArguments, true);
     assert.equal(calls[1].options.shell, undefined);
+    assert.ok(calls[0].options.cwd);
+    assert.equal(calls[1].options.cwd, calls[0].options.cwd);
+    assert.notEqual(calls[0].options.cwd, process.cwd());
+    assert.equal(existsSync(calls[0].options.cwd), false);
+  }
+});
+
+test('POSIX npx probes run in a private neutral package and remove it afterwards', () => {
+  for (const suffix of [['--version'], ['skills', 'get', 'core']]) {
+    let cwd;
+    const result = runCommand('npx', [...npxPrefix, ...suffix], {
+      platform: 'linux',
+      spawn(exe, args, options) {
+        cwd = options.cwd;
+        assert.notEqual(cwd, process.cwd());
+        assert.deepEqual(JSON.parse(readFileSync(join(cwd, 'package.json'), 'utf8')), {
+          name: 'uat-browser-runtime', private: true,
+        });
+        assert.equal(exe, 'npx');
+        assert.deepEqual(args, [...npxPrefix, ...suffix]);
+        return available();
+      },
+    });
+    assert.equal(result.status, 0);
+    assert.equal(existsSync(cwd), false);
   }
 });
 
@@ -204,12 +229,13 @@ test('macOS and Linux/WSL probes use executable resolution without a shell', () 
       assert.equal(exe, 'agent-browser');
       assert.deepEqual(args, ['--version']);
       assert.equal(options.shell, undefined);
+      assert.equal(options.cwd, undefined);
       return available();
     } });
   }
 });
 
-test('offline npx probe does not install a current project that declares the CLI', {
+test('offline npx probes neither execute a project bin nor install its package', {
   skip: process.platform === 'win32' ? 'POSIX npm process fixture; Windows uses the same fixed probe' : false,
 }, (t) => {
   const found = spawnSync('which', ['npx'], { encoding: 'utf8' });
@@ -220,23 +246,38 @@ test('offline npx probe does not install a current project that declares the CLI
   mkdirSync(bin);
   symlinkSync(process.execPath, join(bin, 'node'));
   symlinkSync(found.stdout.trim(), join(bin, 'npx'));
+  const marker = join(root, 'local-bin-ran');
   const env = Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.toLowerCase().startsWith('npm_config_')));
   Object.assign(env, {
     HOME: root,
     PATH: `${bin}:/usr/bin:/bin`,
+    UAT_PROBE_MARKER: marker,
     npm_config_cache: join(root, 'cache'),
     npm_config_prefix: join(root, 'prefix'),
     npm_config_update_notifier: 'false',
   });
+  const malicious = '#!/usr/bin/env node\nrequire("node:fs").writeFileSync(process.env.UAT_PROBE_MARKER, "ran");\nconsole.log("agent-browser 0.41.1");\n';
   for (const name of ['example', 'agent-browser']) {
     const project = join(root, name);
-    mkdirSync(project);
-    writeFileSync(join(project, 'package.json'), JSON.stringify({ name, version: '1.0.0', bin: { 'agent-browser': './cli.js' } }));
-    writeFileSync(join(project, 'cli.js'), '#!/usr/bin/env node\nprocess.stdout.write("agent-browser 1.2.3\\n");\n', { mode: 0o755 });
-    runCommand('npx', [...npxPrefix, '--version'], {
-      spawn: (exe, args, options) => spawnSync(exe, args, { ...options, cwd: project, env }),
-    });
-    assert.equal(existsSync(join(root, 'cache', '_npx')), false, `${name} was installed into the npx cache`);
+    const localPackage = join(project, 'node_modules', 'agent-browser');
+    const localBin = join(project, 'node_modules', '.bin');
+    mkdirSync(localPackage, { recursive: true });
+    mkdirSync(localBin);
+    writeFileSync(join(project, 'package.json'), JSON.stringify({ name, version: '0.41.1', bin: { 'agent-browser': './cli.cjs' } }));
+    writeFileSync(join(project, 'cli.cjs'), malicious, { mode: 0o755 });
+    writeFileSync(join(localPackage, 'package.json'), JSON.stringify({ name: 'agent-browser', version: '0.41.1', bin: { 'agent-browser': './cli.cjs' } }));
+    writeFileSync(join(localPackage, 'cli.cjs'), malicious, { mode: 0o755 });
+    symlinkSync('../agent-browser/cli.cjs', join(localBin, 'agent-browser'));
+    for (const suffix of [['--version'], ['skills', 'get', 'core']]) {
+      const result = runCommand('npx', [...npxPrefix, ...suffix], {
+        // Simulate calling from the project unless runCommand supplies a safe cwd.
+        spawn: (exe, args, options) => spawnSync(exe, args, { ...options, cwd: options.cwd ?? project, env }),
+      });
+      assert.equal(result.status, 1, result.stderr);
+      assert.match(result.stderr, /ENOTCACHED|ECANCELED|npx canceled due to missing packages/i);
+      assert.equal(existsSync(marker), false, `${name} executed its local bin`);
+      assert.equal(existsSync(join(root, 'cache', '_npx')), false, `${name} was installed into the npx cache`);
+    }
   }
 });
 

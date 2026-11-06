@@ -11,6 +11,7 @@ import {
   activeMarker, childEnv, main, refusedFlag, reservedFlags, windowsScript,
 } from '../skills/uat/scripts/browser.mjs';
 import { modeOverrideNames } from '../skills/uat/scripts/check-setup.mjs';
+import { npxPackage } from '../skills/uat/scripts/npx.mjs';
 
 const script = fileURLToPath(new URL('../skills/uat/scripts/browser.mjs', import.meta.url));
 const posixOnly = process.platform === 'win32' ? 'POSIX stub executable' : false;
@@ -189,12 +190,35 @@ test('POSIX falls back to npx with the same argv and environment when agent-brow
   assert.equal(result.code, 4);
   assert.equal(result.stderr, '');
   assert.deepEqual(calls.map((call) => call.command), ['agent-browser', 'npx']);
-  assert.deepEqual(calls[1].argv, ['--yes', 'agent-browser', '--config', configPath, '--session', 'uat-localhost-4200', 'open', url]);
-  assert.deepEqual(calls[1].options, calls[0].options);
+  assert.deepEqual(calls[1].argv, ['--yes', `--package=${npxPackage}`, 'agent-browser', '--config', configPath, '--session', 'uat-localhost-4200', 'open', url]);
+  assert.deepEqual({ ...calls[1].options, cwd: undefined }, { ...calls[0].options, cwd: undefined });
+  assert.notEqual(calls[1].options.cwd, process.cwd());
+  assert.equal(existsSync(calls[1].options.cwd), false, 'temporary npm context is removed');
   assert.deepEqual(calls[1].options.env, { HOME: '/home/u' });
   const failed = run(['snapshot'], { spawn: (command) => (command === 'npx' ? { error: { code: 'EACCES', message: 'denied' } } : { error: { code: 'ENOENT' } }) });
   assert.equal(failed.code, 1);
   assert.match(failed.stderr, /could not run npx: denied/);
+});
+
+test('npx fallbacks run in an isolated package directory and remove it on success or error', (t) => {
+  const { run } = fixture(t);
+  for (const platform of ['linux', 'win32']) {
+    for (const status of [0, 1]) {
+      let cwd;
+      const result = run(['snapshot'], { platform, env: {}, spawn(command, argv, options) {
+        if (command === 'agent-browser') return { error: { code: 'ENOENT' } };
+        cwd = options.cwd;
+        assert.notEqual(cwd, process.cwd());
+        assert.deepEqual(JSON.parse(readFileSync(join(cwd, 'package.json'), 'utf8')),
+          { name: 'uat-browser-runtime', private: true });
+        if (platform === 'linux') assert.ok(argv.includes(`--package=${npxPackage}`));
+        else assert.ok(argv.at(-1).includes(`--package=${npxPackage}`));
+        return { status };
+      } });
+      assert.equal(result.code, status);
+      assert.equal(existsSync(cwd), false);
+    }
+  }
 });
 
 test('Windows never falls back to npx outside the PowerShell script', (t) => {
@@ -215,7 +239,7 @@ test('the PowerShell script falls back to npx.cmd and refuses cmd metacharacters
   assert.match(windowsScript, /agent-browser\.cmd, agent-browser\.exe and npx\.cmd were not found on PATH/);
   const npxBranch = windowsScript.slice(windowsScript.indexOf('if ($npx) {'), windowsScript.indexOf('exit $LASTEXITCODE'));
   assert.match(npxBranch, /if \(\$unsafe\) \{\n.*npx\.cmd runs through cmd\.exe.*npm install -g agent-browser.*\n\s+exit 2\n/);
-  assert.match(npxBranch, /& \$target '--yes' 'agent-browser' @uatArgs\n/);
+  assert.ok(npxBranch.includes(`& $target '--yes' '--package=${npxPackage}' 'agent-browser' @uatArgs\n`));
   assert.ok(npxBranch.indexOf('exit 2') < npxBranch.indexOf('& $target'), 'refusal precedes the npx call');
   assert.match(windowsScript, /\$unsafe = @\(\$uatArgs \| Where-Object \{ \$_ -match '\[&\|<>\^%\\x22\\r\\n\]' \}\)\.Count -gt 0/);
   assert.equal(windowsScript.match(/exit \$LASTEXITCODE/g).length, 2);
@@ -391,7 +415,7 @@ test('POSIX wrapper falls back to a real npx on PATH with filtered env', { skip:
   const result = spawnSync(process.execPath, [script, runDir, 'open', url], { encoding: 'utf8', env, timeout: 10000 });
   assert.equal(result.status, 5, result.stderr);
   assert.deepEqual(readFileSync(`${out}.args`, 'utf8').split('\0').slice(0, -1), [
-    '--yes', 'agent-browser', '--config', configPath, '--session', 'uat-localhost-4200', 'open', url,
+    '--yes', `--package=${npxPackage}`, 'agent-browser', '--config', configPath, '--session', 'uat-localhost-4200', 'open', url,
   ]);
   const received = readFileSync(`${out}.env`, 'utf8');
   assert.match(received, /^UAT_UNRELATED=kept$/m);
@@ -472,7 +496,7 @@ test('powershell.exe falls back to an npx.cmd shim with safe args and refuses cm
   const opts = { env, stderr: () => {} };
   assert.equal(main([runDir, 'snapshot', 'two words', '-i'], opts), 7);
   assert.deepEqual(JSON.parse(readFileSync(out, 'utf8')),
-    ['--yes', 'agent-browser', '--config', configPath, '--session', 'uat-localhost-4200', 'snapshot', 'two words', '-i']);
+    ['--yes', `--package=${npxPackage}`, 'agent-browser', '--config', configPath, '--session', 'uat-localhost-4200', 'snapshot', 'two words', '-i']);
   rmSync(out);
   assert.equal(main([runDir, 'open', url], opts), 2);
   assert.equal(existsSync(out), false);

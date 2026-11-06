@@ -20,7 +20,7 @@ When the CLI is missing, use the team's approved version if one is specified. Pr
 npm install --global agent-browser
 ```
 
-Alternatively, prime the npm cache with `npx --yes agent-browser --version`. On native Windows, use `npx.cmd` when PowerShell execution policy blocks `npx.ps1`. Rerun the checker; a successful offline probe reports `tools.agentBrowser.launcher: "npx"`. When agent-browser is absent from PATH, `ab` uses `npx --yes agent-browser`, which may fetch the CLI; the checker itself never fetches it.
+Alternatively, read `npxPackage` from `scripts/npx.mjs` and prime that exact package with `npx --yes --package=<package-spec> agent-browser --version`. On native Windows, use `npx.cmd` when PowerShell execution policy blocks `npx.ps1`. Rerun the checker; a successful offline probe reports `tools.agentBrowser.launcher: "npx"`. When agent-browser is absent from PATH, `ab` uses that pinned package through npx from a temporary package directory. The fallback can fetch it; the checker itself never fetches it. A global CLI already on PATH is preferred and keeps its working version. Use a global installation when the approved version differs from the fallback pin.
 
 If the global install fails on permissions, use a user-owned prefix instead of sudo:
 
@@ -29,9 +29,11 @@ If the global install fails on permissions, use a user-owned prefix instead of s
 
 A PATH change in one tool call may not reach the next, so pass the needed PATH explicitly on each call until normal discovery works. In PowerShell, call `npm.cmd` and `agent-browser.cmd` explicitly if `.ps1` execution is blocked, leaving execution policy as it is.
 
+The npx fallback resolves packages outside the tested project. Use absolute file paths for uploads, downloads, screenshots and state, and for file-valued canonical browser settings such as executable, action-policy and CA paths. Preserve the effective controls; use an approved global CLI if required relative-path settings cannot be made absolute without changing their meaning.
+
 ## Browser by platform
 
-Pick the branch before running any browser installer; the npm package does not imply Chrome for Testing is available on the host. The commands below use the global launcher. If the checker selected npx, replace `agent-browser` with `npx --yes agent-browser` (or `npx.cmd --yes agent-browser` on native Windows).
+Pick the branch before running any browser installer; the npm package does not imply Chrome for Testing is available on the host. The commands below use the global launcher. If the checker selected npx, use the same explicit pinned package form above (with `npx.cmd` on native Windows) before the command.
 
 - **Linux/WSL x64:** `agent-browser install`; if browser libraries are missing, `agent-browser install --with-deps`, which may need sudo through the distro package manager (ask only for missing privilege). Keep the Chrome sandbox enabled.
 - **Linux/WSL ARM64:** Chrome for Testing has no Linux ARM64 build, so skip the installer. Install an approved native Chromium package for the distro and add its absolute path to each run's `browser-config.json` as `"executablePath"` before the first launch; verify that browser launches.

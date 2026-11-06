@@ -5,6 +5,7 @@ import {
 } from 'node:fs';
 import { join, resolve, win32 } from 'node:path';
 import { isEntryPoint, modeOverrideNames } from './check-setup.mjs';
+import { npxPackage, withNpxDirectory } from './npx.mjs';
 
 const usage = 'Usage: node browser.mjs <run-dir> <agent-browser args...>';
 
@@ -39,7 +40,7 @@ if ($npx) {
     exit 2
   }
   $target = $npx.Path
-  & $target '--yes' 'agent-browser' @uatArgs
+  & $target '--yes' '--package=${npxPackage}' 'agent-browser' @uatArgs
   exit $LASTEXITCODE
 }
 if ($unsafe) {
@@ -167,7 +168,7 @@ export function browserCommand(argv, deps) {
   const env = childEnv(deps.env, deps.platform);
   // Without a global install, npx fetches agent-browser into the npm cache.
   if (deps.platform !== 'win32') {
-    return { command: 'agent-browser', args: argv, env, fallback: { command: 'npx', args: ['--yes', 'agent-browser', ...argv] } };
+    return { command: 'agent-browser', args: argv, env, fallback: { command: 'npx', args: ['--yes', `--package=${npxPackage}`, 'agent-browser', ...argv] } };
   }
   const shim = findOnPath('agent-browser.cmd', env, deps.exists);
   const packagedNative = shim && win32.join(win32.dirname(shim), 'node_modules', 'agent-browser', 'bin', 'agent-browser-win32-x64.exe');
@@ -178,6 +179,7 @@ export function browserCommand(argv, deps) {
   const shell = findOnPath('pwsh.exe', env, deps.exists) ?? 'powershell.exe';
   return {
     command: shell,
+    neutralCwd: !shim,
     args: ['-NoProfile', '-NonInteractive', '-Command', windowsScript],
     env: {
       ...env,
@@ -187,13 +189,15 @@ export function browserCommand(argv, deps) {
 }
 
 function spawnBrowser(argv, deps) {
-  const { command, args, env, fallback } = browserCommand(argv, deps);
+  const { command, args, env, fallback, neutralCwd } = browserCommand(argv, deps);
   const options = { stdio: 'inherit', env, windowsHide: true };
   let ran = command;
-  let result = deps.spawn(command, args, options);
+  let result = neutralCwd
+    ? withNpxDirectory((cwd) => deps.spawn(command, args, { ...options, cwd }))
+    : deps.spawn(command, args, options);
   if (result.error?.code === 'ENOENT' && fallback) {
     ran = fallback.command;
-    result = deps.spawn(fallback.command, fallback.args, options);
+    result = withNpxDirectory((cwd) => deps.spawn(fallback.command, fallback.args, { ...options, cwd }));
   }
   if (result.error?.code === 'ENOENT') {
     const missing = fallback ? `${command} and ${fallback.command} were` : `${command} was`;
