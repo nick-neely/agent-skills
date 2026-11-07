@@ -2,7 +2,7 @@
 
 ## Deliver the report
 
-Every run ends with a completed report and its evidence, including when nothing fails or access blocks testing. Reconcile criterion coverage, lens coverage, tested viewports, scenario statuses and candidate counts. Record elapsed time, operator assistance and session usage when the host exposes it (in Copilot CLI, `/usage`), otherwise unknown.
+Every run ends with a completed report and its evidence, including when nothing fails or access blocks testing. Reconcile criterion coverage, walkthrough coverage, lens coverage, tested viewports, scenario statuses and finding counts. Summarize material usability findings alongside defects, including when all acceptance criteria pass; keep observed friction separate from inferred human impact. Record elapsed time, operator assistance and session usage when the host exposes it (in Copilot CLI, `/usage`), otherwise unknown.
 
 Write the report's Summary last, from the finished sections: it is what most readers read, so each line states a result, a finding or a gap rather than activity. Your reply gives the report path, material failures, uncertainty, cleanup status and the next decision. Distinguish the agent's results from human-confirmed defects and from business acceptance.
 
@@ -21,7 +21,7 @@ When the changed runtime is ready, run this skill again with the original report
 
 1. Create a new run and mark the report as a retest linked to the original.
 2. Establish that the runtime contains the change, through an observed build identity or trustworthy provenance such as a successful rebuild and start from the fixed checkout. If you cannot, report scenario results but leave fix verification unresolved.
-3. Re-establish fixture and start state, reproduce the original path, and test the affected criteria plus nearby boundaries and state transitions. Stay within the remaining transaction limits. A fresh tester does not need a fresh profile unless the scenario does.
+3. Re-establish fixture and start state, reproduce the original path, and test the affected criteria plus nearby boundaries and state transitions. For usability findings, revisit the goal and decision point to assess whether the misleading cue or friction remains; task completion alone does not verify its removal. An agent retest cannot establish reduced confusion among human users. Stay within the remaining transaction limits. A fresh tester does not need a fresh profile unless the scenario does.
 4. Mark each original finding **verified fixed** (expected behavior observed), **still failing** or **unresolved** (blocked, not run, inconclusive or unconfirmed runtime), with new evidence links. A changed symptom or new defect becomes its own finding linked to the original. An intermittent issue absent once gets a repeatability limitation, not an unconditional fix claim.
 
 If triage rejected a candidate or established a different requirement, record that disposition and its source instead of a verified fix. Behavior the retest did not cover remains untested, and a partial retest lists its gaps.

@@ -5,15 +5,16 @@ description: >-
   this ticket", "verify the acceptance criteria", "QA this feature", "test the UI
   end to end", "explore user-facing edge cases", "retest these findings", or
   "check this feature on mobile or smaller screens". Also use to check a completed
-  UI change from a user's perspective before handoff. Gathers acceptance criteria, tests real workflows
-  with agent-browser, produces reproducible evidence, and verifies reported fixes.
+  UI change from a user's perspective before handoff. Gathers acceptance criteria,
+  walks through real user goals to assess usability, tests behavior with
+  agent-browser, produces reproducible evidence, and verifies reported fixes.
   Requests limited to unit tests, source-code review, or implementation debugging
   use their own workflows.
 ---
 
 # UAT
 
-Turn a user goal and acceptance criteria into browser-tested evidence in one invocation: gather the context yourself, plan, test and report. Ask only for criteria, decisions or access you cannot establish safely. Substitute this skill directory's absolute path for `<skill-root>`.
+Turn a user goal and acceptance criteria into browser-tested evidence of behavior and usability in one invocation: gather the context yourself, plan, test and report. Ask only for criteria, decisions or access you cannot establish safely. Substitute this skill directory's absolute path for `<skill-root>`.
 
 ## Terms
 
@@ -32,11 +33,11 @@ Turn a user goal and acceptance criteria into browser-tested evidence in one inv
 3. **Discover** criteria, target and test data per [requirements](references/requirements.md). No browser yet.
    Done: criteria have IDs and sources (or you have asked the user one specific question), the target URL serves the intended app, and you know the test identity and data.
 4. **Create the run and plan.** Run `scripts/new-run.mjs` per [evidence](references/evidence.md), then write the plan into `report.md` per the Plan section of [browser testing](references/testing.md).
-   Done: `report.md` lists the criteria and a scenario table covering every criterion, with each exploration lens considered.
+   Done: `report.md` lists the criteria, a goal-driven usability walkthrough, and a scenario table covering every criterion, with each exploration lens considered.
 5. **Sign in** through the owned browser per [authentication](references/authentication.md); persistent mode also follows [profiles](references/profiles.md).
    Done: an authenticated page shows the expected identity, role and environment.
-6. **Test** per [browser testing](references/testing.md).
-   Done: every scenario has a status, every lens has a coverage value, a narrow-viewport screenshot has been viewed or the gap recorded, and the browser is left per the mode (Finish section of [browser testing](references/testing.md)).
+6. **Walk through the user goal, then test** per [browser testing](references/testing.md#usability-walkthrough).
+   Done: the walkthrough and evidence-backed usability findings are recorded (or their coverage gap explained), every scenario has a status, every lens has a coverage value, a narrow-viewport screenshot has been viewed or the gap recorded, and the browser is left per the mode (Finish section of [browser testing](references/testing.md)).
 7. **Deliver** per [findings and retesting](references/follow-up.md).
    Done: every `report.md` section is filled or marked unknown, and your reply gives its path, material findings, gaps and the next decision.
 

@@ -5,7 +5,8 @@ The agent fills every field; write `unknown` or `n/a` rather than leaving one bl
 ## Summary
 
 - Result per criterion (pass / fail / unresolved, one line each):
-- Findings (ID, severity, one line each):
+- Findings (ID, kind: defect / usability, severity and task impact, one line each):
+- Usability walkthrough outcome and limits:
 - Main gaps and untested areas:
 - Next decision:
 
@@ -22,12 +23,35 @@ The agent fills every field; write `unknown` or `n/a` rather than leaving one bl
 - Readback still needed:
 - Triage: pending
 
+## Usability findings
+
+Use the shared F-series IDs without duplicating candidate defects; cross-link overlaps. Write `none observed` when appropriate, or state the coverage gap. An inferred human impact is not an observed participant reaction.
+
+### F02: <title>
+
+- User goal and step:
+- Visible cue and interpretation it suggests:
+- Observed behavior or actual interaction path:
+- Task consequence (observed / inferred), severity and rationale:
+- Evidence links and repeatability:
+- Confidence and limits:
+- Small improvement to consider:
+- Triage: pending
+
 ## Criteria
 
 | ID | Criterion | Source and date |
 | --- | --- | --- |
 
 Inferred expectations and ambiguous or conflicting rules:
+
+## Usability walkthrough
+
+- User goal, role and assumed familiarity:
+- Starting point and prior exposure or supplied guidance:
+- Path taken and decision-point evidence:
+- Outcome, friction and assistance (link scenario / finding IDs):
+- Coverage gaps or explicit exclusion:
 
 ## Scenarios
 
@@ -44,6 +68,7 @@ Future regression candidates:
 
 | Lens | Probes chosen and why | Coverage | Scenarios / evidence or reason | Residual risk |
 | --- | --- | --- | --- | --- |
+| Discoverability and comprehension | | | | |
 | Input boundaries | | | | |
 | Recovery | | | | |
 | Changed intent | | | | |
