@@ -44,10 +44,11 @@ through `gh`, preserving existing assignees and verifying the saved assignment.
 [`mattpocock/skills`](https://github.com/mattpocock/skills), licensed under the
 MIT License. Each skill directory includes a copy of the upstream license.
 
-The current upstream baseline is `v1.2.0` (`2ffb184`), and the Codex metadata in
-both skills is synchronized with that release. `to-spec` carries the release's
-terminology cleanup; `to-tickets` carries its local-ticket and native-parent
-behavior.
+The current upstream baseline is `v1.3.2` (`d1478fc`), reviewed through
+`4ae2317ddb22b046e26455e4f9c9b3aaaf62212d`. The Codex metadata in both skills
+matches upstream. Both include the release's punctuation and tracker setup
+wording. `to-tickets` distinguishes native blocking edges from parent/sub-issue
+relationships and omits the body blocker section when native edges are set.
 
 My changes are deliberately narrow:
 
