@@ -1,6 +1,6 @@
 ---
 name: full-stop
-description: Implement an issue or spec through a verified PR ready for the user to merge when the user explicitly asks for full stop.
+description: Implement an issue or spec through a verified PR ready for the user to merge when the user says "full stop", including a closing "Full stop." that reads like emphasis.
 ---
 
 # Full Stop

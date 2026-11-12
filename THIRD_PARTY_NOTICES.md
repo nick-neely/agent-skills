@@ -8,6 +8,12 @@ instructions from [t3dotgg/tstack](https://github.com/t3dotgg/tstack), MIT licen
 at commit `7de017b3fc9d50c03cf3ecb98fb71e0ca65a78bd`. Each directory includes the
 upstream license.
 
+Reviewed upstream changes through `11e37a74d0a6868c121cd0910ab2b3bd9873b92a`.
+`full-stop` incorporates the closing "Full stop." invocation fix from
+`92e38e2cf677a84a142e8df296861c588542135c`. The two later changes affect only
+`council`, which this collection does not include. The other five adapted
+workflows are unchanged upstream since the original baseline.
+
 The adaptations give babysit three routine PR-bot rounds, with evidenced
 high-impact extensions bounded at five total, a persistent finding ledger and
 focused follow-up reviews. They separate event notification from repository
