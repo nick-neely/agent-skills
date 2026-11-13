@@ -76,3 +76,18 @@ and assert it in `scripts/test`, so the rule is itself tested.
 
 Edit skills here, in source. Do not edit an installed copy under an agent
 runtime directory and copy it back - reinstall through the skills CLI instead.
+
+
+## Measure comparison rendering changes
+
+```sh
+node --test tests/ui-evidence-compare.test.mjs tests/image-metrics.test.mjs
+```
+
+These tests create temporary fixture images and verify actual rendered pixels,
+geometry, redaction, transparency, and native font measurements. They do not
+modify skill sources or capture a live application. Keep these assertions active
+when measuring renderer changes. Compare decoded frames and result metadata
+with the prior implementation, including fractional zoom and 16-bit alpha.
+Native operations may be batched when their settings remain isolated; combined
+argument lists must stay bounded for Windows as well as POSIX hosts.

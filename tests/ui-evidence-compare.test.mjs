@@ -1376,3 +1376,24 @@ test("real captures at a non-unit pixel ratio map anchors onto the rendered pixe
     try { browser("close"); } catch { /* the session may not have started */ }
   }
 });
+
+
+test("batched crops preserve translucent 16-bit pixels through fractional detail scaling", media, () => {
+  const dir = caseDir();
+  for (const [name, color] of [["before", "rgba(255,0,0,0.5)"], ["after", "rgba(0,0,255,0.5)"]]) {
+    execFileSync(MAGICK, ["-size", "80x60", "xc:none", "-fill", color,
+      "-draw", "rectangle 20,15 59,44", "-depth", "16", `PNG64:${join(dir, `${name}.png`)}`]);
+  }
+  const run = compare(dir, {
+    before: { image: "before.png" }, after: { image: "after.png" },
+    details: [{ id: "alpha", region: [0, 0, 80, 60], context: 0, zoom: 1.5 }],
+  });
+  assert.equal(run.status, 0, run.stderr);
+  const detail = run.result.details[0];
+  assert.deepEqual(detail.panels.before.canvas.slice(2), [120, 90]);
+  for (const [key, color] of [["before", [255, 128, 128]], ["after", [128, 128, 255]]]) {
+    const panel = detail.panels[key];
+    assertColor(rgb(detail.path, panel.canvas[0] + 45, panel.canvas[1] + 35), color, 2, key);
+    assertColor(rgb(detail.path, panel.canvas[0] + 2, panel.canvas[1] + 2), WHITE, 2, "transparent background");
+  }
+});

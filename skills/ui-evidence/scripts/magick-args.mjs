@@ -40,19 +40,61 @@ export function numberedPinArgs(id, color, chrome, font) {
     "-gravity", "NorthWest"];
 }
 
+// Bound combined command lines conservatively, including quoting overhead on
+// Windows. A single large job retains its ordinary one-command behavior.
+export function* argumentBatches(entries, argsFor, budget = 12000) {
+  let batch = [];
+  let bytes = 0;
+  for (const entry of entries) {
+    const size = argsFor(entry).reduce((sum, arg) => sum + Buffer.byteLength(String(arg)) * 2 + 4, 0);
+    if (batch.length && bytes + size > budget) {
+      yield batch;
+      batch = [];
+      bytes = 0;
+    }
+    batch.push(entry);
+    bytes += size;
+  }
+  if (batch.length) yield batch;
+}
+
 // measure(text, pointsize, wrapWidth?) -> rendered { width, height }, cached.
 // `run(args)` executes ImageMagick and returns its standard output.
 export function textMeasurer(run, font) {
   const cache = new Map();
-  return (text, pointsize, wrapWidth) => {
-    const key = JSON.stringify([text, pointsize, wrapWidth ?? null]);
+  const keyFor = ([text, pointsize, wrapWidth]) => JSON.stringify([text, pointsize, wrapWidth ?? null]);
+  const argsFor = ([text, pointsize, wrapWidth]) => {
+    const args = ["+size", "-font", font, "-pointsize", String(pointsize)];
+    if (wrapWidth) args.push("-size", `${Math.floor(wrapWidth)}x`, `caption:${imText(text)}`);
+    else args.push(`label:${imText(text)}`);
+    return args;
+  };
+  const measure = (text, pointsize, wrapWidth) => {
+    const request = [text, pointsize, wrapWidth];
+    const key = keyFor(request);
     if (!cache.has(key)) {
-      const args = ["-font", font, "-pointsize", String(pointsize)];
-      if (wrapWidth) args.push("-size", `${Math.floor(wrapWidth)}x`, `caption:${imText(text)}`);
-      else args.push(`label:${imText(text)}`);
-      const [width, height] = String(run([...args, "-format", "%w %h", "info:"])).trim().split(/\s+/).map(Number);
+      const [width, height] = String(run([...argsFor(request), "-format", "%w %h", "info:"])).trim().split(/\s+/).map(Number);
       cache.set(key, { width, height });
     }
     return cache.get(key);
   };
+  // A layout knows its labels together. Prime their exact native measurements
+  // in one invocation, while keeping the ordinary single-measure interface.
+  measure.prime = (requests) => {
+    const pending = new Map(requests.map((request) => [keyFor(request), request]));
+    for (const key of cache.keys()) pending.delete(key);
+    if (!pending.size) return;
+    for (const batch of argumentBatches([...pending], ([, request]) => argsFor(request))) {
+      const args = ["-respect-parentheses", "-size", "1x1", "xc:none", "+size"];
+      for (const [, request] of batch) {
+        args.push("(", ...argsFor(request), "-format", "%w %h\n", "-write", "info:-", ")", "+delete");
+      }
+      const sizes = String(run([...args, "null:"])).trim().split(/\r?\n/).map((line) => line.trim().split(/\s+/).map(Number));
+      if (sizes.length !== batch.length || sizes.some((size) => size.length !== 2 || size.some((value) => !Number.isFinite(value)))) {
+        throw new Error("ImageMagick returned invalid text measurements");
+      }
+      batch.forEach(([key], index) => cache.set(key, { width: sizes[index][0], height: sizes[index][1] }));
+    }
+  };
+  return measure;
 }

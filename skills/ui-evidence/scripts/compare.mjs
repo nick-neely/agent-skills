@@ -19,7 +19,7 @@ import {
   DEFAULT_DISPLAY_WIDTH, PALETTE, anchorToImageRect, asArray, changedBounds, chooseLayout, chromeFor, contains,
   detailWindows, intersect, pixelSurface, planComparison, rectFrom, sectionMarkdown, snapOut, unnamedMeasurements,
 } from "./comparison-layout.mjs";
-import { CHROME, geometry, imText, numberedPinArgs, textMeasurer } from "./magick-args.mjs";
+import { CHROME, argumentBatches, geometry, imText, numberedPinArgs, textMeasurer } from "./magick-args.mjs";
 
 const SKILL_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const FONT_PATH = join(SKILL_ROOT, "assets", "DejaVuSans.ttf");
@@ -90,20 +90,27 @@ function magick(args, { encoding = "utf8", maxBuffer = 64 * 1024 * 1024 } = {}) 
   }
 }
 
-// Raw 8-bit RGB pixels of an image.
-function pixelsOf(path) {
-  const { width, height } = imageSize(path);
-  const data = magick([`${path}[0]`, "-alpha", "off", "-depth", "8", "rgb:-"],
-    { encoding: null, maxBuffer: width * height * 3 + 1024 * 1024 });
-  return { width, height, data };
+const imageSizes = new Map();
+
+function primeImageSizes(paths) {
+  const pending = [...new Set(paths)].filter((path) => !imageSizes.has(path));
+  if (!pending.length) return;
+  for (const batch of argumentBatches(pending, (path) => [`${path}[0]`])) {
+    const args = ["-respect-parentheses", "-size", "1x1", "xc:none", "+size"];
+    for (const path of batch) {
+      args.push("(", `${path}[0]`, "-format", "%w %h\n", "-write", "info:-", ")", "+delete");
+    }
+    const sizes = magick([...args, "null:"]).trim().split(/\r?\n/).map((line) => line.trim().split(/\s+/).map(Number));
+    if (sizes.length !== batch.length || sizes.some((size) => size.length !== 2 || size.some((value) => !Number.isFinite(value) || value < 1))) {
+      die("ImageMagick returned invalid image dimensions");
+    }
+    batch.forEach((path, index) => imageSizes.set(path, { width: sizes[index][0], height: sizes[index][1] }));
+  }
 }
 
-// A rendered panel's pixels, so marks can avoid covering its UI.
-const surfaceOf = (path) => pixelSurface(pixelsOf(path));
-
 function imageSize(path) {
-  const [width, height] = magick([`${path}[0]`, "-format", "%w %h", "info:"]).trim().split(/\s+/).map(Number);
-  return { width, height };
+  primeImageSizes([path]);
+  return imageSizes.get(path);
 }
 
 const makeMeasure = () => textMeasurer(magick, FONT_PATH);
@@ -120,14 +127,20 @@ function readJson(path, what) {
   }
 }
 
-function loadPanel(spec, key, specDir) {
+function panelImage(spec, key, specDir) {
   const entry = spec[key];
   if (!entry || typeof entry !== "object" || typeof entry.image !== "string") {
     die(`spec needs "${key}": { "image": "<path>" }`);
   }
-  const at = (path) => (isAbsolute(path) ? path : resolve(specDir, path));
-  const image = at(entry.image);
+  const image = isAbsolute(entry.image) ? entry.image : resolve(specDir, entry.image);
   if (!existsSync(image)) die(`no such ${key} image: ${image}`);
+  return image;
+}
+
+function loadPanel(spec, key, specDir) {
+  const entry = spec[key];
+  const at = (path) => (isAbsolute(path) ? path : resolve(specDir, path));
+  const image = panelImage(spec, key, specDir);
   const size = imageSize(image);
   const label = entry.label ?? (key === "before" ? "Before" : "After");
   if (typeof label !== "string" || !label.trim()) die(`${key} label must be non-empty text`);
@@ -203,12 +216,13 @@ function redact(panel, rects, temp) {
     }
   }
   magick([...args, out]);
+  imageSizes.set(out, panel.size);
   return out;
 }
 
 // A shared detail window can extend past a smaller padded screenshot; fill the
 // missing area so both panels keep the same source coordinates.
-function extract(panel, window, zoom, out) {
+function cropJob(panel, window, zoom, out) {
   const visible = intersect(window, panel.bounds);
   const args = visible
     ? [panel.source, "-crop", `${visible.width}x${visible.height}+${visible.x}+${visible.y}`, "+repage",
@@ -218,8 +232,8 @@ function extract(panel, window, zoom, out) {
     args.push(Number.isInteger(zoom) ? "-sample" : "-resize",
       `${Math.round(window.width * zoom)}x${Math.round(window.height * zoom)}!`);
   }
-  magick([...args, out]);
-  return out;
+  const size = { width: Math.round(window.width * zoom), height: Math.round(window.height * zoom) };
+  return { args, out, size };
 }
 
 const pinArgs = (id, color, chrome) => numberedPinArgs(id, color, chrome, FONT_PATH);
@@ -231,7 +245,7 @@ const labelArgs = (text, pointsize, background, color) =>
 const pillArgs = (text, color, chrome) =>
   [...labelArgs(text, chrome.labelFont, color, "#ffffff"), "-bordercolor", color, "-border", `${chrome.labelPad}x${chrome.labelPad}`];
 
-function drawPlan(plan, images, out) {
+function drawingArgs(plan, images) {
   const { chrome } = plan;
   const args = ["-size", `${plan.canvas.width}x${plan.canvas.height}`, "xc:#ffffff"];
   const place = (sub, x, y) =>
@@ -284,7 +298,38 @@ function drawPlan(plan, images, out) {
       place(pillArgs(mark.label.text, mark.color, chrome), mark.label.x, mark.label.y);
     }
   }
-  magick([...args, "-strip", out]);
+  return [...args, "-strip"];
+}
+
+// Parentheses isolate each job's settings. The tiny sentinel and +delete keep
+// memory bounded to one image job; optional RGB writes concatenate in job order.
+function renderImages(jobs, { readPixels = false } = {}) {
+  const decoded = [];
+  for (const batch of argumentBatches(jobs, (job) => [...job.args, job.out ?? ""])) {
+    const args = ["-respect-parentheses", "-size", "1x1", "xc:none", "+size"];
+    let totalBytes = 0;
+    for (const { args: drawing, out, size } of batch) {
+      args.push("(", ...drawing);
+      if (out) args.push("-write", out);
+      if (readPixels) {
+        args.push("-alpha", "off", "-depth", "8", "-write", "rgb:-");
+        totalBytes += size.width * size.height * 3;
+      }
+      args.push(")", "+delete");
+    }
+    const pixels = magick([...args, "null:"], readPixels
+      ? { encoding: null, maxBuffer: totalBytes + 1024 * 1024 } : {});
+    if (readPixels && pixels.length !== totalBytes) die("ImageMagick returned an unexpected RGB surface size");
+    let offset = 0;
+    for (const { out, size } of batch) {
+      if (out) imageSizes.set(out, size);
+      if (!readPixels) continue;
+      const end = offset + size.width * size.height * 3;
+      decoded.push({ ...size, data: pixels.subarray(offset, end) });
+      offset = end;
+    }
+  }
+  return decoded;
 }
 
 // A labelled banner above a screenshot, for flip frames and the onion skin.
@@ -295,6 +340,7 @@ function bannered(image, text, bannerHeight, frameWidth, chrome, out) {
     "-gravity", "NorthWest", "-compose", "Over", "-geometry", geometry(chrome.headerPad, chrome.headerPad), "-composite",
     "(", "-size", `${frameWidth}x${size.height}`, "xc:#ffffff", image, "-gravity", "NorthWest", "-composite", ")",
     "-append", "-strip", out]);
+  imageSizes.set(out, { width: frameWidth, height: bannerHeight + size.height });
   return out;
 }
 
@@ -346,7 +392,11 @@ function validateCallouts(spec, panels) {
 function findFocus(callouts, panels) {
   const plain = callouts.filter((callout) => !callout.outline && !callout.spotlight && !callout.measure);
   if (!plain.length) return;
-  const pixels = { before: pixelsOf(panels.before.source), after: pixelsOf(panels.after.source) };
+  const keys = ["before", "after"];
+  const decoded = renderImages(keys.map((key) => ({
+    args: [`${panels[key].source}[0]`], size: imageSize(panels[key].source),
+  })), { readPixels: true });
+  const pixels = Object.fromEntries(keys.map((key, index) => [key, decoded[index]]));
   for (const callout of plain) {
     callout.focus = {};
     for (const [key, other] of [["before", "after"], ["after", "before"]]) {
@@ -393,21 +443,21 @@ function viewCallouts(callouts, views) {
 }
 
 function renderView({ name, views, layout, displayWidth, callouts, measure, temp, out }) {
-  const images = {};
-  for (const view of views) {
-    images[view.panel.key] = extract(view.panel, view.window, view.zoom, join(temp, `${name}-${view.panel.key}.png`));
-  }
+  const crops = views.map((view) =>
+    cropJob(view.panel, view.window, view.zoom, join(temp, `${name}-${view.panel.key}.png`)));
+  const decoded = renderImages(crops, { readPixels: true });
+  const images = Object.fromEntries(views.map((view, index) => [view.panel.key, crops[index].out]));
+  const surfaces = Object.fromEntries(views.map((view, index) => [view.panel.key, pixelSurface(decoded[index])]));
   const visible = viewCallouts(callouts, views);
   const plan = planComparison({
     panels: views.map((view) => ({
-      key: view.panel.key, label: view.label, surface: surfaceOf(images[view.panel.key]),
+      key: view.panel.key, label: view.label, surface: surfaces[view.panel.key],
       width: Math.round(view.window.width * view.zoom), height: Math.round(view.window.height * view.zoom),
     })),
     callouts: visible, layout, displayWidth, measure,
     devicePixelRatio: views[0].panel.dpr * views[0].zoom,
   });
-  drawPlan(plan, images, out);
-  return { plan, images, visible };
+  return { plan, images, visible, drawing: { args: drawingArgs(plan, images), out, size: plan.canvas } };
 }
 
 function placementPhrase(layout, panels) {
@@ -438,6 +488,7 @@ function main() {
   magickBinary = resolveMagick();
   if (!existsSync(FONT_PATH)) die(`bundled font missing: ${FONT_PATH}`);
 
+  primeImageSizes(["before", "after"].map((key) => panelImage(spec, key, specDir)));
   const panels = { before: loadPanel(spec, "before", specDir), after: loadPanel(spec, "after", specDir) };
   const displayWidth = spec.displayWidth ?? DEFAULT_DISPLAY_WIDTH;
   if (!Number.isFinite(displayWidth) || displayWidth < 320) die("displayWidth must be a number of at least 320");
@@ -579,6 +630,7 @@ function main() {
       out: comparisonPath,
     });
     limitations.push(...overview.plan.limitations);
+    const drawings = [overview.drawing];
 
     const details = detailSpecs.map(({ slug, label, context, windows, layout, zoom }) => {
       const suffix = `${label ? ` - ${label}` : ""}${zoom !== 1 ? ` (${zoom}x)` : ""}`;
@@ -586,6 +638,7 @@ function main() {
         ({ panel, label: `${panel.label}${suffix}`, window: windows[panel.key], zoom }));
       const path = join(outDir, `detail-${slug}.png`);
       const view = renderView({ name: `detail-${slug}`, views, layout, displayWidth, callouts, measure, temp, out: path });
+      drawings.push(view.drawing);
       limitations.push(...view.plan.limitations.map((text) => `Detail ${slug}: ${text}`));
       for (const panel of Object.values(panels)) {
         if (!contains(panel.bounds, windows[panel.key])) {
@@ -609,6 +662,8 @@ function main() {
       };
     });
 
+    renderImages(drawings);
+
     let flip = null;
     let onion = null;
     if (flipSpec || onionSpec) {
@@ -627,6 +682,7 @@ function main() {
           bannered(overview.images[panel.key], panel.label, bannerHeight, frameWidth, frameChrome, join(temp, `flip-${panel.key}.png`)));
         const path = join(outDir, "flip.gif");
         magick(["-delay", String(centiseconds), frames[0], "-delay", String(centiseconds), frames[1], "-loop", "0", path]);
+        imageSizes.set(path, imageSize(frames[0]));
         flip = {
           path, holdMs: centiseconds * 10, frames: [panels.before.label, panels.after.label], banner: bannerHeight,
           size: imageSize(path),
@@ -638,6 +694,7 @@ function main() {
         const blended = join(temp, "onion-blend.png");
         magick([overview.images.before, "(", overview.images.after, "-alpha", "set", "-channel", "A",
           "-evaluate", "set", `${pct}%`, "+channel", ")", "-compose", "Over", "-composite", "-alpha", "off", blended]);
+        imageSizes.set(blended, imageSize(overview.images.before));
         const path = join(outDir, "onion.png");
         bannered(blended, onionText, bannerHeight, frameWidth, frameChrome, path);
         onion = {

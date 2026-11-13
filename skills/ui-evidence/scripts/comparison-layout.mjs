@@ -617,6 +617,14 @@ function planWithLanes({
   const contentWidth = chosen === "side-by-side" ? maxWidth * panels.length : maxWidth;
   const chrome = chromeFor(contentWidth, displayWidth);
   const { headerPad, headerFont, gap } = chrome;
+  measure.prime?.([
+    ...panels.map((panel) => [panel.label, headerFont]),
+    ...callouts.flatMap((callout) => [
+      ...(callout.label ? [[callout.label, chrome.labelFont]] : []),
+      ...Object.values(callout.marks ?? {}).filter((mark) => mark.measureText)
+        .map((mark) => [mark.measureText, chrome.labelFont]),
+    ]),
+  ]);
   let gutter = chrome.gutter + (lanes - 1) * (chrome.radius * 2 + gap);
   if (bracketRoom) {
     // A margin bracket needs its region's clearance, its tick, a gap, and its
