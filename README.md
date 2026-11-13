@@ -33,6 +33,8 @@ Skills that shell out have their own runtime dependencies, listed in each
   findings, and stop within a bounded review budget.
 - [`file-pr`](skills/file-pr/) - Review the branch diff, reuse or open a PR,
   and use the separately installed `pr` skill for its body format.
+- [`flow-walk`](skills/flow-walk/) - Hand one user goal to a fresh tester before
+  code review, and sort its report on friction, copy weight and hierarchy.
 - [`full-send`](skills/full-send/) - Implement an issue or spec with TDD and
   code review, then prove, file, attach warranted UI evidence, babysit and merge.
 - [`full-stop`](skills/full-stop/) - Follow the same implementation and
