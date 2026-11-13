@@ -69,18 +69,12 @@ node -e '
   if (!config.devServer?.startCommand || config.auth?.adapter !== "better-auth") process.exit(1);
 ' "$project/.agents/visual-verification.json"
 
-node "$repo/tests/ui-evidence.test.mjs"
-node "$repo/tests/ui-evidence-preflight.test.mjs"
-node "$repo/tests/ui-evidence-resources.test.mjs"
-node "$repo/tests/ui-evidence-publish.test.mjs"
-node "$repo/tests/ui-evidence-compare.test.mjs"
-node "$repo/tests/ui-evidence-recipes.test.mjs"
-node "$repo/tests/ui-evidence-motion-annotations.test.mjs"
-node "$repo/tests/ui-evidence-examples.test.mjs"
-node "$repo/tests/implement-stack.test.mjs"
-node "$repo/tests/implement-program.test.mjs"
-node "$repo/tests/pr-wait.test.mjs"
-
-node --test "$repo"/tests/uat-*.test.mjs
+# Test files have isolated temporary workspaces. Bound file-level parallelism
+# so media tests can overlap without starting one worker per logical CPU.
+test_jobs=${SKILLS_TEST_JOBS:-}
+if [[ -z "$test_jobs" ]]; then
+  test_jobs=$(node -p 'Math.min(process.platform === "darwin" ? 8 : 4, require("node:os").availableParallelism())')
+fi
+node --test --test-concurrency="$test_jobs" "$repo"/tests/*.test.mjs
 
 printf 'Behavior tests passed.\n'

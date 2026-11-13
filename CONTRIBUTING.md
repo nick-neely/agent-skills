@@ -64,6 +64,12 @@ so the main file stays short enough to load cheaply.
 ./scripts/validate
 ```
 
+Independent behavior test files run in separate Node processes, with up to
+eight workers on macOS and four on Linux or Windows, capped by available CPUs.
+The negative fixtures remain serial. To limit resource use or reproduce a
+failure serially, run `SKILLS_TEST_JOBS=1 ./scripts/validate`. All test files are
+included at every worker count.
+
 This is the same gate CI runs. It must pass. If you add a rule to
 `scripts/validate-skills.mjs`, add a negative fixture under `tests/fixtures/`
 and assert it in `scripts/test`, so the rule is itself tested.
