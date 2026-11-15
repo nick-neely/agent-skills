@@ -104,10 +104,10 @@ function placement(body, section) {
     return { action: "replace-block", ...location, dropSectionHeading };
   }
   // Masked inline code can leave a heading-shaped line, so confirm each match
-  // against the body with only its comments masked.
-  const uncommented = body.replace(/<!--[\s\S]*?-->/g, maskKeepingLines);
-  const headings = [...visible.matchAll(EVIDENCE_HEADINGS)]
-    .filter((match) => LEADING_HEADING.test(uncommented.slice(match.index, match.index + match[0].length).trimEnd()));
+  // against its original line with only comments closed on that line removed.
+  // A comment left open would swallow the inserted block, so it does not match.
+  const headings = [...visible.matchAll(EVIDENCE_HEADINGS)].filter((match) =>
+    LEADING_HEADING.test(body.slice(match.index, match.index + match[0].length).replace(/<!--.*?-->/g, "").trimEnd()));
   if (!headings.length) return { action: "append", dropSectionHeading: false };
   if (headings.length > 1) fail("multiple UI evidence headings; add the ui-evidence markers under the intended heading before publishing");
   const heading = headings[0];
