@@ -81,57 +81,53 @@ function blockLocation(body) {
   }
   return { start: starts[0].index, end: ends[0].index + END.length };
 }
-// A UI evidence heading at any ATX level, outside code and HTML comments.
-const EVIDENCE_HEADING = /^ {0,3}#{1,6}[ \t]+ui[ \t]+evidence(?:[ \t]+#+)?[ \t]*\r?$/gim;
-const SECTION_HEADING = /^ {0,3}#{1,6}[ \t]+ui[ \t]+evidence(?:[ \t]+#+)?[ \t]*(?:\r?\n|$)/i;
-const blank = (text) => text.replace(/[^\n]/g, " ");
-const visibleText = (markdown) => maskCode(markdown).replace(/<!--[\s\S]*?-->/g, blank);
+// A UI evidence heading at any ATX level, matched outside code and HTML comments.
+const HEADING = String.raw` {0,3}#{1,6}[ \t]+ui[ \t]+evidence(?:[ \t]+#+)?[ \t]*`;
+const EVIDENCE_HEADINGS = new RegExp(`^${HEADING}\\r?$`, "gim");
+const LEADING_HEADING = new RegExp(`^${HEADING}(?:\\r?\\n|$)`, "i");
+const maskKeepingLines = (text) => text.replace(/[^\n]/g, " ");
+const visibleText = (markdown) => maskCode(markdown).replace(/<!--[\s\S]*?-->/g, maskKeepingLines);
 const trimSection = (section) => section.replace(/^(?:[ \t]*\r?\n)+/, "").replace(/(?:\r?\n[ \t]*)+$/, "");
 
 // Decide where the managed block lands: an existing block is replaced in place;
-// otherwise the block goes directly under the body's own UI evidence heading,
-// replacing only the HTML comments and blank lines that follow it; otherwise
-// it is appended. When the body has its own heading, the section's leading
-// heading is dropped so the heading appears once.
+// otherwise the block is inserted directly under the body's own UI evidence
+// heading, leaving every existing byte in place; otherwise it is appended. A
+// section's own leading heading is dropped when the body's heading already
+// sits directly above the block, so the heading appears once.
 function placement(body, section) {
   const location = blockLocation(body);
-  let visible = visibleText(body);
-  if (location) visible = visible.slice(0, location.start) + blank(visible.slice(location.start, location.end)) + visible.slice(location.end);
-  const headings = [...visible.matchAll(EVIDENCE_HEADING)];
-  const dropSectionHeading = headings.length > 0 && SECTION_HEADING.test(trimSection(section));
-  if (location) return { action: "replace-block", ...location, dropSectionHeading };
-  if (!headings.length) return { action: "append", dropSectionHeading };
+  const visible = visibleText(body);
+  const sectionHeading = LEADING_HEADING.test(trimSection(section));
+  if (location) {
+    const above = visible.slice(0, location.start).trimEnd();
+    const dropSectionHeading = sectionHeading && LEADING_HEADING.test(above.slice(above.lastIndexOf("\n") + 1));
+    return { action: "replace-block", ...location, dropSectionHeading };
+  }
+  const headings = [...visible.matchAll(EVIDENCE_HEADINGS)];
+  if (!headings.length) return { action: "append", dropSectionHeading: false };
   if (headings.length > 1) fail("multiple UI evidence headings; add the ui-evidence markers under the intended heading before publishing");
   const heading = headings[0];
   const lineEnd = heading.index + heading[0].length;
-  const lineBreak = body[lineEnd] === "\n";
-  const start = lineBreak ? lineEnd + 1 : lineEnd;
-  const filler = /[ \t]*(?:<!--[\s\S]*?-->[ \t]*)*(?:\r?\n|$)/y;
-  let end = start;
-  while (end < body.length) {
-    filler.lastIndex = end;
-    const match = filler.exec(body);
-    if (!match?.[0].length) break;
-    end += match[0].length;
-  }
   return {
     action: "under-heading", heading: body.slice(heading.index, lineEnd).trim(),
-    line: body.slice(0, heading.index).split("\n").length, start, end, lineBreak, dropSectionHeading,
+    line: body.slice(0, heading.index).split("\n").length,
+    start: body[lineEnd] === "\n" ? lineEnd + 1 : lineEnd, dropSectionHeading: sectionHeading,
   };
 }
 function describePlacement(where) {
   const { action, heading, line, dropSectionHeading } = where;
   return { action, ...(heading ? { heading, line } : {}), ...(dropSectionHeading ? { droppedSectionHeading: true } : {}) };
 }
-function spliceSection(body, section) {
-  const where = placement(body, section);
+function spliceSection(body, section, where) {
   let content = trimSection(section);
-  if (where.dropSectionHeading) content = trimSection(content.replace(SECTION_HEADING, ""));
+  if (where.dropSectionHeading) content = trimSection(content.replace(LEADING_HEADING, ""));
   const managed = `${START}\n\n${content}\n\n${END}`;
   if (where.action === "replace-block") return body.slice(0, where.start) + managed + body.slice(where.end);
   if (where.action === "under-heading") {
-    const rest = body.slice(where.end);
-    return `${body.slice(0, where.start)}${where.lineBreak ? "\n" : "\n\n"}${managed}\n${rest ? "\n" : ""}${rest}`;
+    const rest = body.slice(where.start);
+    const lead = where.start === body.length && !body.endsWith("\n") ? "\n\n" : "\n";
+    const trail = !rest || /^[ \t]*\r?\n/.test(rest) ? "\n" : "\n\n";
+    return `${body.slice(0, where.start)}${lead}${managed}${trail}${rest}`;
   }
   if (!body) return `${managed}\n`;
   const separator = body.endsWith("\n\n") ? "" : body.endsWith("\n") ? "\n" : "\n\n";
@@ -466,8 +462,8 @@ async function main() {
       }
       const nativeSection = makeSection(markdown, occurrences, (asset) => asset.staged);
       const template = makeSection(markdown, occurrences, (asset) => `${tokenPrefix}${asset.index}END`, true);
-      expected = spliceSection(current, template);
-      const next = spliceSection(current, nativeSection);
+      expected = spliceSection(current, template, where);
+      const next = spliceSection(current, nativeSection, where);
       const args = [options.kind, options.mode === "body" ? "edit" : "comment", options.number, "--repo", options.repo, "--body-file", "-"];
       const attachments = [...new Set(assets.map((asset) => asset.staged))];
       const previousBlock = blockLocation(current);
@@ -496,9 +492,9 @@ async function main() {
           uploads.push({ refs: asset.refs, url: uploaded });
         }
         const uploadedSection = makeSection(markdown, occurrences, (asset) => asset.url, true);
-        expected = spliceSection(current, uploadedSection);
+        expected = spliceSection(current, uploadedSection, where);
       } catch (error) { writeError = error.message; }
-    } else expected = spliceSection(current, markdown);
+    } else expected = spliceSection(current, markdown, where);
     if (transport !== "native-gh" && !writeError) {
       try {
         const input = JSON.stringify({ body: expected });

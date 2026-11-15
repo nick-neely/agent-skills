@@ -163,11 +163,10 @@ node "<skill-root>/scripts/publish.mjs" --repo owner/project \
   --target pr:123 --section "$EVIDENCE_DIR/section.md"
 ```
 
-The publisher replaces an existing managed block in place. Without one, it puts
-the block directly under the target's own `UI evidence` heading, at any level,
-and otherwise appends it. Leave that heading and the rest of the target's
-template in the body; never cut its section out to use as the section file. Check
-`placement` in the dry run. See
+Leave the target's own `UI evidence` heading and template in the body; the
+publisher inserts the block under that heading, or appends it when there is
+none. Never cut the template's section out to use as the section file. Check
+`placement` in the dry run; see
 [Managed updates and readback](references/publishing.md#managed-updates-and-readback).
 
 Completion requires reviewed outputs and authenticated readback confirming every
