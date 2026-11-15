@@ -58,8 +58,53 @@ My changes are deliberately narrow:
 - Both replace em dashes with plain hyphens to match this repository's writing
   convention.
 
+`skills/prototype` is based on the same repository's `prototype` skill at
+`321658273cb1d20b76026717d027d505790106d4`, and on Emil Kowalski's skill of the
+same name (see below). It keeps the upstream name so skills that call
+`prototype` reach it. From Matt Pocock's skill it retains the question-first
+router, the shared rules (throwaway and marked, no persistence, capture on a
+throwaway branch with a pointer on the implementation ticket), the preference
+for mounting UI variants inside an existing page, and the logic branch's pure,
+liftable module.
+
+My changes:
+
+- The UI branch follows Emil Kowalski's method and picker instead of the
+  upstream `?variant=` bar.
+- The logic branch no longer hands the user a clickable demo by default. The
+  agent runs the scenarios through each candidate and reports a comparison
+  with a recommendation; the single-file demo remains on request.
+- "Skip the polish" is replaced by Emil Kowalski's rule that every UI variant
+  fully works.
+- Branch files live under `references/`.
+
 Other Matt Pocock skills I use stay installed from upstream and are not
 republished here.
+
+## Emil Kowalski skills
+
+`skills/prototype` incorporates the `prototype` skill from
+[`emilkowalski/skills`](https://github.com/emilkowalski/skills), licensed under
+the MIT License, at commit `0f2e23b32bb1265e84cff8d3e75785fec953fb1b`. The
+skill's `LICENSE` carries both upstream notices.
+
+`references/picker.md` is upstream's `PICKER.md`: the markup, styles, behavior
+contract and reference wiring are unchanged, and only em dashes in its prose
+became hyphens. `references/ui.md` adapts upstream's `SKILL.md`: divergence on
+a named axis, the per-variant craft bar, the scope, recon, directions, harness,
+verify and riff-or-keep phases, and the hand-off table.
+
+My changes to the UI method:
+
+- It runs as one branch of a router, so the slash-command-only flag and the
+  fixed first reply are removed and other skills can call it.
+- A chosen prototype is captured on a throwaway branch and linked from the
+  implementation ticket, instead of deleted.
+- Variants mount inside an existing page when one can host them.
+- A ticket with several decisions gets one run per decision over a shared
+  context.
+- References to Emil Kowalski's other skills are dropped; this collection
+  does not include them.
 
 ## DejaVu Sans
 
