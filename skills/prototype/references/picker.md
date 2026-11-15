@@ -1,6 +1,6 @@
 # The Picker
 
-Adapted from `PICKER.md` in emilkowalski/skills. The markup, CSS and wiring are upstream's, unchanged; only em dashes in the prose became hyphens.
+Adapted from `PICKER.md` in emilkowalski/skills. The CSS and wiring are upstream's, unchanged. Two things differ: every picker button carries `type="button"`, so a picker mounted inside a form never submits it, and em dashes in the prose became hyphens.
 
 The picker's appearance is **not a design decision** - it is this spec. Copy the markup, CSS, and wiring below verbatim; the only values that change per run are the variant names and count. It stays identical across every project so it always reads as harness chrome, never as part of the design being judged. Do not restyle it with the project's tokens, fonts, or colors.
 
@@ -13,11 +13,11 @@ The sliding highlight span first, one button per variant, a hairline divider, th
 ```html
 <nav class="proto-picker" aria-label="Prototype variants">
   <span class="proto-picker-highlight" aria-hidden="true"></span>
-  <button class="proto-picker-item" data-active aria-current="true">Quiet</button>
-  <button class="proto-picker-item">Editorial</button>
-  <button class="proto-picker-item">Playful</button>
+  <button type="button" class="proto-picker-item" data-active aria-current="true">Quiet</button>
+  <button type="button" class="proto-picker-item">Editorial</button>
+  <button type="button" class="proto-picker-item">Playful</button>
   <span class="proto-picker-divider" aria-hidden="true"></span>
-  <button class="proto-picker-item proto-picker-replay" aria-label="Replay animation (R)">↻</button>
+  <button type="button" class="proto-picker-item proto-picker-replay" aria-label="Replay animation (R)">↻</button>
 </nav>
 ```
 

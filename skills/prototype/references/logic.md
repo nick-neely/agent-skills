@@ -27,13 +27,13 @@ A scenario is a named starting state and an ordered list of actions, written in 
 - the cases that are hard to reason about on paper: actions out of order, the same action twice, two actors, a boundary value, a step undone;
 - at least one action that should be illegal.
 
-For each scenario, write what the business expects to happen before running anything. That expectation is the standard the candidates are held to.
+For each scenario, write what the business expects after **each action**, before running anything: the state it should be in, or that the action should be refused. That expectation is the standard the candidates are held to.
 
 ## 4. Run them
 
-Write a small script in the project's language that runs every scenario through every candidate and prints the resulting state or the rejection. Run it and use its real output. A table filled in by reasoning about the code is a guess.
+Write a small script in the project's language that runs every scenario through every candidate and prints the state or the rejection after each action. Compare every step against its expectation, since two candidates can end in the same state by different routes, one of them wrong. Run it and use its real output. A table filled in by reasoning about the code is a guess.
 
-**Done when** every cell of scenarios by candidates comes from an executed run.
+**Done when** every step of every scenario, for every candidate, comes from an executed run.
 
 ## 5. Hand over the comparison
 
@@ -41,7 +41,7 @@ Lead with the recommendation. Then give, in this order:
 
 1. **The question**, in one sentence.
 2. **The recommendation** and the one or two scenarios that decide it.
-3. **The table**: one row per scenario, one column for the expected outcome and one per candidate, in domain language. Mark each cell that differs from the expectation.
+3. **The table**: one row per scenario, one column for the expected outcome and one per candidate, in domain language. Mark each cell that differs from the expectation at any step, and name the step.
 4. **Where each candidate breaks**, as a short list: the scenario, what happened, why it matters to the business.
 5. **What the scenarios did not cover**, so the user knows the limits of the answer.
 
@@ -62,3 +62,5 @@ When the user asks to feel the model themselves, or wants to hand it to someone 
 - a switch between candidates that replays the actions taken so far.
 
 The page is a thin shell: it calls into the modules and nothing flows back.
+
+A browser runs JavaScript. When the candidates are in another language, port each to JavaScript for the page, run the same scenarios through the ports, and confirm their output matches step 4 before handing the page over. The ports are demo code; the tested modules stay the source of truth.

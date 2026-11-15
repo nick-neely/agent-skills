@@ -58,7 +58,7 @@ Sell each variant in one honest line and name its cost in another. Keep the tabl
 
 ## 6. Riff or keep
 
-- **Another round**: keep the harness and build a fresh set that diverges *around* the direction the user leaned toward. Cut the variants they ruled out; the earlier commit keeps them.
+- **Another round**: commit the current round to the throwaway branch first, so every variant shown stays recoverable. Then keep the harness, cut the variants the user ruled out, and build a fresh set that diverges *around* the direction they leaned toward.
 - **A pick**: follow rule 6 of [the skill](../SKILL.md). Record the pick and the user's reasons, commit the prototype to its throwaway branch, and link the chosen files at a fixed commit from the implementation ticket.
 - **Promotion**, when the user asks for it in the same session: rebuild the winner in its production location on the project's conventions and checks. Prototype code was written under prototype rules.
 

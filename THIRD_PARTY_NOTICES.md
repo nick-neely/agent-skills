@@ -88,8 +88,9 @@ republished here.
 the MIT License, at commit `0f2e23b32bb1265e84cff8d3e75785fec953fb1b`. The
 skill's `LICENSE` carries both upstream notices.
 
-`references/picker.md` is upstream's `PICKER.md`: the markup, styles, behavior
-contract and reference wiring are unchanged, and only em dashes in its prose
+`references/picker.md` is upstream's `PICKER.md`: the styles, behavior contract
+and reference wiring are unchanged. Its buttons gain `type="button"`, so a
+picker mounted inside a form does not submit it, and em dashes in its prose
 became hyphens. `references/ui.md` adapts upstream's `SKILL.md`: divergence on
 a named axis, the per-variant craft bar, the scope, recon, directions, harness,
 verify and riff-or-keep phases, and the hand-off table.
