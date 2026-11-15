@@ -37,6 +37,9 @@ Skills that shell out have their own runtime dependencies, listed in each
   and publish it to the issue tracker.
 - [`to-tickets`](skills/to-tickets/) - Break a spec or plan into tracer-bullet
   tickets that declare their blocking edges.
+- [`prototype`](skills/prototype/) - Answer a design question with throwaway
+  code: divergent UI variants behind a live picker, or candidate logic models
+  run through scenarios with a recommendation.
 - [`implement-stack`](skills/implement-stack/) - Implement a spec, issue set, or
   free-form request as a reviewable stack of pull requests.
 - [`implement-program`](skills/implement-program/) - Deliver dependency-linked
