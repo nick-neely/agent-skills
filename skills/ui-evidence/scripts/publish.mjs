@@ -105,13 +105,14 @@ function placement(body, section) {
   }
   // Confirm each match so the block never lands inside a comment or code:
   // the original line, with only comments closed on that line removed, must be
-  // the heading (masked inline code or an open comment would not be), and the
-  // heading must stay visible when comments are masked before code, since a
+  // the heading (masked inline code or an open comment would not be), start
+  // the line, and stay visible when comments are masked before code, since a
   // fence inside a comment can hide that comment's end from maskCode.
   const commentsFirst = maskCode(body.replace(/<!--[\s\S]*?-->/g, maskKeepingLines));
   const headings = [...visible.matchAll(EVIDENCE_HEADINGS)].filter((match) => {
     const range = [match.index, match.index + match[0].length];
-    return LEADING_HEADING.test(body.slice(...range).replace(/<!--.*?-->/g, "").trimEnd()) &&
+    // An indented heading may belong to a list item, which an unindented block would end.
+    return body[match.index] === "#" && LEADING_HEADING.test(body.slice(...range).replace(/<!--.*?-->/g, "").trimEnd()) &&
       LEADING_HEADING.test(commentsFirst.slice(...range).trimEnd());
   });
   if (!headings.length) return { action: "append", dropSectionHeading: false };
