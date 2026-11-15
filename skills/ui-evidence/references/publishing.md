@@ -113,6 +113,22 @@ The publisher owns only the block between:
 <!-- ui-evidence:end -->
 ```
 
+The dry run and result report `placement`, which says where the block lands:
+
+| `placement.action` | When | Effect |
+| --- | --- | --- |
+| `replace-block` | The markers exist | Replaces the block in place |
+| `under-heading` | No markers; one `UI evidence` heading at any level, case-insensitive | Inserts the block directly under that heading, named with its `line`, replacing only the HTML comments and blank lines that follow it |
+| `append` | No markers and no such heading | Appends the block to the end of the body |
+
+Leave the target's own `UI evidence` heading and the rest of its template in
+the body; do not cut the section out to hand to the publisher. Headings inside
+code or HTML comments do not count. A body with two such headings and no
+markers is refused; add the markers under the intended heading. When the body
+already has the heading outside the managed block and the section file starts
+with its own `UI evidence` heading, the section's copy is dropped
+(`placement.droppedSectionHeading: true`) so the heading appears once.
+
 Re-running replaces that block and preserves unrelated prose. Ambiguous or
 malformed markers are refused. Comment mode locates the publishing user's
 managed comment across all pages and refuses multiple matches instead of

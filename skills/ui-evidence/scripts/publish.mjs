@@ -81,11 +81,58 @@ function blockLocation(body) {
   }
   return { start: starts[0].index, end: ends[0].index + END.length };
 }
-function spliceSection(body, section) {
-  const content = section.replace(/^(?:[ \t]*\r?\n)+/, "").replace(/(?:\r?\n[ \t]*)+$/, "");
-  const managed = `${START}\n\n${content}\n\n${END}`;
+// A UI evidence heading at any ATX level, outside code and HTML comments.
+const EVIDENCE_HEADING = /^ {0,3}#{1,6}[ \t]+ui[ \t]+evidence(?:[ \t]+#+)?[ \t]*\r?$/gim;
+const SECTION_HEADING = /^ {0,3}#{1,6}[ \t]+ui[ \t]+evidence(?:[ \t]+#+)?[ \t]*(?:\r?\n|$)/i;
+const blank = (text) => text.replace(/[^\n]/g, " ");
+const visibleText = (markdown) => maskCode(markdown).replace(/<!--[\s\S]*?-->/g, blank);
+const trimSection = (section) => section.replace(/^(?:[ \t]*\r?\n)+/, "").replace(/(?:\r?\n[ \t]*)+$/, "");
+
+// Decide where the managed block lands: an existing block is replaced in place;
+// otherwise the block goes directly under the body's own UI evidence heading,
+// replacing only the HTML comments and blank lines that follow it; otherwise
+// it is appended. When the body has its own heading, the section's leading
+// heading is dropped so the heading appears once.
+function placement(body, section) {
   const location = blockLocation(body);
-  if (location) return body.slice(0, location.start) + managed + body.slice(location.end);
+  let visible = visibleText(body);
+  if (location) visible = visible.slice(0, location.start) + blank(visible.slice(location.start, location.end)) + visible.slice(location.end);
+  const headings = [...visible.matchAll(EVIDENCE_HEADING)];
+  const dropSectionHeading = headings.length > 0 && SECTION_HEADING.test(trimSection(section));
+  if (location) return { action: "replace-block", ...location, dropSectionHeading };
+  if (!headings.length) return { action: "append", dropSectionHeading };
+  if (headings.length > 1) fail("multiple UI evidence headings; add the ui-evidence markers under the intended heading before publishing");
+  const heading = headings[0];
+  const lineEnd = heading.index + heading[0].length;
+  const lineBreak = body[lineEnd] === "\n";
+  const start = lineBreak ? lineEnd + 1 : lineEnd;
+  const filler = /[ \t]*(?:<!--[\s\S]*?-->[ \t]*)*(?:\r?\n|$)/y;
+  let end = start;
+  while (end < body.length) {
+    filler.lastIndex = end;
+    const match = filler.exec(body);
+    if (!match?.[0].length) break;
+    end += match[0].length;
+  }
+  return {
+    action: "under-heading", heading: body.slice(heading.index, lineEnd).trim(),
+    line: body.slice(0, heading.index).split("\n").length, start, end, lineBreak, dropSectionHeading,
+  };
+}
+function describePlacement(where) {
+  const { action, heading, line, dropSectionHeading } = where;
+  return { action, ...(heading ? { heading, line } : {}), ...(dropSectionHeading ? { droppedSectionHeading: true } : {}) };
+}
+function spliceSection(body, section) {
+  const where = placement(body, section);
+  let content = trimSection(section);
+  if (where.dropSectionHeading) content = trimSection(content.replace(SECTION_HEADING, ""));
+  const managed = `${START}\n\n${content}\n\n${END}`;
+  if (where.action === "replace-block") return body.slice(0, where.start) + managed + body.slice(where.end);
+  if (where.action === "under-heading") {
+    const rest = body.slice(where.end);
+    return `${body.slice(0, where.start)}${where.lineBreak ? "\n" : "\n\n"}${managed}\n${rest ? "\n" : ""}${rest}`;
+  }
   if (!body) return `${managed}\n`;
   const separator = body.endsWith("\n\n") ? "" : body.endsWith("\n") ? "\n" : "\n\n";
   return `${body}${separator}${managed}\n`;
@@ -249,7 +296,7 @@ function localPath(ref, root) {
   return real;
 }
 function collectAssets(markdown, root, videoLimit) {
-  const visible = maskCode(markdown).replace(/<!--[\s\S]*?-->/g, (value) => value.replace(/[^\n]/g, " "));
+  const visible = visibleText(markdown);
   const occurrences = [];
   const assets = new Map();
   const add = (ref, start, end, style, alt = "") => {
@@ -386,9 +433,9 @@ async function main() {
     existing = managed[0];
     current = existing?.body ?? "";
   }
-  blockLocation(current);
+  const where = placement(current, markdown);
   const transport = !assets.length ? "none" : existing || occurrences.some((item) => item.style === "html") ? "direct-attachment" : "native-gh";
-  const plan = { repo: options.repo, target: options.target, mode: options.mode, transport, commentId: existing?.id, assets: assets.map((asset) => ({ refs: asset.refs, bytes: asset.size, media: asset.video ? "video" : "image" })) };
+  const plan = { repo: options.repo, target: options.target, mode: options.mode, transport, commentId: existing?.id, placement: describePlacement(where), assets: assets.map((asset) => ({ refs: asset.refs, bytes: asset.size, media: asset.video ? "video" : "image" })) };
   if (freshness) {
     const items = freshness.assets.map(({ refs, assets: ids, status, reasons }) => ({ refs, assets: ids, status, reasons }));
     plan.freshness = { summary: freshness.summary, assets: items, limitations: freshness.limitations };
