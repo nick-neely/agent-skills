@@ -810,3 +810,20 @@ test("refuses a body with more than one UI evidence heading and no markers", () 
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /multiple UI evidence headings/);
 });
+
+test("finds the real heading past inline code and fences inside HTML comments", () => {
+  const inline = fixture("Shown.\n", { body: "## UI evidence `examples`\n\nText.\n\n## UI evidence\n\n## Testing\n" });
+  assert.deepEqual(JSON.parse(run(inline, ["--dry-run"]).stdout).placement, { action: "under-heading", heading: "## UI evidence", line: 5 });
+  const fenced = fixture("Shown.\n", { body: "<!--\n```\n-->\n\n## UI evidence\n\n## Testing\n" });
+  const result = run(fenced);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.equal(result.github.body, `<!--\n\`\`\`\n-->\n\n## UI evidence\n\n${managedBlock("Shown.")}\n\n## Testing\n`);
+});
+
+test("still uploads media that follows an HTML comment containing a fence marker", () => {
+  const f = fixture("<!--\n```\n-->\n\n![After](after.png)\n");
+  writeFileSync(join(f.dir, "after.png"), "image");
+  const result = run(f, ["--dry-run"]);
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout).assets.map((asset) => asset.refs), [["after.png"]]);
+});

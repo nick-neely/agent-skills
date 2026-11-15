@@ -103,7 +103,8 @@ function placement(body, section) {
     const dropSectionHeading = sectionHeading && LEADING_HEADING.test(above.slice(above.lastIndexOf("\n") + 1));
     return { action: "replace-block", ...location, dropSectionHeading };
   }
-  const headings = [...visible.matchAll(EVIDENCE_HEADINGS)];
+  // Masked inline code can leave a heading-shaped line; confirm the original text.
+  const headings = [...visible.matchAll(EVIDENCE_HEADINGS)].filter((match) => LEADING_HEADING.test(body.slice(match.index, match.index + match[0].length).trimEnd()));
   if (!headings.length) return { action: "append", dropSectionHeading: false };
   if (headings.length > 1) fail("multiple UI evidence headings; add the ui-evidence markers under the intended heading before publishing");
   const heading = headings[0];
@@ -159,6 +160,7 @@ function maskCode(markdown) {
   let quoteDepth = 0;
   let listIndents = [];
   let segment = 0;
+  let comment = false;
   for (const line of markdown.split(/(?<=\n)/)) {
     let content = line;
     let depth = 0;
@@ -190,6 +192,15 @@ function maskCode(markdown) {
       listIndents = [];
     }
     quoteDepth = depth;
+    // A multi-line HTML comment is not Markdown; fence markers inside it do not
+    // open code. The caller masks the comment text itself.
+    const opener = /^[ \t]{0,3}<!--/.exec(content);
+    if (comment || (opener && !content.includes("-->", opener[0].length))) {
+      comment = !comment || !line.includes("-->");
+      paragraph = false;
+      lines.push({ text: line, segment: null });
+      continue;
+    }
     if (blank) {
       paragraph = false;
       lines.push({ text: line, segment: null });
