@@ -49,7 +49,9 @@ Keep it to what the user needs to decide. The modules and the script are the evi
 
 ## 6. Capture
 
-Follow rule 6 of [the skill](../SKILL.md): record the verdict, lift the winning module into the real code with proper tests, and commit the candidates and the script to the throwaway branch.
+Follow rule 6 of [the skill](../SKILL.md): record the verdict, and commit the candidates and the script to the throwaway branch.
+
+Choosing a model is a decision, not a request to build it. When the user asks for the implementation, lift the winning module into the real code under the project's conventions and tests.
 
 ## A clickable demo, on request
 
