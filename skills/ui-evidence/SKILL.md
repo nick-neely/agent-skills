@@ -163,6 +163,12 @@ node "<skill-root>/scripts/publish.mjs" --repo owner/project \
   --target pr:123 --section "$EVIDENCE_DIR/section.md"
 ```
 
+Leave the target's own `UI evidence` heading and template in the body; the
+publisher inserts the block under that heading, or appends it when there is
+none. Never cut the template's section out to use as the section file. Check
+`placement` in the dry run; see
+[Managed updates and readback](references/publishing.md#managed-updates-and-readback).
+
 Completion requires reviewed outputs and authenticated readback confirming every
 intended hosted reference on the target. Saved references do not establish
 browser rendering. Qualify a new video publishing path through real playback

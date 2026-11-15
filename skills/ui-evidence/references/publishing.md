@@ -113,6 +113,24 @@ The publisher owns only the block between:
 <!-- ui-evidence:end -->
 ```
 
+The dry run and result report `placement`, which says where the block lands:
+
+| `placement.action` | When | Effect |
+| --- | --- | --- |
+| `replace-block` | The markers exist | Replaces the block in place |
+| `under-heading` | No markers; one unindented heading whose text is exactly `UI evidence`, at any ATX level (`#` to `######`), case-insensitive | Inserts the block directly under that heading, named with its `line`; template comments and every other byte stay in place |
+| `append` | No markers and no such heading | Appends the block to the end of the body |
+
+Leave the target's own `UI evidence` heading and the rest of its template in
+the body; do not cut the section out to hand to the publisher. Headings inside
+code, `<pre>` and similar raw HTML blocks, or HTML comments, and indented headings that may belong to a list item,
+do not count. A body with two such headings and no
+markers is refused; add the markers under the intended heading. When the
+body's heading sits directly above the block, skipping blank lines and
+comments, and the section file starts with its own `UI evidence` heading, the
+section's copy is dropped (`placement.droppedSectionHeading: true`) so the
+heading appears once, including on re-runs.
+
 Re-running replaces that block and preserves unrelated prose. Ambiguous or
 malformed markers are refused. Comment mode locates the publishing user's
 managed comment across all pages and refuses multiple matches instead of

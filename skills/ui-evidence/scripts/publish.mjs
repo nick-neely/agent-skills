@@ -81,11 +81,67 @@ function blockLocation(body) {
   }
   return { start: starts[0].index, end: ends[0].index + END.length };
 }
-function spliceSection(body, section) {
-  const content = section.replace(/^(?:[ \t]*\r?\n)+/, "").replace(/(?:\r?\n[ \t]*)+$/, "");
-  const managed = `${START}\n\n${content}\n\n${END}`;
+// A UI evidence heading at any ATX level, matched outside code and HTML comments.
+const HEADING = String.raw` {0,3}#{1,6}[ \t]+ui[ \t]+evidence(?:[ \t]+#+)?[ \t]*`;
+const EVIDENCE_HEADINGS = new RegExp(`^${HEADING}\\r?$`, "gim");
+const LEADING_HEADING = new RegExp(`^${HEADING}(?:\\r?\\n|$)`, "i");
+const maskKeepingLines = (text) => text.replace(/[^\n]/g, " ");
+const visibleText = (markdown) => maskCode(markdown).replace(/<!--[\s\S]*?-->/g, maskKeepingLines);
+// Raw HTML text blocks render their content literally, like code.
+const RAW_HTML = /<(pre|script|style|textarea)\b[\s\S]*?<\/\1\s*>/gi;
+const trimSection = (section) => section.replace(/^(?:[ \t]*\r?\n)+/, "").replace(/(?:\r?\n[ \t]*)+$/, "");
+
+// Decide where the managed block lands: an existing block is replaced in place;
+// otherwise the block is inserted directly under the body's own UI evidence
+// heading, leaving every existing byte in place; otherwise it is appended. A
+// section's own leading heading is dropped when the body's heading already
+// sits directly above the block, so the heading appears once.
+function placement(body, section) {
   const location = blockLocation(body);
-  if (location) return body.slice(0, location.start) + managed + body.slice(location.end);
+  const visible = visibleText(body).replace(RAW_HTML, maskKeepingLines);
+  const sectionHeading = LEADING_HEADING.test(trimSection(section));
+  if (location) {
+    const above = visible.slice(0, location.start).trimEnd();
+    const dropSectionHeading = sectionHeading && LEADING_HEADING.test(above.slice(above.lastIndexOf("\n") + 1));
+    return { action: "replace-block", ...location, dropSectionHeading };
+  }
+  // Confirm each match so the block never lands inside a comment or code:
+  // the original line, with only comments closed on that line removed, must be
+  // the heading (masked inline code or an open comment would not be), start
+  // the line, and stay visible when comments are masked before code, since a
+  // fence inside a comment can hide that comment's end from maskCode.
+  const commentsFirst = maskCode(body.replace(/<!--[\s\S]*?-->/g, maskKeepingLines).replace(RAW_HTML, maskKeepingLines));
+  const headings = [...visible.matchAll(EVIDENCE_HEADINGS)].filter((match) => {
+    const range = [match.index, match.index + match[0].length];
+    // An indented heading may belong to a list item, which an unindented block would end.
+    return body[match.index] === "#" && LEADING_HEADING.test(body.slice(...range).replace(/<!--.*?-->/g, "").trimEnd()) &&
+      LEADING_HEADING.test(commentsFirst.slice(...range).trimEnd());
+  });
+  if (!headings.length) return { action: "append", dropSectionHeading: false };
+  if (headings.length > 1) fail("multiple UI evidence headings; add the ui-evidence markers under the intended heading before publishing");
+  const heading = headings[0];
+  const lineEnd = heading.index + heading[0].length;
+  return {
+    action: "under-heading", heading: body.slice(heading.index, lineEnd).trim(),
+    line: body.slice(0, heading.index).split("\n").length,
+    start: body[lineEnd] === "\n" ? lineEnd + 1 : lineEnd, dropSectionHeading: sectionHeading,
+  };
+}
+function describePlacement(where) {
+  const { action, heading, line, dropSectionHeading } = where;
+  return { action, ...(heading ? { heading, line } : {}), ...(dropSectionHeading ? { droppedSectionHeading: true } : {}) };
+}
+function spliceSection(body, section, where) {
+  let content = trimSection(section);
+  if (where.dropSectionHeading) content = trimSection(content.replace(LEADING_HEADING, ""));
+  const managed = `${START}\n\n${content}\n\n${END}`;
+  if (where.action === "replace-block") return body.slice(0, where.start) + managed + body.slice(where.end);
+  if (where.action === "under-heading") {
+    const rest = body.slice(where.start);
+    const lead = where.start === body.length && !body.endsWith("\n") ? "\n\n" : "\n";
+    const trail = !rest || /^[ \t]*\r?\n/.test(rest) ? "\n" : "\n\n";
+    return `${body.slice(0, where.start)}${lead}${managed}${trail}${rest}`;
+  }
   if (!body) return `${managed}\n`;
   const separator = body.endsWith("\n\n") ? "" : body.endsWith("\n") ? "\n" : "\n\n";
   return `${body}${separator}${managed}\n`;
@@ -249,7 +305,7 @@ function localPath(ref, root) {
   return real;
 }
 function collectAssets(markdown, root, videoLimit) {
-  const visible = maskCode(markdown).replace(/<!--[\s\S]*?-->/g, (value) => value.replace(/[^\n]/g, " "));
+  const visible = visibleText(markdown);
   const occurrences = [];
   const assets = new Map();
   const add = (ref, start, end, style, alt = "") => {
@@ -386,9 +442,9 @@ async function main() {
     existing = managed[0];
     current = existing?.body ?? "";
   }
-  blockLocation(current);
+  const where = placement(current, markdown);
   const transport = !assets.length ? "none" : existing || occurrences.some((item) => item.style === "html") ? "direct-attachment" : "native-gh";
-  const plan = { repo: options.repo, target: options.target, mode: options.mode, transport, commentId: existing?.id, assets: assets.map((asset) => ({ refs: asset.refs, bytes: asset.size, media: asset.video ? "video" : "image" })) };
+  const plan = { repo: options.repo, target: options.target, mode: options.mode, transport, commentId: existing?.id, placement: describePlacement(where), assets: assets.map((asset) => ({ refs: asset.refs, bytes: asset.size, media: asset.video ? "video" : "image" })) };
   if (freshness) {
     const items = freshness.assets.map(({ refs, assets: ids, status, reasons }) => ({ refs, assets: ids, status, reasons }));
     plan.freshness = { summary: freshness.summary, assets: items, limitations: freshness.limitations };
@@ -419,8 +475,8 @@ async function main() {
       }
       const nativeSection = makeSection(markdown, occurrences, (asset) => asset.staged);
       const template = makeSection(markdown, occurrences, (asset) => `${tokenPrefix}${asset.index}END`, true);
-      expected = spliceSection(current, template);
-      const next = spliceSection(current, nativeSection);
+      expected = spliceSection(current, template, where);
+      const next = spliceSection(current, nativeSection, where);
       const args = [options.kind, options.mode === "body" ? "edit" : "comment", options.number, "--repo", options.repo, "--body-file", "-"];
       const attachments = [...new Set(assets.map((asset) => asset.staged))];
       const previousBlock = blockLocation(current);
@@ -449,9 +505,9 @@ async function main() {
           uploads.push({ refs: asset.refs, url: uploaded });
         }
         const uploadedSection = makeSection(markdown, occurrences, (asset) => asset.url, true);
-        expected = spliceSection(current, uploadedSection);
+        expected = spliceSection(current, uploadedSection, where);
       } catch (error) { writeError = error.message; }
-    } else expected = spliceSection(current, markdown);
+    } else expected = spliceSection(current, markdown, where);
     if (transport !== "native-gh" && !writeError) {
       try {
         const input = JSON.stringify({ body: expected });
