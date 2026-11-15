@@ -824,4 +824,6 @@ test("ignores a heading-shaped line with inline code and accepts a heading with 
   assert.deepEqual(JSON.parse(run(fenced, ["--dry-run"]).stdout).placement, { action: "append" }, "a heading inside a comment with an open fence is not a target");
   const listed = fixture("Shown.\n", { body: "- Review checklist\n\n  ## UI evidence\n\n  Screenshot instructions.\n" });
   assert.deepEqual(JSON.parse(run(listed, ["--dry-run"]).stdout).placement, { action: "append" }, "an indented heading may sit in a list item");
+  const pre = fixture("Shown.\n", { body: "Example:\n\n<pre>\n## UI evidence\n</pre>\n" });
+  assert.deepEqual(JSON.parse(run(pre, ["--dry-run"]).stdout).placement, { action: "append" }, "a heading inside <pre> is literal text");
 });

@@ -87,6 +87,8 @@ const EVIDENCE_HEADINGS = new RegExp(`^${HEADING}\\r?$`, "gim");
 const LEADING_HEADING = new RegExp(`^${HEADING}(?:\\r?\\n|$)`, "i");
 const maskKeepingLines = (text) => text.replace(/[^\n]/g, " ");
 const visibleText = (markdown) => maskCode(markdown).replace(/<!--[\s\S]*?-->/g, maskKeepingLines);
+// Raw HTML text blocks render their content literally, like code.
+const RAW_HTML = /<(pre|script|style|textarea)\b[\s\S]*?<\/\1\s*>/gi;
 const trimSection = (section) => section.replace(/^(?:[ \t]*\r?\n)+/, "").replace(/(?:\r?\n[ \t]*)+$/, "");
 
 // Decide where the managed block lands: an existing block is replaced in place;
@@ -96,7 +98,7 @@ const trimSection = (section) => section.replace(/^(?:[ \t]*\r?\n)+/, "").replac
 // sits directly above the block, so the heading appears once.
 function placement(body, section) {
   const location = blockLocation(body);
-  const visible = visibleText(body);
+  const visible = visibleText(body).replace(RAW_HTML, maskKeepingLines);
   const sectionHeading = LEADING_HEADING.test(trimSection(section));
   if (location) {
     const above = visible.slice(0, location.start).trimEnd();
@@ -108,7 +110,7 @@ function placement(body, section) {
   // the heading (masked inline code or an open comment would not be), start
   // the line, and stay visible when comments are masked before code, since a
   // fence inside a comment can hide that comment's end from maskCode.
-  const commentsFirst = maskCode(body.replace(/<!--[\s\S]*?-->/g, maskKeepingLines));
+  const commentsFirst = maskCode(body.replace(/<!--[\s\S]*?-->/g, maskKeepingLines).replace(RAW_HTML, maskKeepingLines));
   const headings = [...visible.matchAll(EVIDENCE_HEADINGS)].filter((match) => {
     const range = [match.index, match.index + match[0].length];
     // An indented heading may belong to a list item, which an unindented block would end.
