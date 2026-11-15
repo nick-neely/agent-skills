@@ -2,9 +2,10 @@
 
 Portable agent skills I use across projects, published as source.
 
-Each skill is plain Markdown plus the scripts it calls, so it works in Claude
-Code, Codex, Cursor, and anything else that reads `SKILL.md`. Nothing here
-depends on one private project or one machine.
+Each skill is Markdown plus any scripts and references it calls. Most work
+with any agent that reads `SKILL.md`; runtime restrictions and dependencies
+are listed in each skill. Nothing here depends on one private project or one
+machine.
 
 ## Install
 
@@ -12,7 +13,7 @@ With the [`skills`](https://www.skills.sh) CLI:
 
 ```sh
 npx skills add nick-neely/agent-skills --list          # see what's here
-npx skills add nick-neely/agent-skills --skill visual-verification --global
+npx skills add nick-neely/agent-skills --skill uat --global
 ```
 
 Or install by hand: clone the repo and symlink the skill directory into your
@@ -20,7 +21,8 @@ agent's skills directory (`~/.claude/skills/`, `~/.codex/skills/`, and so on).
 
 ```sh
 git clone https://github.com/nick-neely/agent-skills.git
-ln -s "$PWD/agent-skills/skills/visual-verification" ~/.claude/skills/
+mkdir -p ~/.claude/skills
+ln -s "$PWD/agent-skills/skills/uat" ~/.claude/skills/
 ```
 
 Skills that shell out have their own runtime dependencies, listed in each
@@ -29,43 +31,52 @@ Skills that shell out have their own runtime dependencies, listed in each
 
 ## Skills
 
-- [`babysit-pr`](skills/babysit-pr/) - Monitor CI and review bots, address
-  findings, and stop within a bounded review budget.
-- [`file-pr`](skills/file-pr/) - Review the branch diff, reuse or open a PR,
-  and use the separately installed `pr` skill for its body format.
-- [`flow-walk`](skills/flow-walk/) - Hand one user goal to a fresh tester before
-  code review, and sort its report on friction, copy weight and hierarchy.
-- [`full-send`](skills/full-send/) - Implement an issue or spec with TDD and
-  code review, then prove, file, attach warranted UI evidence, babysit and merge.
-- [`full-stop`](skills/full-stop/) - Follow the same implementation and
-  delivery workflow, leaving the PR ready for the user to merge.
-- [`generated-image-assets`](skills/generated-image-assets/) - Remove an image's
-  background, verify the alpha edges, and size it for shipping.
-- [`implement-stack`](skills/implement-stack/) - Implement a spec, issue set, or
-  free-form request as a reviewable stack of pull requests.
-- [`implement-program`](skills/implement-program/) - Deliver dependency-linked
-  tickets through child pull requests into one human-gated integration pull request.
-- [`jira-acli`](skills/jira-acli/) - Read, plan, and update Jira work items through
-  Atlassian ACLI. Requires local Jira authentication; writes need explicit intent.
-- [`leaving-pr-comments`](skills/leaving-pr-comments/) - Write and verify
-  evidence-backed GitHub comments and review replies.
-- [`ship-spec`](skills/ship-spec/) - Claude Code only. Deliver every issue in a
-  GitHub spec as a resumable orchestrated loop.
-- [`sol-loop`](skills/sol-loop/) - Run bounded independent code review with
-  Sol through explicit T3 or native reviewer routes.
+### Plan and implement
+
 - [`to-spec`](skills/to-spec/) - Synthesize the current conversation into a spec
   and publish it to the issue tracker.
 - [`to-tickets`](skills/to-tickets/) - Break a spec or plan into tracer-bullet
   tickets that declare their blocking edges.
+- [`implement-stack`](skills/implement-stack/) - Implement a spec, issue set, or
+  free-form request as a reviewable stack of pull requests.
+- [`implement-program`](skills/implement-program/) - Deliver dependency-linked
+  tickets through child pull requests into one human-gated integration pull request.
+- [`ship-spec`](skills/ship-spec/) - Claude Code only. Deliver every issue in a
+  GitHub spec as a resumable orchestrated loop.
+- [`jira-acli`](skills/jira-acli/) - Read, plan, and update Jira work items through
+  Atlassian ACLI. Requires local Jira authentication; writes need explicit intent.
+
+### Review and deliver
+
+- [`babysit-pr`](skills/babysit-pr/) - Monitor CI and review bots, address
+  findings, and stop within a bounded review budget.
+- [`file-pr`](skills/file-pr/) - Review the branch diff, reuse or open a PR,
+  and use the separately installed `pr` skill for its body format.
+- [`full-send`](skills/full-send/) - Implement an issue or spec with TDD and
+  code review, then prove, file, attach warranted UI evidence, babysit and merge.
+- [`full-stop`](skills/full-stop/) - Follow the same implementation and
+  delivery workflow, leaving the PR ready for the user to merge.
+- [`leaving-pr-comments`](skills/leaving-pr-comments/) - Write and verify
+  evidence-backed GitHub comments and review replies.
+- [`sol-loop`](skills/sol-loop/) - Run bounded independent code review with
+  Sol through explicit T3 or native reviewer routes.
+
+### Test flows and prepare visuals
+
+- [`flow-walk`](skills/flow-walk/) - Hand one user goal to a fresh tester before
+  code review, and sort its report on friction, copy weight and hierarchy.
 - [`uat`](skills/uat/) - Test acceptance criteria and explore user workflows
   with agent-browser, retaining reproducible findings and responsive checks.
 - [`ui-evidence`](skills/ui-evidence/) - Capture, prepare, annotate, compare, and publish
   UI screenshots and video into a pull request or issue.
-- [`visual-verification`](skills/visual-verification/) - Screenshot, inspect,
-  and validate local app UI, including authenticated pages.
+- [`generated-image-assets`](skills/generated-image-assets/) - Remove an image's
+  background, verify the alpha edges, and size it for shipping.
 
-`to-spec` and `to-tickets` are customizations of Matt Pocock's skills. See
-[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for provenance.
+Several workflows call separately installed skills. Read their `SKILL.md`
+before use; installing this collection does not install external skills or tools.
+
+See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for upstream sources,
+licenses, and customization notes.
 
 ## Layout
 
@@ -87,12 +98,15 @@ libraries between skills, no links that escape the skill root.
 ./scripts/validate
 ```
 
-One gate, no dependencies beyond Node and git. It checks layout, frontmatter
-schema, directory-name agreement, OpenAI metadata, local links, script
-references, writing conventions, portability, licenses and provenance,
-executable modes, JavaScript syntax, and symlink containment, then runs the
-negative fixtures and behavior tests. CI runs it on x86_64 Linux, Apple Silicon
-macOS, and Windows.
+Run from Bash with Node.js 22+, Git, and Python 3. FFmpeg, ffprobe, and
+ImageMagick enable the media behavior tests; set `UI_EVIDENCE_REQUIRE_MEDIA=1`
+to fail when required media tools are unavailable. Live browser tests are opt-in.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for test controls.
+
+The gate checks skill layout, metadata, local references, portability, writing
+conventions, licenses, executable modes, script syntax, and symlink containment,
+then runs negative fixtures and behavior tests. CI runs it on Linux, macOS,
+and Windows, requiring media coverage on Linux.
 
 ## Contributing
 

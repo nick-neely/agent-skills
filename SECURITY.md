@@ -31,8 +31,11 @@ anything that widens that blast radius as a vulnerability:
 
 ## Running these safely
 
-- Read a skill before you install it. Every one is plain Markdown and Node.
-- `ui-evidence` and `to-spec`/`to-tickets` publish to GitHub with your
-  token. Both stop for confirmation first. Keep it that way.
-- Screenshots, GIFs, and specs are permanent once published. Redact before
-  upload, not after.
+- Read a skill and its scripts before you install it. Scripts may run shell
+  commands, browser tools, or Python as well as Node.js.
+- Publishing skills use your authenticated tools and permissions. A request to
+  publish to a specified destination can authorize the upload and target update;
+  a local preview request authorizes local preparation only. Check the skill's
+  authorization rules before invoking it.
+- Published screenshots, recordings, and specs can be copied or retained even
+  after removal. Redact sensitive content before upload.

@@ -25,7 +25,9 @@ Never commit:
 - agent-runtime install paths like `~/.claude/skills/...` (use `<skill-root>`);
 - runtime state from Claude Code, Codex, Cursor, or the skills CLI.
 
-The validator enforces all of these mechanically. It will catch you.
+The validator checks layout, references, install paths, machine-specific paths,
+and attribution conventions. Review content for secrets, private context, and
+runtime state before committing; these require judgment.
 
 ## Writing a skill
 
@@ -70,13 +72,19 @@ The negative fixtures remain serial. To limit resource use or reproduce a
 failure serially, run `SKILLS_TEST_JOBS=1 ./scripts/validate`. All test files are
 included at every worker count.
 
+The gate needs Bash, Node.js 22+, Git, and Python 3. Media tests use FFmpeg,
+ffprobe, and ImageMagick when available. Run
+`UI_EVIDENCE_REQUIRE_MEDIA=1 ./scripts/validate` to require that coverage, as
+Linux CI does. Live browser tests are separate: opt in with
+`UI_EVIDENCE_BROWSER_TESTS=1` when working on browser capture, with the
+`agent-browser` runtime and its Chrome installation available.
+
 This is the same gate CI runs. It must pass. If you add a rule to
 `scripts/validate-skills.mjs`, add a negative fixture under `tests/fixtures/`
 and assert it in `scripts/test`, so the rule is itself tested.
 
 Edit skills here, in source. Do not edit an installed copy under an agent
 runtime directory and copy it back - reinstall through the skills CLI instead.
-
 
 ## Measure comparison rendering changes
 
