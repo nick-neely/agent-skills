@@ -11,9 +11,9 @@ Never merge it.
 Read the `full-send` skill as the shared workflow reference. Follow its
 implementation step, including assignment of selected GitHub issues to the
 authenticated user and `tdd`/`code-review`, then its proof, Sol review,
-PR filing, babysitting and description rewrite steps. Apply its conditional `ui-evidence` capture,
-publication and final-evidence gate before handoff. The no-merging rules below
-take precedence.
+PR filing, babysitting and description rewrite steps. Apply its conditional
+`ui-evidence` capture, publication and final-evidence gate before handoff. The
+no-merging rules below take precedence.
 An explicit "full stop" request authorizes that
 work without a separate "full send" request. That includes full-send's
 testing permission. A "full stop" request is the permission for the test

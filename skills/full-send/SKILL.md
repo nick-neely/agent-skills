@@ -78,7 +78,8 @@ one appears.
    branch first. Say how you proved the change where the description keeps
    evidence, such as its template's verification section; only when it has no
    such section, add one short line for it. Once the PR exists, use
-   `ui-evidence` to publish warranted visual evidence to that PR and complete the skill's publication verification.
+   `ui-evidence` to publish warranted visual evidence to that PR and complete
+   the skill's publication verification.
    This evidence belongs on the PR even when full-send will merge it.
 5. **Babysit the PR** with the `babysit-pr` skill. Fix real findings and CI
    failures. Get proof for each fix before you push it. If follow-up commits or
