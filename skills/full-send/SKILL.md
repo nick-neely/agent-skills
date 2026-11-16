@@ -77,16 +77,16 @@ one appears.
 4. **File the PR** with the `file-pr` skill. Rebase onto the latest default
    branch first. Say how you proved the change where the description keeps
    evidence, such as its template's verification section; only when it has no
-   such section, add one short line for it. Once the PR exists, use `ui-evidence` to publish warranted visual
-   evidence to that PR and complete the skill's publication verification.
+   such section, add one short line for it. Once the PR exists, use
+   `ui-evidence` to publish warranted visual evidence to that PR and complete the skill's publication verification.
    This evidence belongs on the PR even when full-send will merge it.
 5. **Babysit the PR** with the `babysit-pr` skill. Fix real findings and CI
    failures. Get proof for each fix before you push it. If follow-up commits or
    rebases change the captured UI, refresh the affected PR evidence before
    applying the final gate.
-6. **Rewrite the description** for the final head with `file-pr`, after the
-   last change and before the merge gate. A body patched as each round lands
-   keeps rows for commits that no longer exist and buries what the merge needs.
+6. **Rewrite the description** for the final head, following `file-pr`'s
+   rewrite rule; only the body changes. Do it after the last commit and before
+   the merge gate, and again whenever the head changes after it.
 7. **Merge** when the merge gate passes.
 8. **Report** in your final message: the PR link, the merge commit, your proof,
    the issue assignment outcome, and each decision you made for the user.
