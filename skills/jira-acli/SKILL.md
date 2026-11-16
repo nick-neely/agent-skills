@@ -1,48 +1,31 @@
 ---
 name: jira-acli
-description: Work with Jira work items through Atlassian ACLI (`acli`). Use when the user names a Jira key (PROJ-123), asks what to work on next, wants a ticket read or planned from, or asks to update Jira.
-compatibility: Requires Atlassian ACLI (`acli`) authenticated to the target Jira site.
+description: 'Jira tickets via ACLI, including keys such as PRT-123 or PROJ-123 (any project prefix). Use for "read this ticket", "plan from this Jira issue", "what should I work on next" in Jira, or requests to create or edit Jira items, comment, change status, or link tickets.'
+compatibility: Requires authenticated Atlassian ACLI (acli); bundled helpers require Python 3, with no extra packages.
 ---
 
 # Jira with ACLI
 
-`acli jira workitem` is the interface. Read before you write; change Jira only on explicit request.
+Use `acli jira workitem`. Substitute this skill's directory for `<skill-root>`.
+Read before writing. Jira mutations require user intent for that operation;
+authorization already given in the session carries through. Completing code
+does not imply a Jira comment or status transition.
 
-## Run it headless
+## Read and plan
 
-`acli` renders for a human at a terminal - ANSI tables, confirmation prompts, ADF blobs. Every invocation has to be forced headless, or it hangs or floods the context.
+1. Run `acli jira auth status`. If ACLI is missing or authentication fails,
+   report the blocker; authentication uses `acli jira auth login`.
+2. Read the named item with `acli jira workitem view PROJ-123`. Extract the goal,
+   acceptance criteria, technical notes, dependencies, and unresolved ambiguity.
+   Read comments, parent, links, or subtasks with scoped `--fields ... --json`:
+   plain-text view silently drops these fields and can join ADF headings onto
+   the previous line. Use JSON to assess description formatting.
+3. Before comparing Jira claims with code or merge state, run `git fetch origin`
+   and inspect `origin/<default-branch>`. Resolve the default branch from the
+   remote; a local checkout or a failed fetch cannot establish current state.
+4. Inspect the relevant repository areas and plan the requested work.
 
-- **Lists -> `--csv` with `--fields`.** A bare `search` prints a box-drawing table wrapped to terminal width. `--json` returns the raw REST payload - avatar URLs, `self` links, schema - at ~15x the bytes of the same rows as CSV.
-- **One item, plain read -> `view KEY`** with no format flag. It flattens the ADF description to readable text (~340 bytes, against ~3.7 KB for `--json`).
-- **Nested data -> `--json` with `--fields`.** Comments, parent, links, and subtasks exist only in JSON output. The text renderer knows a fixed set (key, type, summary, status, assignee, description) and **silently drops** anything else you ask for: `view KEY --fields comment` prints no comments and no error.
-- **Writes -> command-specific confirmation.** Use `-y` for `edit`, `transition`, `assign`, `delete`, and `archive`; use `--yes` for `link create` and `link delete`. Work-item `create` has no confirmation flag in ACLI 1.3.39. Check the subcommand help when unsure.
-
-## Command map
-
-`view` takes a positional key; item updates use `-k/--key`. Work-item `create` and `link` commands use their own flags.
-
-```bash
-acli jira auth status                        # site + account, or why reads are failing
-acli jira workitem view PROJ-123
-acli jira workitem view PROJ-123 --fields "summary,status,parent,comment,issuelinks,subtasks" --json
-acli jira workitem search --jql "..." --fields "key,status,priority,summary" --csv --limit 25
-acli jira workitem comment list   --key PROJ-123 --json    # list / create - there is no `add`
-acli jira workitem comment create --key PROJ-123 --body "..."
-acli jira workitem transition --key PROJ-123 --status "In Review" -y
-acli jira workitem edit       --key PROJ-123 --summary "..." -y
-```
-
-No command lists a work item's available transitions, so `--status` is unverifiable up front. Take the target status from the user or the board, and if the CLI rejects it, report its error verbatim.
-
-If `acli` is missing or unauthenticated (`acli auth login`), say which - never fill in ticket contents from the key alone.
-
-## Workflows
-
-### Read a key
-
-`view` it, then extract goal, acceptance criteria, technical notes, dependencies, and open ambiguity. Reach for `--fields ... --json` when comments, parent, or links carry part of the story. Inspect the repo areas involved and propose a plan before writing code.
-
-### Choose work
+For "what should I work on next", search the current user's unfinished items:
 
 ```bash
 acli jira workitem search \
@@ -50,38 +33,31 @@ acli jira workitem search \
   --fields "key,status,priority,summary" --csv --limit 25
 ```
 
-Rank by priority, scope clarity, blockers, and recent activity. Ask the user to choose when more than one is plausible.
+Rank by priority, scope clarity, blockers, and activity. Resolve the choice with
+the user when several items are plausible.
 
-### Update Jira
+## Write and verify
 
-Read the item first unless this session already did. `create`, `edit`, `transition`, `delete`, `comment`, link writes, and bulk or assignee changes need explicit user intent - when intent is ambiguous, inspect and plan only. Finishing code never implies a transition. Keep comments factual: what changed, how it was validated, any caveat.
-
-For rich descriptions, pass an ADF JSON document (`{"type":"doc","version":1,"content":[...]}`) through `--description-file`. Convert bullets, bold, code, and links to ADF nodes/marks; plain Markdown is stored as text rather than rendered. Work-item `create --json` returns the new key in `.key`.
-
-Before bulk edits, save each affected item's current state with `view KEY --fields "summary,description,issuelinks" --json` to a local backup file.
-
-Branch names: `PROJ-123/short-description` - uppercase key, lowercase hyphenated slug. Git refuses a slashed branch when a bare `PROJ-123` branch already exists, and vice versa; a `cannot lock ref` error means exactly that, so check for the bare branch rather than retrying.
-
-### Create and delete links
-
-Write down the intended relationship as a sentence, such as "PROJ-123 blocks PROJ-456", and read both items' `issuelinks` before writing. Skip an already-correct relationship.
-
-**Direction gotcha:** on ACLI `1.3.39-stable`, "A blocks B" required `--out B --in A --type Blocks`. This was observed despite the help labels and a success message claiming the opposite direction. Check `acli --version`; other versions may behave differently. Use `acli jira workitem link type` to discover available types; the example below covers `Blocks`.
+Read [writing](references/writing.md) before description replacements, comments,
+bulk edits, or other item mutations. Read [links](references/links.md) before
+creating, repairing, or deleting relationships. Use the bundled helpers for
+conversion, backups, description replacement, and link writes:
 
 ```bash
-# Intended: PROJ-123 blocks PROJ-456
-acli jira workitem link create --out PROJ-456 --in PROJ-123 --type Blocks --yes
-acli jira workitem view PROJ-123 --fields issuelinks --json
-acli jira workitem view PROJ-456 --fields issuelinks --json
+python3 -I <skill-root>/scripts/md_to_adf.py description.md description.adf.json
+python3 -I <skill-root>/scripts/jira.py backup PROJ-123
+python3 -I <skill-root>/scripts/jira.py description PROJ-123 description.adf.json
+python3 -I <skill-root>/scripts/jira.py link PROJ-123 Blocks PROJ-456
+python3 -I <skill-root>/scripts/jira.py unlink PROJ-123 PROJ-456 LINK_ID
 ```
 
-**Verify every link write immediately**, including each link in a batch, by rereading both endpoints with `--fields issuelinks --json`. Interpret each `fields.issuelinks[]` entry from the viewed item's perspective:
+`backup` reads Jira and saves a private local snapshot. `description`, `link`,
+and `unlink` only read and show a plan unless `--apply` is supplied. Add it when
+the requested mutation is authorized; it is an execution switch, not approval.
+Description writes back up the current item before replacing it and compare
+the returned ADF with the replacement. Link writes verify both endpoints and
+skip existing correct links. Any nonzero exit stops a batch, including exit 2 for a repaired change
+in ACLI flag behavior. Report the readback and remaining uncertainty.
 
-| Linked issue field | Relationship text |
-| --- | --- |
-| `outwardIssue.key` | `type.outward` (for Blocks: "blocks") |
-| `inwardIssue.key` | `type.inward` (for Blocks: "is blocked by") |
-
-For the example, PROJ-123 must have an `outwardIssue.key` of PROJ-456 with `type.outward` equal to "blocks"; PROJ-456 must show the inverse. The success message alone never proves direction. If the observed relationship differs or cannot be verified, stop the batch and report the intended relationship, actual result, and link ID before further writes.
-
-For an authorized deletion, take the exact link ID from `fields.issuelinks[].id`, run `acli jira workitem link delete --id LINK_ID --yes`, then reread both endpoints and confirm that link ID is absent.
+For other commands, read [command usage](references/commands.md) for headless
+output, confirmations, creation, comments, transitions, and branch names.
