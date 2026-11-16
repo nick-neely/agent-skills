@@ -75,19 +75,23 @@ one appears.
    screenshots or recordings that prove the visible claims.
 3. **Get feedback.** Use the `sol-loop` skill to verify changes.
 4. **File the PR** with the `file-pr` skill. Rebase onto the latest default
-   branch first. Add one short line to the description that says how you proved
-   the change. Once the PR exists, use `ui-evidence` to publish warranted visual
+   branch first. Say how you proved the change where the description keeps
+   evidence, such as its template's verification section; only when it has no
+   such section, add one short line for it. Once the PR exists, use `ui-evidence` to publish warranted visual
    evidence to that PR and complete the skill's publication verification.
    This evidence belongs on the PR even when full-send will merge it.
 5. **Babysit the PR** with the `babysit-pr` skill. Fix real findings and CI
    failures. Get proof for each fix before you push it. If follow-up commits or
    rebases change the captured UI, refresh the affected PR evidence before
    applying the final gate.
-6. **Merge** when the merge gate passes.
-7. **Report** in your final message: the PR link, the merge commit, your proof,
+6. **Rewrite the description** for the final head with `file-pr`, after the
+   last change and before the merge gate. A body patched as each round lands
+   keeps rows for commits that no longer exist and buries what the merge needs.
+7. **Merge** when the merge gate passes.
+8. **Report** in your final message: the PR link, the merge commit, your proof,
    the issue assignment outcome, and each decision you made for the user.
 
-Stay active from step 1 to step 7. If you end your turn while checks or bots are
+Stay active from step 1 to step 8. If you end your turn while checks or bots are
 pending, the work stops, because nobody will prompt you again. Wait with the
 watcher from `babysit-pr`, so something wakes you when the PR changes. In T3
 Code that is `watch_pull_request`. If you stop before the merge, call
@@ -115,6 +119,7 @@ Ask the user.
 Full confidence means all of these are true on the latest commit:
 
 - Your proof covers every change in the diff.
+- The description was rewritten for the latest commit after its last change.
 - Warranted UI evidence reflects the final UI, is attached to the PR, and has
   passed the publication verification required by `ui-evidence`.
 - Required checks are green.
