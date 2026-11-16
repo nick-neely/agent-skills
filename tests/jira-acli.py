@@ -8,6 +8,7 @@ import io
 import json
 import os
 from pathlib import Path
+import string
 import subprocess
 import sys
 import tempfile
@@ -134,6 +135,23 @@ class MarkdownTests(unittest.TestCase):
                      "See ![image](https://example.com)"):
             with self.subTest(text=text), self.assertRaises(ValueError):
                 md.convert(text)
+
+    def test_all_ascii_punctuation_escapes(self):
+        for character in string.punctuation:
+            with self.subTest(character=character):
+                self.assertEqual(md.inline("\\" + character), [{"type": "text", "text": character}])
+        self.assertEqual(md.inline(r"Cost: \$5; \#tag; \- item"),
+                         [{"type": "text", "text": "Cost: $5; #tag; - item"}])
+        self.assertEqual(md.inline(r"keep\n"), [{"type": "text", "text": r"keep\n"}])
+
+    def test_fences_close_with_same_character_and_sufficient_length(self):
+        for opening, closing in (("```", "````"), ("~~~~", "~~~~~  ")):
+            with self.subTest(opening=opening):
+                self.assertEqual(md.convert(f"{opening}\nx\n{closing}")["content"],
+                                 [{"type": "codeBlock", "content": [{"type": "text", "text": "x"}]}])
+        for closing in ("``", "``` trailing", "~~~~"):
+            with self.subTest(closing=closing), self.assertRaisesRegex(ValueError, "unclosed"):
+                md.convert(f"```\nx\n{closing}")
 
     def test_real_isolated_cli_and_existing_output(self):
         with tempfile.TemporaryDirectory() as directory:

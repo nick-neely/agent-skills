@@ -5,11 +5,17 @@ import argparse
 import json
 from pathlib import Path
 import re
+import string
 import sys
 from urllib.parse import urlsplit
 
 
-TOKEN = re.compile(r"\\([\\`*\[\]()_])|`([^`\n]+)`|\*\*((?:`[^`\n]+`|[^`\n])+?)\*\*|\[([^\]\n]+)\]\(((?:[^()\s]|\([^()\s]*\))+)\)")
+TOKEN = re.compile(
+    r"\\([" + re.escape(string.punctuation) + r"])"
+    r"|`([^`\n]+)`"
+    r"|\*\*((?:`[^`\n]+`|[^`\n])+?)\*\*"
+    r"|\[([^\]\n]+)\]\(((?:[^()\s]|\([^()\s]*\))+)\)"
+)
 LIST = re.compile(r"^(-|\*|\d+[.)])\s+(.+)$")
 
 
@@ -70,7 +76,7 @@ def convert(markdown):
     for number, raw in enumerate(markdown.splitlines(), 1):
         line = raw.rstrip()
         if fence:
-            if re.fullmatch(re.escape(fence) + r"\s*", line):
+            if len(line) >= len(fence) and line and set(line) == {fence[0]}:
                 node = {"type": "codeBlock"}
                 if language:
                     node["attrs"] = {"language": language}
