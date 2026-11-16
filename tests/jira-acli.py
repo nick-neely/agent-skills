@@ -139,10 +139,10 @@ class MarkdownTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             target = Path(directory) / "description.json"
             command = [sys.executable, "-I", str(SCRIPTS / "md_to_adf.py"), "-", str(target)]
-            first = subprocess.run(command, input="### Café\n", text=True, capture_output=True)
+            first = subprocess.run(command, input="### Café\n", encoding="utf-8", capture_output=True)
             self.assertEqual(first.returncode, 0, first.stderr)
             self.assertEqual(json.loads(target.read_text(encoding="utf-8"))["content"][0]["type"], "heading")
-            second = subprocess.run(command, input="Overwrite", text=True, capture_output=True)
+            second = subprocess.run(command, input="Overwrite", encoding="utf-8", capture_output=True)
             self.assertNotEqual(second.returncode, 0)
             self.assertEqual(json.loads(target.read_text(encoding="utf-8"))["content"][0]["type"], "heading")
 

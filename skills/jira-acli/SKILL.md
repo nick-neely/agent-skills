@@ -56,8 +56,9 @@ and `unlink` only read and show a plan unless `--apply` is supplied. Add it when
 the requested mutation is authorized; it is an execution switch, not approval.
 Description writes back up the current item before replacing it and compare
 the returned ADF with the replacement. Link writes verify both endpoints and
-skip existing correct links. Any nonzero exit stops a batch, including exit 2 for a repaired change
-in ACLI flag behavior. Report the readback and remaining uncertainty.
+skip existing correct links. Any nonzero exit stops a batch, including exit 2
+for a repaired change in ACLI flag behavior. Report the readback and remaining
+uncertainty.
 
 For other commands, read [command usage](references/commands.md) for headless
 output, confirmations, creation, comments, transitions, and branch names.
