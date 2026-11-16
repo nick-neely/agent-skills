@@ -16,6 +16,10 @@ description: >-
 
 A flow walk is one first-use attempt at a real user goal in the running app, by a tester who knows nothing about how it was built. It asks whether the flow reads easily and what can go. Tests and code review own correctness. Substitute this skill directory's absolute path for `<skill-root>`.
 
+## Talking about the walk
+
+In user-facing updates, describe the action in ordinary language, for example: "I'll walk through the flow as a first-time user and look for friction." Call the activity a "flow walk" when a label is useful. When you need to identify the skill itself, use `flow-walk`.
+
 ## Project notes
 
 Both roles read the project's flow-walk notes before anything else. They are at the path the project's agent instructions (`AGENTS.md`, `CLAUDE.md` or equivalent) name for flow walks, otherwise at `docs/agents/flow-walk.md`.
