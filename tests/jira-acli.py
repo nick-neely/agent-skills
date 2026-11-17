@@ -144,6 +144,32 @@ class MarkdownTests(unittest.TestCase):
                          [{"type": "text", "text": "Cost: $5; #tag; - item"}])
         self.assertEqual(md.inline(r"keep\n"), [{"type": "text", "text": r"keep\n"}])
 
+    def test_escapes_inside_strong_content(self):
+        for source, value in ((r"**a\***", "a*"), (r"**a\\**", "a\\"),
+                              (r"**a\n**", r"a\n"), (r"**a\`**", "a`")):
+            with self.subTest(source=source):
+                self.assertEqual(md.inline(source),
+                                 [{"type": "text", "text": value, "marks": [{"type": "strong"}]}])
+        self.assertEqual(md.inline(r"**a\* `code`**"), [
+            {"type": "text", "text": "a* ", "marks": [{"type": "strong"}]},
+            {"type": "text", "text": "code", "marks": [{"type": "code"}]},
+        ])
+
+    def test_escaped_image_marker_backslash_parity(self):
+        for count in range(5):
+            source = "\\" * count + "![Docs](https://example.com)"
+            with self.subTest(count=count):
+                if count % 2:
+                    nodes = md.convert(source)["content"][0]["content"]
+                    self.assertEqual(nodes, [
+                        {"type": "text", "text": "\\" * (count // 2) + "!"},
+                        {"type": "text", "text": "Docs", "marks": [
+                            {"type": "link", "attrs": {"href": "https://example.com"}}]},
+                    ])
+                else:
+                    with self.assertRaises(ValueError):
+                        md.convert(source)
+
     def test_fences_close_with_same_character_and_sufficient_length(self):
         for opening, closing in (("```", "````"), ("~~~~", "~~~~~  ")):
             with self.subTest(opening=opening):

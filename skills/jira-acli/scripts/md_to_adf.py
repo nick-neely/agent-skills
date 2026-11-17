@@ -13,7 +13,7 @@ from urllib.parse import urlsplit
 TOKEN = re.compile(
     r"\\([" + re.escape(string.punctuation) + r"])"
     r"|`([^`\n]+)`"
-    r"|\*\*((?:`[^`\n]+`|[^`\n])+?)\*\*"
+    r"|\*\*((?:\\[^\n]|`[^`\n]+`|[^`\\\n])+?)\*\*"
     r"|\[([^\]\n]+)\]\(((?:[^()\s]|\([^()\s]*\))+)\)"
 )
 LIST = re.compile(r"^(-|\*|\d+[.)])\s+(.+)$")
@@ -47,7 +47,10 @@ def inline(text, marks=()):
             nodes.extend(inline(strong, marks + ({"type": "strong"},)))
         else:
             if match.start() and text[match.start() - 1] == "!":
-                raise ValueError("images are outside the supported Markdown subset")
+                prefix = text[:match.start() - 1]
+                backslashes = len(prefix) - len(prefix.rstrip("\\"))
+                if backslashes % 2 == 0:
+                    raise ValueError("images are outside the supported Markdown subset")
             parsed = urlsplit(url)
             if not ((parsed.scheme in ("http", "https") and parsed.netloc)
                     or (parsed.scheme == "mailto" and parsed.path)):
