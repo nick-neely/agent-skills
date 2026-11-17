@@ -21,9 +21,34 @@ def key(value):
     return value
 
 
+def acli_executable():
+    current = Path.cwd().resolve()
+    checkout = None
+    for parent in (current, *current.parents):
+        marker = parent / ".git"
+        if marker.is_file() or (marker / "HEAD").is_file():
+            checkout = parent
+    name = "acli.exe" if os.name == "nt" else "acli"
+    for entry in os.environ.get("PATH", "").split(os.pathsep):
+        directory = Path(entry)
+        if not directory.is_absolute():
+            continue
+        try:
+            candidate = (directory / name).resolve(strict=True)
+        except (OSError, RuntimeError):
+            continue
+        if candidate.parent == current or (checkout is not None and candidate.is_relative_to(checkout)):
+            continue
+        if os.name == "nt" and candidate.suffix.lower() != ".exe":
+            continue
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return str(candidate)
+    raise ValueError("Install ACLI on an absolute PATH outside the checkout; local executables are refused.")
+
+
 def acli(*args):
     try:
-        result = subprocess.run(["acli", "jira", "workitem", *args], capture_output=True,
+        result = subprocess.run([acli_executable(), "jira", "workitem", *args], capture_output=True,
                                 encoding="utf-8", timeout=45, check=False)
     except subprocess.TimeoutExpired as error:
         raise ValueError("ACLI timed out; a write may have completed. Read back before retrying.") from error

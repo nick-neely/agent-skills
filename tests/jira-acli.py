@@ -7,6 +7,7 @@ import importlib.util
 import io
 import json
 import os
+import shutil
 from pathlib import Path
 import string
 import subprocess
@@ -189,6 +190,118 @@ class MarkdownTests(unittest.TestCase):
             second = subprocess.run(command, input="Overwrite", encoding="utf-8", capture_output=True)
             self.assertNotEqual(second.returncode, 0)
             self.assertEqual(json.loads(target.read_text(encoding="utf-8"))["content"][0]["type"], "heading")
+
+
+class ExecutableTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name).resolve()
+        self.checkout = self.root / "checkout"
+        self.checkout.mkdir()
+        (self.checkout / ".git").mkdir()
+        (self.checkout / ".git" / "HEAD").write_text("ref: refs/heads/main")
+        self.nested = self.checkout / "nested"
+        self.nested.mkdir()
+        (self.nested / ".git").write_text("gitdir: elsewhere")
+        self.trusted = self.root / "installed tools"
+        self.trusted.mkdir()
+        self.name = "acli.exe" if os.name == "nt" else "acli"
+        for directory in (self.checkout, self.nested, self.trusted):
+            executable = directory / self.name
+            executable.write_text("fixture")
+            executable.chmod(0o755)
+        self.cwd = Path.cwd()
+        os.chdir(self.nested)
+        self.addCleanup(os.chdir, self.cwd)
+
+    def test_spawn_uses_absolute_external_path_not_checkout(self):
+        search = os.pathsep.join(("", ".", "..", str(self.nested), str(self.checkout), str(self.trusted)))
+        with patch.dict(os.environ, {"PATH": search}), patch.object(jira.subprocess, "run") as run:
+            run.return_value = subprocess.CompletedProcess([], 0, stdout="ok", stderr="")
+            self.assertEqual(jira.acli("view", "PROJ-1"), "ok")
+            self.assertEqual(run.call_args.args[0],
+                             [str(self.trusted / self.name), "jira", "workitem", "view", "PROJ-1"])
+
+    def test_checkout_only_path_fails_without_spawning(self):
+        for search in ("", ".", str(self.checkout), str(self.nested)):
+            with self.subTest(search=search), patch.dict(os.environ, {"PATH": search}), \
+                    patch.object(jira.subprocess, "run") as run:
+                with self.assertRaisesRegex(ValueError, "outside the checkout"):
+                    jira.acli("view", "PROJ-1")
+                run.assert_not_called()
+
+    def test_external_symlink_into_checkout_is_rejected(self):
+        alias = self.root / "alias"
+        try:
+            alias.symlink_to(self.checkout, target_is_directory=True)
+        except OSError:
+            self.skipTest("creating symlinks requires host support")
+        with patch.dict(os.environ, {"PATH": os.pathsep.join((str(alias), str(self.trusted)))}):
+            self.assertEqual(jira.acli_executable(), str(self.trusted / self.name))
+
+    def test_external_executable_symlink_is_supported(self):
+        executable = self.trusted / self.name
+        target = self.trusted / ("versioned-acli.exe" if os.name == "nt" else "versioned-acli")
+        executable.rename(target)
+        try:
+            executable.symlink_to(target)
+        except OSError:
+            self.skipTest("creating symlinks requires host support")
+        with patch.dict(os.environ, {"PATH": str(self.trusted)}):
+            self.assertEqual(jira.acli_executable(), str(target))
+
+    @unittest.skipUnless(os.name == "nt", "native Windows executable search")
+    def test_native_windows_never_uses_checkout_decoy(self):
+        system = Path(os.environ["SystemRoot"]) / "System32"
+        shutil.copyfile(system / "cmd.exe", self.trusted / self.name)
+        shutil.copyfile(system / "where.exe", self.nested / self.name)
+        with patch.dict(os.environ, {"PATH": str(self.trusted)}):
+            result = subprocess.run([jira.acli_executable(), "/d", "/c", "echo", "trusted"],
+                                    capture_output=True, text=True, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), "trusted")
+
+    @unittest.skipUnless(os.name == "nt", "Windows relative path forms")
+    def test_windows_drive_relative_and_root_relative_paths_are_rejected(self):
+        for entry in (self.nested.drive, self.nested.drive + "relative", "\\relative"):
+            with self.subTest(entry=entry), patch.dict(os.environ, {"PATH": entry}):
+                with self.assertRaisesRegex(ValueError, "outside the checkout"):
+                    jira.acli_executable()
+
+    @unittest.skipIf(os.name == "nt", "POSIX executable launch")
+    def test_posix_executes_installed_tool_not_checkout(self):
+        (self.nested / self.name).write_text("#!/bin/sh\nprintf 'untrusted'\n")
+        (self.trusted / self.name).write_text("#!/bin/sh\nprintf 'trusted'\n")
+        with patch.dict(os.environ, {"PATH": os.pathsep.join((".", str(self.trusted)))}):
+            self.assertEqual(jira.acli("view", "PROJ-1"), "trusted")
+
+    def test_home_directory_allows_installed_child_but_not_current_directory(self):
+        os.chdir(self.root)
+        (self.root / self.name).write_text("fixture")
+        (self.root / self.name).chmod(0o755)
+        with patch.dict(os.environ, {"PATH": os.pathsep.join((str(self.root), str(self.trusted)))}):
+            self.assertEqual(jira.acli_executable(), str(self.trusted / self.name))
+
+    @unittest.skipUnless(os.name == "nt", "Windows command wrappers")
+    def test_windows_executable_alias_cannot_select_command_wrapper(self):
+        executable = self.trusted / self.name
+        wrapper = self.trusted / "acli.cmd"
+        executable.rename(wrapper)
+        try:
+            executable.symlink_to(wrapper)
+        except OSError:
+            self.skipTest("creating symlinks requires host support")
+        with patch.dict(os.environ, {"PATH": str(self.trusted)}):
+            with self.assertRaisesRegex(ValueError, "Install ACLI"):
+                jira.acli_executable()
+
+    def test_missing_tool_fails_without_spawning(self):
+        (self.trusted / self.name).unlink()
+        with patch.dict(os.environ, {"PATH": str(self.trusted)}), patch.object(jira.subprocess, "run") as run:
+            with self.assertRaisesRegex(ValueError, "Install ACLI"):
+                jira.acli("view", "PROJ-1")
+            run.assert_not_called()
 
 
 class JiraTests(unittest.TestCase):

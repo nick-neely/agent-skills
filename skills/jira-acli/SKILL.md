@@ -7,6 +7,9 @@ compatibility: Requires authenticated Atlassian ACLI (acli); bundled helpers req
 # Jira with ACLI
 
 Use `acli jira workitem`. Substitute this skill's directory for `<skill-root>`.
+Install ACLI on an absolute PATH outside the working checkout. Bundled helpers
+refuse checkout-local executables, relative PATH entries, and Windows command
+wrappers; Windows requires the native `acli.exe`.
 Read before writing. Jira mutations require user intent for that operation;
 authorization already given in the session carries through. Completing code
 does not imply a Jira comment or status transition.
