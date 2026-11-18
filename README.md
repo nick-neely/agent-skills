@@ -47,7 +47,8 @@ Skills that shell out have their own runtime dependencies, listed in each
 - [`ship-spec`](skills/ship-spec/) - Claude Code only. Deliver every issue in a
   GitHub spec as a resumable orchestrated loop.
 - [`jira-acli`](skills/jira-acli/) - Read, plan, and update Jira work items through
-  Atlassian ACLI. Requires local Jira authentication; writes need explicit intent.
+  Atlassian ACLI, with Markdown conversion, backups, and verified description
+  and link writes. Requires local Jira authentication and explicit write intent.
 
 ### Review and deliver
 
