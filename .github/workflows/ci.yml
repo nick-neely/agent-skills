@@ -35,8 +35,8 @@ jobs:
         if: runner.os == 'Linux'
         timeout-minutes: 10
         run: |
-          # The runner's Azure mirror can stream packages very slowly.
-          sudo sed -i 's|http://azure\.archive\.ubuntu\.com/ubuntu/|https://archive.ubuntu.com/ubuntu/|g' /etc/apt/apt-mirrors.txt
+          # Regional runner mirrors can stall large package downloads.
+          sudo sed -Ei 's@^https?://([[:alnum:]-]+\.)*archive\.ubuntu\.com/ubuntu/?([[:space:]]|$)@https://archive.ubuntu.com/ubuntu/\2@' /etc/apt/apt-mirrors.txt
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends ffmpeg imagemagick
       - name: Validate skills and behavior
