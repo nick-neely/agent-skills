@@ -13,7 +13,7 @@ Checks: <observed results, inherited failures and unavailable checks>
 Diff command: <command for base to working tree in scope>
 Untracked files: <intended files to inspect>
 
-Read surrounding code and callers. Find behavior bugs and mismatches with intent.
+Start with the scoped diff. Read surrounding code and callers as needed to verify a finding or understand changed behavior. Find behavior bugs and mismatches with intent.
 Identify unnecessary scope growth. Recommend the smallest robust fix.
 blocker = broken intended behavior or a material safety/correctness failure.
 should = a real in-scope bug a plausible caller can encounter.
@@ -22,7 +22,7 @@ nit = optional polish or unrelated expansion.
 Return:
 VERDICT: APPROVE or CHANGES
 S1 [blocker|should|nit] <file>:<line> <claim and evidence>. Fix: <suggestion>
-Use stable IDs. Do not treat a time limit or an unrun check as approval.
+Send the complete verdict and findings together as your final response, then stop. Use stable IDs. Do not treat a time limit or an unrun check as approval.
 ```
 
 For later rounds, append the ledger with fixed, dismissed, deferred and disputed IDs, their evidence, and the change since the previous round. Limit new review to changed code and open findings. Require each old ID to be marked resolved or still open with a reason.
