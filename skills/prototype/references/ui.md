@@ -58,7 +58,7 @@ Sell each variant in one honest line and name its cost in another. Keep the tabl
 
 ## 6. Riff or keep
 
-- **Another round.** Preserve the current round before riffing. For handoff, commit it to the throwaway branch. For implementation, keep the shown variants' files in the current checkout until cleanup. Keep the harness, take ruled-out variants out of the picker, and build a fresh set that diverges *around* the direction they leaned toward.
+- **Another round.** Preserve the current round before riffing. For handoff, archive it on the throwaway branch described in the [handoff rule](../SKILL.md#implementation-or-handoff). For implementation, keep a restorable copy in the current checkout until cleanup, including any prototype fixtures or wiring that the next round changes. Keep the harness, take ruled-out variants out of the picker, and build a fresh set that diverges *around* the direction they leaned toward.
 - **A pick.** Follow [Implementation or handoff](../SKILL.md#implementation-or-handoff). For implementation, remove the prototype variants and any picker, harness, routes, or imports used only by that decision. Remove shared prototype wiring after the last decision. Verify the finished UI in a browser through the normal user flow.
 
 ## Requests
