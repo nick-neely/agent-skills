@@ -42,11 +42,11 @@ Before writing code, list each variant with a name and an **axis**: layout, dens
 - **State that should survive a swap** (the open record, the scroll position) lives in the harness, above the variant, so the user compares like with like.
 - **Development only.** Keep the picker and the route out of production builds.
 
-## 5. Verify and hand off
+## 5. Verify and present
 
 Run it. Flip through every variant yourself in a real browser at the sizes and themes the product ships in, operate every control, and confirm the console is clean. Capture a screenshot of each variant when browser tooling exists.
 
-Then present the set and stop:
+Then present the set and pause for the user to choose or request another round.
 
 | # | Variant | Axis | When it is the right choice | Its cost |
 | --- | --- | --- | --- | --- |
@@ -58,15 +58,14 @@ Sell each variant in one honest line and name its cost in another. Keep the tabl
 
 ## 6. Riff or keep
 
-- **Another round**: commit the current round to the throwaway branch first, so every variant shown stays recoverable. Then keep the harness, cut the variants the user ruled out, and build a fresh set that diverges *around* the direction they leaned toward.
-- **A pick**: follow rule 6 of [the skill](../SKILL.md). Record the pick and the user's reasons, commit the prototype to its throwaway branch, and link the chosen files at a fixed commit from the implementation ticket.
-- **Promotion**, when the user asks for it in the same session: rebuild the winner in its production location on the project's conventions and checks. Prototype code was written under prototype rules.
+- **Another round.** For a handoff, first snapshot this round on the throwaway branch so every variant shown stays recoverable. Keep the harness, cut the variants the user ruled out, and build a fresh set that diverges *around* the direction they leaned toward.
+- **A pick.** Follow [Implementation or handoff](../SKILL.md#implementation-or-handoff). For implementation, remove the picker, harness, prototype variants, and any temporary routes or imports. Verify the finished UI in a browser through the normal user flow.
 
 ## Requests
 
 | The user says | Do |
 | --- | --- |
-| a description | Scope, recon, 3 variants, picker, hand off |
+| a description | Scope, recon, 3 variants, picker, present for a decision |
 | a description and a count, such as "x5" | The same with that many variants, capped at 5 |
 | "riff on" a variant | A new round diverging around it |
-| "keep" a variant | Record the pick and capture the prototype |
+| "keep" a variant | Record the pick and follow the selected outcome |
