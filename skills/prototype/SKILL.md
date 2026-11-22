@@ -36,9 +36,9 @@ If the question stays ambiguous and the user is away, follow the surrounding cod
 
 ## Implementation or handoff
 
-Choose the outcome from the user's request and the active task before the first round. If the task already authorizes implementing the piece being prototyped, use same-session implementation. Use handoff when the task ends at the decision, as with a standalone prototype ticket or a request to build later. Follow the project's prototype conventions within that scope, and update the outcome if the user changes the task.
+Choose the outcome before the first round. Follow an explicit request to implement in this session or hand off. Otherwise, use same-session implementation when the active task already authorizes implementing the piece being prototyped. Use handoff when the task ends at the decision, as with a standalone prototype ticket. Follow the project's prototype conventions within that scope, and update the outcome if the user changes the task.
 
 When the user chooses, record the question, decision, and reasons in the ticket or conversation. Then follow the selected outcome.
 
-- **Implement in this session.** Keep the prototype rounds in the current checkout. Once the user chooses, continue directly into implementation under the existing authorization. Build the selected solution in its production location using the project's conventions. Remove prototype-only files, fixtures, and wiring, run the project's checks, and verify the finished behavior through its normal entry point.
+- **Implement in this session.** Keep the prototype rounds in the current checkout. Once the user chooses, continue directly into implementation under the existing authorization. Build the selected solution in its production location using the project's conventions. Clean up the completed prototype's files, fixtures, and wiring, run the project's checks, and verify the finished behavior through its normal entry point.
 - **Hand off for later.** Commit the prototype to a throwaway branch that never merges. Create or update the follow-up implementation ticket with a pointer to the chosen files at a fixed commit when authorized. Otherwise, leave the pointer in the current ticket or conversation.

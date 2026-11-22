@@ -46,7 +46,7 @@ Before writing code, list each variant with a name and an **axis**: layout, dens
 
 Run it. Flip through every variant yourself in a real browser at the sizes and themes the product ships in, operate every control, and confirm the console is clean. Capture a screenshot of each variant when browser tooling exists.
 
-Then present the set and pause for the user to choose or request another round.
+Present the set with this comparison.
 
 | # | Variant | Axis | When it is the right choice | Its cost |
 | --- | --- | --- | --- | --- |
@@ -58,8 +58,8 @@ Sell each variant in one honest line and name its cost in another. Keep the tabl
 
 ## 6. Riff or keep
 
-- **Another round.** For a handoff, first snapshot this round on the throwaway branch so every variant shown stays recoverable. Keep the harness, cut the variants the user ruled out, and build a fresh set that diverges *around* the direction they leaned toward.
-- **A pick.** Follow [Implementation or handoff](../SKILL.md#implementation-or-handoff). For implementation, remove the picker, harness, prototype variants, and any temporary routes or imports. Verify the finished UI in a browser through the normal user flow.
+- **Another round.** Preserve the current round before riffing. For handoff, commit it to the throwaway branch. For implementation, keep the shown variants' files in the current checkout until cleanup. Keep the harness, take ruled-out variants out of the picker, and build a fresh set that diverges *around* the direction they leaned toward.
+- **A pick.** Follow [Implementation or handoff](../SKILL.md#implementation-or-handoff). For implementation, remove the prototype variants and any picker, harness, routes, or imports used only by that decision. Remove shared prototype wiring after the last decision. Verify the finished UI in a browser through the normal user flow.
 
 ## Requests
 
@@ -68,4 +68,4 @@ Sell each variant in one honest line and name its cost in another. Keep the tabl
 | a description | Scope, recon, 3 variants, picker, present for a decision |
 | a description and a count, such as "x5" | The same with that many variants, capped at 5 |
 | "riff on" a variant | A new round diverging around it |
-| "keep" a variant | Record the pick and follow the selected outcome |
+| "keep" a variant | Follow the selected outcome |
