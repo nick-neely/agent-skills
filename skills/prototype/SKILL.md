@@ -7,16 +7,16 @@ description: Build a throwaway prototype to answer a design question. Use when t
 
 A prototype is **throwaway code that answers a question**. The question decides the shape, so name it first.
 
-## Pick a branch
+## Choose the prototype type
 
 Decide which question is being asked, from the user's prompt, the ticket and the surrounding code. Ask only when those leave it open and the user is reachable.
 
-| The question | Branch | What the user gets |
+| The question | Guide | What the user gets |
 | --- | --- | --- |
 | "What should this look like?" or "How should this interaction feel?" | [references/ui.md](references/ui.md) | Several divergent variants, live, behind a picker. The user flips through and picks. |
 | "Does this state model, data shape or rule hold up?" | [references/logic.md](references/logic.md) | A scenario comparison the agent ran, with a recommendation. The user reads and decides. |
 
-Read the branch's file in full before building. The two produce different artifacts, so a wrong branch wastes the whole prototype.
+Read the matching guide in full before building. The two produce different artifacts.
 
 Signals when the prompt is ambiguous:
 
@@ -26,11 +26,19 @@ Signals when the prompt is ambiguous:
 
 If the question stays ambiguous and the user is away, follow the surrounding code (a backend module is logic; a page or component is UI) and state the assumption in the hand-off.
 
-## Rules for both branches
+## Rules for both types
 
 1. **State the question in one sentence** before writing code, and repeat it in the hand-off. A prototype that answers a different question is waste.
 2. **Throwaway and marked.** Put the prototype beside the code it informs, follow the project's own routing and file conventions, and name it so a reader sees it is a prototype. Production code never imports from it.
 3. **No persistence.** State lives in memory. If the question is about persistence, use a scratch store with an obvious throwaway name.
 4. **Fictional data.** Plausible, product-shaped names and numbers, never real customers or secrets.
-5. **The choice belongs to the user.** Present the result, recommend when asked or when the branch says to, and stop. An agent does not select the winner.
-6. **Capture when decided.** Record the answer (the question, the verdict, the reasons) on the ticket or in the conversation. Commit the prototype to a throwaway branch that never merges, and leave a pointer to that branch at a fixed commit on the implementation ticket. Production code changes only when the user asks for the implementation; it is then rebuilt to production standards, so the main branch holds the validated decision and none of the prototype. When the project documents its own prototype convention, that convention wins.
+5. **The choice belongs to the user.** Present the result, recommend when asked or when the guide says to, and pause for the user to choose or request another round.
+
+## Implementation or handoff
+
+Choose the outcome before the first round. Follow an explicit request to implement in this session or hand off. Otherwise, use same-session implementation when the active task already authorizes implementing the piece being prototyped. Use handoff when the task ends at the decision, as with a standalone prototype ticket. Follow the project's prototype conventions within that scope, and update the outcome if the user changes the task.
+
+When the user chooses, record the question, decision, and reasons in the ticket or conversation. Then follow the selected outcome.
+
+- **Implement in this session.** Keep the prototype rounds in the current checkout. Once the user chooses, continue directly into implementation under the existing authorization. Build the selected solution in its production location using the project's conventions. Clean up the completed prototype's files, fixtures, and wiring, run the project's checks, and verify the finished behavior through its normal entry point.
+- **Hand off for later.** Keep the working checkout on its original branch so implementation can continue there if requested later. Archive only prototype changes on a separate throwaway branch that never merges. Create or update the follow-up implementation ticket with a pointer to the chosen files at a fixed commit when authorized. Otherwise, leave the pointer in the current ticket or conversation.

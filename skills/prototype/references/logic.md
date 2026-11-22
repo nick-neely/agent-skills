@@ -16,7 +16,7 @@ Pick the shape that fits the question:
 - **A state machine** with explicit states and transitions, when which actions are legal is part of the question.
 - **Pure functions over a plain data type**, when there is no current state, only transformations.
 
-Keep it pure: inputs in, value out, with time, randomness and storage passed in as arguments. Candidates share one action vocabulary so the same scenario runs through each. The winning module lifts into the real code afterward.
+Keep it pure: inputs in, value out, with time, randomness and storage passed in as arguments. Candidates share one action vocabulary so the same scenario runs through each.
 
 ## 3. Choose the scenarios
 
@@ -47,11 +47,9 @@ Lead with the recommendation. Then give, in this order:
 
 Keep it to what the user needs to decide. The modules and the script are the evidence; link them, and leave the code out of the hand-over.
 
-## 6. Capture
+## 6. Finish
 
-Follow rule 6 of [the skill](../SKILL.md): record the verdict, and commit the candidates and the script to the throwaway branch.
-
-Choosing a model is a decision, not a request to build it. When the user asks for the implementation, lift the winning module into the real code under the project's conventions and tests.
+Follow [Implementation or handoff](../SKILL.md#implementation-or-handoff). For implementation, integrate the selected model under the project's conventions and verify it against the deciding scenarios. For handoff, capture the candidate modules and scenario runner.
 
 ## A clickable demo, on request
 
