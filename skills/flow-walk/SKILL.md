@@ -3,10 +3,13 @@ name: flow-walk
 description: >-
   Fresh-eyes walk of one user flow in the running app, judging ease: friction,
   copy weight, confusing hierarchy and what can be removed. Use before code
-  review when a change alters what a user sees or decides, and when asked to
-  "walk this flow", "try this as a user" or get "fresh eyes" on a screen. The
-  builder hands one user goal to a tester who knows nothing about the change,
-  then sorts the report. It takes no acceptance criteria and keeps no run
+  review when a change adds a user flow or reshapes one: its screens, steps or
+  decisions, a state the user must act from, or how a first-time user makes a
+  consequential choice. Always use when asked to "walk this flow", "try this
+  as a user" or get "fresh eyes" on a screen. A change that keeps one screen's
+  route and decisions gets the builder's own look instead. The builder hands
+  one user goal to a tester who knows nothing about the change, then sorts the
+  report. It takes no acceptance criteria and keeps no run
   folder, only the report; checking acceptance criteria against requirements with retained
   evidence is the uat skill's job, and correctness belongs to tests and code
   review.
@@ -31,6 +34,7 @@ Where the notes speak on an item, they replace this skill's default for that ite
 | How to open the app at a commit, and its switches | The project's documented dev command |
 | User states and how to enter each | The means the project documents; otherwise only what the brief and the visible interface allow |
 | Who the users are | An unknown first-time user |
+| Which changes qualify for a walk | The rule in handoff step 1 |
 | Differences from production | None assumed; the brief lists any |
 | Tester and browser tooling | Any fresh agent or a person; any browser tool that can screenshot, set a viewport and measure the page |
 | Design and product guidance for the assess step | None |
@@ -46,7 +50,12 @@ Where the notes speak on an item, they replace this skill's default for that ite
 
 ## Handoff
 
-1. **Qualify.** A change qualifies when it adds or alters a screen, panel, step, state or wording a user meets, including backend work that changes a visible journey. Done: the change qualifies, or the record says why it doesn't.
+1. **Qualify.** A request for a walk always qualifies. Otherwise a change qualifies when it changes how a user gets through a flow, including backend work that changes a visible journey:
+   - it adds, removes or reorders a screen, step or decision;
+   - it builds a state the user must act from, such as a first-run, empty or error state;
+   - it changes how a first-time user finds the next step, weighs a consequential choice such as consent or billing, or recognizes completion.
+
+   Any other change inside one existing screen, such as wording, styling or one control, gets your own look at both viewports instead. Done: the change qualifies, or the record says why it doesn't.
 2. **Prepare.** Finish the feature, confirm its main path works, run its affected tests and commit: a fresh tester starts from committed state. Done: you have a commit SHA whose main path you have used yourself.
 3. **Write the goal.** One line each:
    - **Goal:** the user's goal in their own words, scoped to the flow this change touches. It must be achievable at this commit, without anything that will still be closed to real users once this ships, such as buying a plan while purchasing stays switched off.
@@ -86,5 +95,5 @@ Where the notes speak on an item, they replace this skill's default for that ite
 
    Done: every finding is applied, declined with a reason, filed or commented as a reproduced bug, or in the walk notes.
 6. **Retest once.** Start another fresh tester with the goal lines, the commit that holds your fixes, and each applied finding's symptom and evidence, with no account of the fix. It reports each one as gone, still there or changed. What remains is recorded as open. Done: every applied finding has a verdict.
-7. **Keep it current.** Code review follows the walk. When review changes a visible flow, a fresh tester rechecks that flow once for that change before handoff. A wording-only fix needs no new walk. Done: the last walk's commit shows the same visible flow as the final head, apart from wording.
+7. **Keep it current.** Code review follows the walk. When review changes a visible flow in a way that would itself qualify under step 1, a fresh tester rechecks that flow once for that change before handoff. Done: the last walk's commit and the final head differ in no way that would qualify.
 8. **Record.** The record gets the walk's commit, user state, findings and dispositions with issue references where filed, the walk notes or a link to them, and what the walk couldn't reach. Name the states, older data and failure paths the change touches that no walk reached, so review checks them. Mark a later walk's findings that are already filed or noted as repeats, and count only the rest as new. The tester's "needs your eye" list goes beside it, for the owner. Done: the owner can see from the record what was walked and what still needs a person.
