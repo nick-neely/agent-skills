@@ -52,6 +52,8 @@ Skills that shell out have their own runtime dependencies, listed in each
 
 ### Review and deliver
 
+- [`code-review`](skills/code-review/) - Review implementation changes against
+  project standards and the spec, including callers outside the diff.
 - [`babysit-pr`](skills/babysit-pr/) - Monitor CI and review bots, address
   findings, and stop within a bounded review budget.
 - [`file-pr`](skills/file-pr/) - Review the branch diff, reuse or open a PR,
