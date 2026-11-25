@@ -10,7 +10,7 @@ If the user passes a ticket reference, fetch it from the issue tracker and state
 
 ## 1. Say what you will prove
 
-Before editing, state three short entries. A change with no behavior to prove, such as a rename or a config edit, takes one line saying so in their place.
+Before editing, state three short entries. A change with no behavior to prove, such as a rename or a formatting change, takes one line saying so in their place.
 
 - **Proves:** the acceptance criteria and the failures worth catching, each with its expected result taken from the ticket. Mark an expectation you inferred as inferred.
 - **Seams:** the public interface each one is tested through.
@@ -20,7 +20,8 @@ Before editing, state three short entries. A change with no behavior to prove, s
 | --- | --- |
 | Acceptance criteria describe user-facing behavior that tests at these seams cannot observe | `uat`, whose walkthrough also covers ease |
 | It adds, removes or reorders a screen, step or decision in a user flow, builds a state the user must act from, or changes how a first-time user finds the next step, weighs a consequential choice or recognizes completion | `flow-walk`, whose first step decides whether the change qualifies |
-| What a user sees or does changes in some other way | Use the changed path yourself in the running app |
+| What a user sees or does changes in some other way | Use the changed path yourself in the running app, at desktop and phone widths for a web interface |
+| Its effect is one the tests at these seams cannot observe, such as a migration, a scheduled job, a command or infrastructure | Run it yourself against a local or non-production target, as a dry run where the tool has one, and observe the result |
 | Anything else | None |
 
 Match the technique to the risk with tooling the repository already has, such as a property test for a rule over many inputs. Name a warranted technique it lacks in the handoff.
@@ -49,7 +50,7 @@ Done: the check has a result, or is recorded as not run with its blocker.
 
 Call the Skill tool with "comment-audit" in apply mode on the current change. Then call "code-review", passing the ticket and comparing against the commit you started from. Rerun the full suite when anything changed after it last passed.
 
-When a fix made after the runtime check changes behavior that check covered, recheck that behavior, by the skill's own recheck rule where one ran.
+When a fix made after the runtime check changes what a user sees or does, check that fix at runtime too: by the skill's own recheck rule where one ran, otherwise by the row of step 1's table that fits the fix.
 
 Commit your work to the current branch. Close with each **Proves** line and the evidence you observed for it, or "unproven" with the reason, then the runtime check's result and any finding it left outside the ticket.
 
