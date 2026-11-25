@@ -60,7 +60,8 @@ My changes are deliberately narrow:
 
 `skills/implement` adapts the upstream skill at
 `4ae2317ddb22b046e26455e4f9c9b3aaaf62212d` and includes its MIT license.
-It keeps manual invocation and calls `comment-audit` before `code-review`.
+It keeps manual invocation, states what the work must prove before editing,
+runs a runtime check, and calls `comment-audit` before `code-review`.
 
 `skills/code-review` adapts the same repository's two-axis review at
 `4ae2317ddb22b046e26455e4f9c9b3aaaf62212d` and includes its MIT license.

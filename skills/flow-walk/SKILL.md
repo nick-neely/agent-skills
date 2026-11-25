@@ -6,10 +6,9 @@ description: >-
   review when a change adds a user flow or reshapes one: its screens, steps or
   decisions, a state the user must act from, or how a first-time user makes a
   consequential choice. Always use when asked to "walk this flow", "try this
-  as a user" or get "fresh eyes" on a screen. A change that keeps one screen's
-  route and decisions gets the builder's own look instead. The builder hands
-  one user goal to a tester who knows nothing about the change, then sorts the
-  report. It takes no acceptance criteria and keeps no run
+  as a user" or get "fresh eyes" on a screen. The builder hands one user goal
+  to a tester who knows nothing about the change, then sorts the report. It
+  takes no acceptance criteria and keeps no run
   folder, only the report; checking acceptance criteria against requirements with retained
   evidence is the uat skill's job, and correctness belongs to tests and code
   review.
@@ -95,5 +94,5 @@ Where the notes speak on an item, they replace this skill's default for that ite
 
    Done: every finding is applied, declined with a reason, filed or commented as a reproduced bug, or in the walk notes.
 6. **Retest once.** Start another fresh tester with the goal lines, the commit that holds your fixes, and each applied finding's symptom and evidence, with no account of the fix. It reports each one as gone, still there or changed. What remains is recorded as open. Done: every applied finding has a verdict.
-7. **Keep it current.** Code review follows the walk. When review changes a visible flow in a way that would itself qualify under step 1, a fresh tester rechecks that flow once for that change before handoff. Done: the last walk's commit and the final head differ in no way that would qualify.
+7. **Keep it current.** Code review follows the walk. When review changes a visible flow in one of step 1's three ways, a fresh tester rechecks that flow once for that change before handoff. Done: the last walk's commit and the final head differ in none of those ways.
 8. **Record.** The record gets the walk's commit, user state, findings and dispositions with issue references where filed, the walk notes or a link to them, and what the walk couldn't reach. Name the states, older data and failure paths the change touches that no walk reached, so review checks them. Mark a later walk's findings that are already filed or noted as repeats, and count only the rest as new. The tester's "needs your eye" list goes beside it, for the owner. Done: the owner can see from the record what was walked and what still needs a person.
