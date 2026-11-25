@@ -20,7 +20,13 @@ its contract changes. For ordinary comments, use the following decisions.
 | Tautology | Narrates what the next line or a well-named test already says. | Delete it. If a business rule is hard to see, express it in the code or a test. |
 | Excuse | Justifies a workaround or promises a later fix. | Leave unrelated workarounds alone. Fix a related issue within scope, verify the behavior, then remove the excuse. If the limitation remains, keep it visible. Link a ticket only if it exists. |
 | Stale | Describes a removed implementation, an expired constraint, or past agent work. | Delete the obsolete part. Preserve any current rationale in the same comment. |
-| Decision record | Explains a non-obvious choice, invariant, or external constraint a maintainer could otherwise break. | Keep the reason beside the code. Trim session notes and speculative plans. Preserve a real condition for retiring the workaround. |
+| Decision record | Explains a non-obvious choice, invariant, or external constraint a maintainer could otherwise break. | Keep local rationale beside the code by default. Trim session notes and speculative plans. Preserve a real condition for retiring the workaround. |
+
+Consult the project's documented conventions for recording decisions. Create
+or update an architecture decision record (ADR) only in apply mode and only
+when the user requests one or an applicable convention calls for one. Existing
+ADRs or a directory for them do not establish that requirement. In read-only
+mode, recommend the relevant record when warranted.
 
 In read-only mode, report a concise table of findings with columns
 `Location`, `Category`, and `Recommended action`. Use file and line for each
