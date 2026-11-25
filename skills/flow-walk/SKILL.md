@@ -4,11 +4,12 @@ description: >-
   Fresh-eyes walk of one user flow in the running app, judging ease: friction,
   copy weight, confusing hierarchy and what can be removed. Use before code
   review when a change adds a user flow or reshapes one: its screens, steps or
-  decisions, a state the user must act from, or how a first-time user makes a
-  consequential choice. Always use when asked to "walk this flow", "try this
-  as a user" or get "fresh eyes" on a screen. The builder hands one user goal
-  to a tester who knows nothing about the change, then sorts the report. It
-  takes no acceptance criteria and keeps no run
+  decisions, a state the user must act from, or how a first-time user finds
+  the next step, weighs a consequential choice or recognizes completion.
+  Always use when asked to "walk this flow", "try this as a user" or get
+  "fresh eyes" on a screen. The builder hands one user goal to a tester who
+  knows nothing about the change, then sorts the report. It takes no
+  acceptance criteria and keeps no run
   folder, only the report; checking acceptance criteria against requirements with retained
   evidence is the uat skill's job, and correctness belongs to tests and code
   review.
@@ -69,7 +70,7 @@ Where the notes speak on an item, they replace this skill's default for that ite
 
    | Finding | Disposition |
    | --- | --- |
-   | A blocker: the goal can't be reached | Fix it, then start a new tester from step 4. |
+   | A blocker: the goal can't be reached | Fix it, commit, then start a new tester from step 4 at the new commit. |
    | On a screen, panel, step, state or wording this change altered, inside this change's scope and needing no new owner decision | Apply it, including cuts and reordering, or decline it with a reason. |
    | Needs a new owner decision | A **walk note**, marked `owner decision`. |
    | A bug you reproduced yourself at this commit, which is only one of these: lost input, wrong or contradictory data, a control that does nothing, or a state that can't be left | File it, or comment on the open issue that already covers it. |

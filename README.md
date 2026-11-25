@@ -41,8 +41,8 @@ Skills that shell out have their own runtime dependencies, listed in each
   code: divergent UI variants behind a live picker, or candidate logic models
   run through scenarios with a recommendation.
 - [`implement`](skills/implement/) - Implement a ticket or spec: state what
-  the work must prove, build it test-first, check the running app, then audit
-  comments and review before committing.
+  the work must prove, build it test-first, check the running app when the
+  change calls for it, then audit comments and review before committing.
 - [`implement-stack`](skills/implement-stack/) - Implement a spec, issue set, or
   free-form request as a reviewable stack of pull requests.
 - [`implement-program`](skills/implement-program/) - Deliver dependency-linked
