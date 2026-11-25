@@ -51,6 +51,6 @@ Call the Skill tool with "comment-audit" in apply mode on the current change. Th
 
 When a fix made after the runtime check changes behavior that check covered, recheck that behavior, by the skill's own recheck rule where one ran.
 
-Commit your work to the current branch. Close with each **Proves** line and the evidence you observed for it, or "unproven" with the reason, then the runtime check's result.
+Commit your work to the current branch. Close with each **Proves** line and the evidence you observed for it, or "unproven" with the reason, then the runtime check's result and any finding it left outside the ticket.
 
 Done: the full suite passes on the committed work and every **Proves** line has evidence or a reason.
