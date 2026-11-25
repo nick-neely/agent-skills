@@ -58,6 +58,12 @@ My changes are deliberately narrow:
 - Both replace em dashes with plain hyphens to match this repository's writing
   convention.
 
+`skills/code-review` adapts the same repository's two-axis review at
+`4ae2317ddb22b046e26455e4f9c9b3aaaf62212d` and includes its MIT license.
+It carries the implementation ticket and uncommitted work into review, asks
+for a concrete benefit before recommending a refactor, and checks untouched
+entry points that share a requirement.
+
 `skills/prototype` is based on the same repository's `prototype` skill at
 `321658273cb1d20b76026717d027d505790106d4`, and on Emil Kowalski's skill of the
 same name (see below). It keeps the upstream name so skills that call
