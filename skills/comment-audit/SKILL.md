@@ -1,7 +1,10 @@
 ---
 name: comment-audit
-description: Audit code comments in an implementation before code review, or when asked to clean up or review comments in a change.
+description: Review comments in a code change and recommend actions. Apply the audit when the caller explicitly requests edits.
 ---
+
+Default to a read-only audit. Use apply mode only when the user or calling
+workflow explicitly asks you to edit the change.
 
 Start with the caller's change or named files, including relevant uncommitted
 and new files. Read the surrounding code and tests. Include existing comments
@@ -19,8 +22,11 @@ its contract changes. For ordinary comments, use the following decisions.
 | Stale | Describes a removed implementation, an expired constraint, or past agent work. | Delete the obsolete part. Preserve any current rationale in the same comment. |
 | Decision record | Explains a non-obvious choice, invariant, or external constraint a maintainer could otherwise break. | Keep the reason beside the code. Trim session notes and speculative plans. Preserve a real condition for retiring the workaround. |
 
-Apply the edits unless the user asked for a read-only audit. Check the
-resulting diff and run the relevant tests for any behavior fix. When called
-by an implementation workflow, continue directly to code review. Carry any
-unresolved in-scope issue into the final handoff. For a standalone audit, summarize
-material findings and include a per-comment table when requested.
+In read-only mode, report a concise table of findings with columns
+`Location`, `Category`, and `Recommended action`. Use file and line for each
+location. If the change is clean, report no findings.
+
+In apply mode, make the edits, check the resulting diff, and run relevant
+tests for any behavior fix. During implementation, continue directly to code
+review without an interim table. Carry unresolved in-scope issues into the
+final handoff.

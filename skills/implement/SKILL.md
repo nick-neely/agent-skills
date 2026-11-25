@@ -12,7 +12,7 @@ Call the Skill tool with "tdd" where possible, at pre-agreed seams.
 
 Run typechecking regularly, single test files regularly, and the full test suite once at the end.
 
-Once implemented, call the Skill tool with "comment-audit" on the current
-change, then call "code-review" to review the resulting implementation.
+Once implemented, call the Skill tool with "comment-audit" in apply mode on
+the current change. Then call "code-review" to review the resulting implementation.
 
 Commit your work to the current branch.

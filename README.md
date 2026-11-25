@@ -54,8 +54,9 @@ Skills that shell out have their own runtime dependencies, listed in each
 
 ### Review and deliver
 
-- [`comment-audit`](skills/comment-audit/) - Clean up code comments in and
-  around a change while preserving the reasons maintainers need.
+- [`comment-audit`](skills/comment-audit/) - Review relevant comments and
+  report a table of recommended actions. Request edits to apply them, as
+  `implement` does before code review.
 - [`code-review`](skills/code-review/) - Review implementation changes against
   project standards and the spec, including callers outside the diff.
 - [`babysit-pr`](skills/babysit-pr/) - Monitor CI and review bots, address
