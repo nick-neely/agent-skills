@@ -40,6 +40,8 @@ Skills that shell out have their own runtime dependencies, listed in each
 - [`prototype`](skills/prototype/) - Answer a design question with throwaway
   code: divergent UI variants behind a live picker, or candidate logic models
   run through scenarios with a recommendation.
+- [`implement`](skills/implement/) - Implement a ticket or spec, audit the
+  affected comments, and review the result before committing.
 - [`implement-stack`](skills/implement-stack/) - Implement a spec, issue set, or
   free-form request as a reviewable stack of pull requests.
 - [`implement-program`](skills/implement-program/) - Deliver dependency-linked
@@ -52,6 +54,9 @@ Skills that shell out have their own runtime dependencies, listed in each
 
 ### Review and deliver
 
+- [`comment-audit`](skills/comment-audit/) - Review relevant comments and
+  report a table of recommended actions. Request edits to apply them, as
+  `implement` does before code review.
 - [`code-review`](skills/code-review/) - Review implementation changes against
   project standards and the spec, including callers outside the diff.
 - [`babysit-pr`](skills/babysit-pr/) - Monitor CI and review bots, address
