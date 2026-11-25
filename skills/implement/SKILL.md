@@ -14,7 +14,7 @@ Before editing, state three short entries. A change with no behavior to prove, s
 
 - **Proves:** the acceptance criteria and the failures worth catching, each with its expected result taken from the ticket. Mark an expectation you inferred as inferred.
 - **Seams:** the public interface each one is tested through.
-- **Runtime:** a check the user or the project asks for, in its instructions or its flow-walk notes; otherwise the first row below that fits the change.
+- **Runtime:** a check the user or the project asks for; otherwise the first row below that fits the change. The project asks in its agent instructions or its flow-walk notes, which are at the path those instructions name, otherwise `docs/agents/flow-walk.md`.
 
 | The change | Runtime check |
 | --- | --- |
@@ -39,7 +39,7 @@ Done: the behavior is implemented and the full suite passes.
 
 ## 3. Check the running app
 
-Run the **Runtime** check against a build you know holds this change. For `uat` or `flow-walk`, call that skill and take its builder role, which hands the test to a fresh tester. Point the tester at that build, and have it return anything it needs from the user that step 1 did not arrange as a blocker instead of waiting. Handle the findings as that skill says, within the ticket's scope: what falls outside it, including a bug the skill would file, goes in the handoff. For your own look, fix what it turns up and look again.
+Run the **Runtime** check against a build you know holds this change. For `uat` or `flow-walk`, call that skill and take its builder role, which hands the test to a fresh tester. Point the tester at that build, and have it return anything it needs from the user that step 1 did not arrange as a blocker instead of waiting. Handle the findings as that skill says, within the ticket's scope: what falls outside it, including a bug the skill would file, goes in the handoff. For your own look, fix what it turns up and look again. When the check led to code changes, rerun the full suite before review.
 
 When the skill is not installed, no fresh tester can be started, the app cannot be run or reached, or the check needs something from the user that step 1 did not arrange, use the changed path yourself where you can and record the check as not run, with what blocked it.
 
