@@ -13,3 +13,7 @@ keep `$manual_dir` out of the output, and print `$manual` to see the variable.
 ```bash
 echo "$manual"
 ```
+
+## Which skill should the user call
+
+"manual" is the user-invoked skill for interactive setup.

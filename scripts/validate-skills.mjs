@@ -134,10 +134,18 @@ function stripCode(text) {
 
 // The call forms CONTRIBUTING.md documents. The verb form needs its backticks,
 // so these read text with only fences removed.
+// A call may wrap onto the next line but never spans a blank one, which ends
+// the paragraph.
+const GAP = String.raw`(?:[ \t]+|[ \t]*\r?\n[ \t]*)`;
+const NAME = String.raw`([a-z0-9]+(?:-[a-z0-9]+)*)`;
 const QUOTED_CALLS = [
-  /Skill\s+tool\s+with\s+"([a-z0-9]+(?:-[a-z0-9]+)*)"/g,
-  /\bcall\s+"([a-z0-9]+(?:-[a-z0-9]+)*)"/gi,
-  /\b(?:call|use|follow|run|load|read|invoke)\s+(?:the\s+)?`([a-z0-9]+(?:-[a-z0-9]+)*)`\s+skill\b/gi,
+  new RegExp(`Skill${GAP}tool${GAP}with${GAP}"${NAME}"`, "g"),
+  new RegExp(String.raw`\bcall${GAP}"${NAME}"`, "gi"),
+  new RegExp(
+    String.raw`\b(?:call|use|follow|run|load|read|invoke)${GAP}(?:the${GAP})?` +
+      "`" + NAME + "`" + GAP + String.raw`skill\b`,
+    "gi",
+  ),
 ];
 // A `$name` inside an inline span is shell, so this one reads text with all
 // code removed.
