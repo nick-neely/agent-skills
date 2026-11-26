@@ -1,12 +1,14 @@
 ---
 name: implementation-proof
 description: Shared method for implementing a change with proof - say what the work must prove, build it test-first, check it running, then audit and review. Use when a calling workflow such as implement, full-send or full-stop names this skill.
-compatibility: Requires the tdd, comment-audit and code-review skills. Uses uat and flow-walk when a change calls for them, and gh-stack for a stack of pull requests.
+metadata:
+  requires: tdd comment-audit code-review
+  uses: uat flow-walk github/gh-stack@gh-stack
 ---
 
 # Implementation proof
 
-The method a calling workflow follows to implement a ticket or spec and show that it works. The caller supplies the ticket, the commit to compare against, and how open questions get answered. Fetching the ticket, the closing commit and delivery stay with the caller.
+The method a calling workflow follows to implement a ticket or spec and show that it works. The caller supplies the ticket, the commit to compare against, and how open questions get answered. Fetching the ticket, the closing commit and delivery stay with the caller. When a skill this method requires is not installed, stop and name it; the collection's README lists what to install.
 
 ## 1. Say what you will prove
 

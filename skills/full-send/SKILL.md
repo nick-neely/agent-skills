@@ -1,7 +1,10 @@
 ---
 name: full-send
 description: Implement an issue or spec through a verified merged PR when the user explicitly asks for full send.
-compatibility: Requires the implementation-proof, sol-loop, file-pr and babysit-pr skills. Uses ui-evidence for visible changes.
+compatibility: Requires authenticated GitHub CLI and a route to OpenAI's Sol reviewer, as the sol-loop skill describes.
+metadata:
+  requires: implementation-proof sol-loop file-pr babysit-pr
+  uses: ui-evidence
 ---
 
 # Full Send

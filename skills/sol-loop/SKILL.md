@@ -1,6 +1,7 @@
 ---
 name: sol-loop
 description: Run a bounded Sol code-review loop when the user requests sol loop or a delivery workflow requires it.
+compatibility: Requires a route to OpenAI's GPT Sol, through T3 Code delegation or a native Sol reviewer.
 ---
 
 # Sol Loop
@@ -9,7 +10,7 @@ Use OpenAI's GPT Sol to review the scoped change, with one reviewer at a time. C
 
 ## Budget
 
-Use three rounds total by default. Round one covers the full scoped diff; later rounds cover changed code and open findings. Extend to five only for security, permissions, auth, data loss, or state/concurrency while a blocker or should stays open with evidence, or when the user requests it. Stop early for nits alone. Declined nits and comment, documentation or format-only fixes need no new round. Track round count, stable finding IDs, severity, evidence, disposition and usage if returned across resumes. Never guess usage. This budget is separate from $babysit-pr's PR-bot budget.
+Use three rounds total by default. Round one covers the full scoped diff; later rounds cover changed code and open findings. Extend to five only for security, permissions, auth, data loss, or state/concurrency while a blocker or should stays open with evidence, or when the user requests it. Stop early for nits alone. Declined nits and comment, documentation or format-only fixes need no new round. Track round count, stable finding IDs, severity, evidence, disposition and usage if returned across resumes. Never guess usage. This budget is separate from the PR-bot budget in `babysit-pr`.
 
 ## Workflow
 

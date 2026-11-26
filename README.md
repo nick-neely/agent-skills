@@ -29,10 +29,29 @@ Skills that shell out have their own runtime dependencies, listed in each
 `SKILL.md`. `ui-evidence` checks its own up front with
 `scripts/preflight.mjs`.
 
-Some skills call others by name. When you install one skill at a time, read
-its `compatibility` line and install what it requires. `implement`,
-`full-send` and `full-stop` all need `implementation-proof`, which needs
-`tdd`, `comment-audit` and `code-review`.
+Some skills call others. Each declares them in its frontmatter under
+`metadata`: `requires` for skills it cannot work without, and `uses` for
+skills only some paths reach. To install one skill with everything it can
+reach, pass the names from its row below:
+
+```sh
+npx skills add nick-neely/agent-skills --global --skill <names>
+```
+
+<!-- install-commands:start -->
+| To use | Install from this repository | Also uses, from other repositories |
+| --- | --- | --- |
+| `babysit-pr` | `babysit-pr leaving-pr-comments` | `openai/skills@gh-fix-ci` |
+| `file-pr` | `file-pr ui-evidence babysit-pr leaving-pr-comments` | `github/gh-stack@gh-stack`, `openai/skills@gh-fix-ci` |
+| `full-send` | `full-send implementation-proof sol-loop file-pr babysit-pr ui-evidence tdd comment-audit code-review uat flow-walk leaving-pr-comments` | `github/gh-stack@gh-stack`, `openai/skills@gh-fix-ci` |
+| `full-stop` | `full-stop full-send implementation-proof sol-loop file-pr babysit-pr ui-evidence tdd comment-audit code-review uat flow-walk leaving-pr-comments` | `github/gh-stack@gh-stack`, `openai/skills@gh-fix-ci` |
+| `implement` | `implement implementation-proof tdd comment-audit code-review uat flow-walk` | `github/gh-stack@gh-stack` |
+| `implementation-proof` | `implementation-proof tdd comment-audit code-review uat flow-walk` | `github/gh-stack@gh-stack` |
+<!-- install-commands:end -->
+
+A name in the last column has the form `owner/repo@skill`; install it from
+that repository the same way. The table is generated from the declarations,
+so it cannot drift from them.
 
 ## Skills
 

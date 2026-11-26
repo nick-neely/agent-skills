@@ -1,7 +1,9 @@
 ---
 name: file-pr
 description: File or update a pull request when asked to open or create a PR, or when a delivery workflow reaches PR submission.
-compatibility: Uses the ui-evidence skill for visible changes and the gh-stack skill for a stack of pull requests.
+compatibility: Requires authenticated GitHub CLI.
+metadata:
+  uses: ui-evidence babysit-pr leaving-pr-comments github/gh-stack@gh-stack
 ---
 
 # File PR

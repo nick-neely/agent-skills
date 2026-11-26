@@ -1,6 +1,9 @@
 ---
 name: babysit-pr
 description: "Use when asked to babysit a PR or pull request, or to 'babysit this work' through PR checks and review feedback. Monitor CI, address review-bot findings, and complete a bounded handoff."
+compatibility: Requires authenticated GitHub CLI.
+metadata:
+  uses: leaving-pr-comments openai/skills@gh-fix-ci
 ---
 
 Apply this workflow to an existing PR. Carry it to passing CI and an accounted-for review-bot state. Keep fixes within its scope; merge or deploy only when explicitly authorized. Substitute this skill's absolute directory for `<skill-root>`.

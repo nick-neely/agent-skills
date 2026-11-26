@@ -10,6 +10,7 @@ description: >-
   agent-browser, produces reproducible evidence, and verifies reported fixes.
   Requests limited to unit tests, source-code review, or implementation debugging
   use their own workflows.
+compatibility: Requires Node.js and the agent-browser CLI with a Chrome it can drive.
 ---
 
 # UAT

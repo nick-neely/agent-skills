@@ -65,6 +65,46 @@ if node "$repo/scripts/validate-skills.mjs" "$self_fixture" >/dev/null 2>"$tempo
   exit 1
 fi
 grep -Fq 'Skill calls user-invoked skill manual' "$temporary/stderr"
+
+expect_invalid undeclared-skill-call 'Skill calls undeclared skill helper'
+
+# Each dependency rule fails on its own when the passing fixture changes in
+# one place: expect_broken <error> <file> <text> <replacement>.
+broken=0
+expect_broken() {
+  broken=$((broken + 1))
+  local fixture="$temporary/broken-$broken"
+  cp -R "$repo/tests/fixtures/names-user-invoked-skill" "$fixture"
+  node -e '
+    const fs = require("node:fs");
+    const [path, from, to] = process.argv.slice(1).map((arg) => arg.replaceAll("\\n", "\n"));
+    const text = fs.readFileSync(path, "utf8");
+    if (!text.includes(from)) throw new Error(`fixture text not found: ${from}`);
+    fs.writeFileSync(path, text.replace(from, to));
+  ' "$fixture/$2" "$3" "$4"
+  if node "$repo/scripts/validate-skills.mjs" "$fixture" >/dev/null 2>"$temporary/stderr"; then
+    printf 'Broken dependency fixture unexpectedly passed: %s\n' "$1" >&2
+    exit 1
+  fi
+  grep -Fq "$1" "$temporary/stderr"
+}
+helper_description='description: Sample model-invoked skill for a fixture.'
+expect_broken 'Unknown skill dependency missing' skills/pointer/SKILL.md \
+  'uses: helper sample' 'uses: helper missing sample'
+expect_broken 'Declared dependency pointer is never named' skills/helper/SKILL.md \
+  "$helper_description" "$helper_description\nmetadata:\n  uses: pointer"
+expect_broken 'Unknown metadata key needs' skills/pointer/SKILL.md 'uses: helper' 'needs: helper'
+expect_broken 'Metadata block is empty' skills/manual/SKILL.md '  requires: helper\n' ''
+expect_broken 'Dependency helper is declared twice' skills/manual/SKILL.md \
+  'requires: helper' 'requires: helper\n  uses: helper'
+expect_broken 'Skill depends on itself' skills/helper/SKILL.md \
+  "$helper_description" "$helper_description\nmetadata:\n  uses: helper"
+expect_broken 'Required skills form a cycle' skills/helper/SKILL.md \
+  "$helper_description" "$helper_description\nmetadata:\n  requires: manual"
+expect_broken 'names a skill in this repository' skills/pointer/SKILL.md \
+  'sample/tools@outside' 'sample/tools@helper'
+expect_broken 'README install table is stale' README.md '`manual helper`' '`manual`'
+expect_broken 'README lacks the generated install table' README.md '<!-- install-commands:start -->' ''
 expect_invalid empty-folded-description 'Folded description requires indented content'
 expect_invalid overlong-folded-description 'Frontmatter description exceeds 1024 characters'
 expect_invalid quoted-overlong-folded-description 'Frontmatter description exceeds 1024 characters'
