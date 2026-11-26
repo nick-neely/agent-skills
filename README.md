@@ -47,12 +47,6 @@ its `compatibility` line and install what it requires. `implement`,
   run through scenarios with a recommendation.
 - [`implement`](skills/implement/) - Implement a ticket or spec through
   `implementation-proof`, asking any open question once up front, then commit.
-- [`implement-stack`](skills/implement-stack/) - Implement a spec, issue set, or
-  free-form request as a reviewable stack of pull requests.
-- [`implement-program`](skills/implement-program/) - Deliver dependency-linked
-  tickets through child pull requests into one human-gated integration pull request.
-- [`ship-spec`](skills/ship-spec/) - Claude Code only. Deliver every issue in a
-  GitHub spec as a resumable orchestrated loop.
 - [`jira-acli`](skills/jira-acli/) - Read, plan, and update Jira work items through
   Atlassian ACLI, with Markdown conversion, backups, and verified description
   and link writes. Requires local Jira authentication and explicit write intent.

@@ -70,7 +70,7 @@ Keep only the calls, files, props, states and boundaries the point needs. Show a
 
 When correctness depends on a contract that spans modules, add the two or three entry points in reading order and the invariant they preserve, beside the sketch. A change that one location explains gets neither.
 
-End with the issue line the repository uses, such as `Closes #12`, when the change has an issue.
+End with the issue line the repository uses, such as `Closes #12`, when the change has an issue. A layer of a stack also says which pull request it sits on, as in `Stacked on #41`.
 
 ## UI evidence
 

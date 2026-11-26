@@ -1,7 +1,7 @@
 ---
 name: implementation-proof
 description: Shared method for implementing a change with proof - say what the work must prove, build it test-first, check it running, then audit and review. Use when a calling workflow such as implement, full-send or full-stop names this skill.
-compatibility: Requires the tdd, comment-audit and code-review skills. Uses uat and flow-walk when a change calls for them.
+compatibility: Requires the tdd, comment-audit and code-review skills. Uses uat and flow-walk when a change calls for them, and gh-stack for a stack of pull requests.
 ---
 
 # Implementation proof
@@ -10,7 +10,7 @@ The method a calling workflow follows to implement a ticket or spec and show tha
 
 ## 1. Say what you will prove
 
-Before editing, state three short entries. A change with no behavior to prove, such as a rename or a formatting change, takes one line saying so in their place.
+Before editing, state four short entries. A change with no behavior to prove, such as a rename or a formatting change, takes one line saying so in place of the first three; Shape is always stated.
 
 - **Proves:** the acceptance criteria, the rules that must always hold and the failures worth catching, each with its expected result taken from the ticket. Mark an expectation you inferred as inferred.
 - **Seams:** the public interface each one is tested through, naming the technique where a risk calls for more than example tests.
@@ -24,15 +24,22 @@ Before editing, state three short entries. A change with no behavior to prove, s
 | Its effect is one the tests at these seams cannot observe, such as a migration, a scheduled job, a command or infrastructure | Run it yourself against a local or non-production target, as a dry run where the tool has one, and observe the result |
 | Anything else | None |
 
+- **Shape:** one pull request, or a stack of them. One is the default, and a change that fits one review stays one. Propose a stack only when the work holds changes a reviewer would judge on their own, such as a refactor that prepares the ground, a schema change, the behavior, then a consumer, or when one diff would be too large to review well. Use the fewest layers that do it. Each layer does one thing, carries its own tests, and leaves everything below it working; a layer too small to understand without the next one belongs in it. Size the review, not the session: build the whole feature in this run, in layers.
+
 Example tests are the default. When the ticket carries a rule over many inputs, a contract others rely on, critical logic, untested code you must change, shared state or retries, untrusted input, an authorization boundary or a replaced implementation, read [test techniques](references/techniques.md) and choose from it.
 
-Three things can be open at this point:
+Four things can be open at this point:
 
 - a seam that is a judgment call, because no existing test reaches this behavior through it and the repository has no established way to test this kind of interface;
 - a choice the ticket leaves open that is costly to reverse, such as a data migration, a new dependency, a public contract or an authorization boundary;
-- something the runtime check will need from the user, such as a sign-in.
+- something the runtime check will need from the user, such as a sign-in;
+- a stack that neither the user nor the project asked for, with each layer named in a line.
 
 Settle each one now, the way the caller says. With no calling workflow the user is the caller: ask them whatever is open in one stop, and go straight on when nothing is. From there the work runs through to the caller's next step.
+
+For a stack, follow the `gh-stack` skill for the commands and start the stack before editing, as it says; the Shape entry decides what each layer holds. Then run steps 2 to 4 once per layer, bottom up. Each layer's review compares against its parent's tip in place of the caller's commit, and a layer is committed before the next one starts. Run the full suite once more at the top. Stop short of that skill's submit step: pushing stays with the caller. When that skill is not installed, or starting the stack reports that stacked pull requests are unavailable, keep one pull request and say so. When the stack was asked for, that is an open item: settle it the way the caller says before going on.
+
+The layers are a plan made before the code exists, and building can show a better split. Merge or redraw layers when it does and say so in the report. Ask first before going beyond the number of layers that was agreed.
 
 Done: the entries are stated and nothing is open.
 
