@@ -52,8 +52,9 @@ one appears.
    Make the smallest robust change that fulfills the request.
    Inspect repository instructions, current progress and Git status; preserve
    unrelated work. If on the default branch, create a task branch before editing.
-   If the current branch is a layer of a stack, deliver that layer alone,
-   against its parent branch, and leave the other layers as they are.
+   If the current branch is a layer of a stack, ask the user before editing:
+   this workflow delivers one pull request against the default branch, and its
+   merge gate does not cover a layer that sits on another pull request.
    Record the intended base and its merge-base SHA for review. Continue existing
    implementation from its current state rather than restarting it.
    For a change to what a user sees or does, or when the user requests visual
@@ -79,7 +80,7 @@ one appears.
    screenshots or recordings that prove the visible claims.
 3. **Get feedback.** Use the `sol-loop` skill to verify changes.
 4. **File the PR** with the `file-pr` skill, for this branch alone. Rebase onto
-   the latest default branch first, or onto the parent branch for a stack layer. Say how you proved the change where the description keeps
+   the latest default branch first. Say how you proved the change where the description keeps
    evidence, such as its template's verification section; only when it has no
    such section, add one short line for it. `file-pr` publishes the warranted
    visual evidence once the PR exists; confirm its publication verification
@@ -157,6 +158,7 @@ the PR link, what blocks you, and the options with your recommendation first.
 Ask only when you cannot continue alone:
 
 - You cannot prove the change.
+- The current branch is a layer of a stack.
 - The merge gate cannot pass, and you cannot fix that yourself.
 - The next step is outside the grant above: deleting data, touching production,
   changing things outside the repo, closing a PR, or force-pushing any other
