@@ -13,4 +13,4 @@ Note the current commit, then call the Skill tool with "implementation-proof" an
 
 Ask the user everything its first step leaves open in one stop, before editing. With nothing open, go straight on.
 
-Commit your work to the current branch and close with the method's report.
+Commit your work to the current branch, or to each layer's branch for a stack, and close with the method's report. Pushing and pull requests wait for the user to ask.
