@@ -1,6 +1,6 @@
 ---
 name: implementation-proof
-description: Shared method for implementing a change with proof - say what the work must prove, build it test-first, check it running, then audit and review. Use when a calling workflow such as implement, full-send or full-stop names this skill.
+description: Shared method for implementing a change with proof - say what the work must prove, build it test-first, check it running, then audit and review. Use when a calling workflow such as implement, implement-spec, full-send or full-stop names this skill.
 metadata:
   requires: tdd comment-audit code-review
   uses: uat flow-walk github/gh-stack@gh-stack
