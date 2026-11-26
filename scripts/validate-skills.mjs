@@ -203,12 +203,13 @@ function checkNoCallsToUserInvokedSkills(path, text, userInvoked) {
 const dependencyName = (token) => EXTERNAL_SKILL.exec(token)?.[1] ?? token;
 const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-// The exact ways prose names a skill: `name` or `/name` in backticks, $name,
-// "name" in double quotes, and for an outside skill its full `owner/repo@name`.
-// Anything looser would read ordinary words such as `name()` as a dependency.
+// The exact ways prose names a skill, besides a $name call: `name` or `/name`
+// in backticks, "name" in double quotes, and for an outside skill its full
+// `owner/repo@name`. Anything looser would read ordinary words such as
+// `name()` as a dependency.
 function names(prose, token) {
   const name = escapeRegExp(dependencyName(token));
-  const forms = [`\`/?${name}\``, `\\$${name}(?![A-Za-z0-9_-])`, `"${name}"`];
+  const forms = [`\`/?${name}\``, `"${name}"`];
   if (EXTERNAL_SKILL.test(token)) forms.push(`\`${escapeRegExp(token)}\``);
   return new RegExp(forms.join("|")).test(prose);
 }
@@ -247,15 +248,15 @@ function checkDependencies(skills) {
     }
     const files = skillProse(skill);
     const prose = files.map((file) => file.prose).join("\n");
+    const dollarCalls = new Set(files.flatMap((file) => dollarCallTargets(file.body)));
     const named = new Set([
-      ...[...skills.keys()].filter((other) => other !== name && names(prose, other)),
-      ...files.flatMap((file) => quotedCallTargets(file.body)).filter((target) => target !== name),
+      ...[...skills.keys()].filter((other) => names(prose, other)),
+      ...files.flatMap((file) => quotedCallTargets(file.body)),
       // A `$word` calls a skill wherever it comes from, so an outside one must
       // be declared too. A leading letter keeps a price such as $5 out.
-      ...files
-        .flatMap((file) => dollarCallTargets(file.body))
-        .filter((target) => target !== name && /^[a-z]/.test(target)),
+      ...[...dollarCalls].filter((target) => /^[a-z]/.test(target)),
     ]);
+    named.delete(name);
     for (const target of named) {
       if (!declared.has(target)) fail(`Skill names undeclared skill ${target}: ${skill.path}`);
     }
@@ -264,7 +265,9 @@ function checkDependencies(skills) {
       if (!declaredTokens.has(token)) fail(`Skill names undeclared skill ${token}: ${skill.path}`);
     }
     for (const [target, token] of declared) {
-      if (!names(prose, token)) fail(`Declared dependency ${target} is never named: ${skill.path}`);
+      if (!names(prose, token) && !dollarCalls.has(target)) {
+        fail(`Declared dependency ${target} is never named: ${skill.path}`);
+      }
     }
   }
   const reported = new Set();
