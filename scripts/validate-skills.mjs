@@ -132,15 +132,28 @@ function stripCode(text) {
   return stripFences(text).replace(/(`+)[^\n]*?\1/g, "");
 }
 
-// The forms a skill uses to hand work to another skill: call "x", $x and the
-// `x` skill. A slash form such as /x addresses the person and stays allowed.
-const SKILL_CALL = /\bcall(?:ed)? "([a-z0-9-]+)"|Skill tool with "([a-z0-9-]+)"|\$([a-z][a-z0-9-]*)(?![A-Za-z0-9_-])|`([a-z][a-z0-9-]*)`\s+skill\b/g;
+// The call forms CONTRIBUTING.md documents. The verb form needs its backticks,
+// so these read text with only fences removed.
+const QUOTED_CALLS = [
+  /Skill tool with "([a-z0-9]+(?:-[a-z0-9]+)*)"/g,
+  /\bcall "([a-z0-9]+(?:-[a-z0-9]+)*)"/gi,
+  /\b(?:use|follow|run|load|read|invoke|with)\s+(?:the\s+)?`([a-z0-9]+(?:-[a-z0-9]+)*)`\s+skill\b/gi,
+];
+// A `$name` inside an inline span is shell, so this one reads text with all
+// code removed.
+const DOLLAR_CALL = /\$([a-z0-9]+(?:-[a-z0-9]+)*)(?![A-Za-z0-9_-])/g;
 
 // An agent cannot reach a user-invoked skill, so a skill that calls one stops
 // there. A shared method belongs in a model-invoked skill.
 function checkNoCallsToUserInvokedSkills(path, text, ownName, userInvoked) {
-  for (const match of stripFences(text).matchAll(SKILL_CALL)) {
-    const target = match[1] ?? match[2] ?? match[3] ?? match[4];
+  const prose = stripFences(text);
+  const targets = new Set(
+    [
+      ...QUOTED_CALLS.flatMap((form) => [...prose.matchAll(form)]),
+      ...stripCode(text).matchAll(DOLLAR_CALL),
+    ].map((match) => match[1]),
+  );
+  for (const target of targets) {
     if (target !== ownName && userInvoked.has(target)) {
       fail(`Skill calls user-invoked skill ${target}: ${path}`);
     }
@@ -238,6 +251,10 @@ function checkReadmeSkillList(root, skillNames) {
   }
 }
 
+// Filled only from skills whose layout passed, so a malformed one is never read.
+const userInvoked = new Set();
+const validated = [];
+
 if (!existsSync(skillsRoot)) fail(`Missing skills directory: ${skillsRoot}`);
 const entries = existsSync(skillsRoot)
   ? readdirSync(skillsRoot, { withFileTypes: true })
@@ -256,6 +273,8 @@ for (const entry of entries) {
     continue;
   }
   const { text, fields } = parseFrontmatter(skillPath);
+  if (fields["disable-model-invocation"] === "true") userInvoked.add(entry.name);
+  validated.push({ name: entry.name, files: walk(skillRoot).filter((path) => path.endsWith(".md")) });
   if (fields.name !== entry.name) fail(`Skill name must match directory ${entry.name}: ${skillPath}`);
   if (!fields.description) fail(`Missing frontmatter description: ${skillPath}`);
   checkFrontmatterSchema(fields, skillPath);
@@ -301,17 +320,9 @@ for (const entry of entries) {
 const skillNames = entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name);
 checkReadmeSkillList(root, skillNames);
 
-const userInvoked = new Set(
-  skillNames.filter((name) => {
-    const path = join(skillsRoot, name, "SKILL.md");
-    return existsSync(path) && parseFrontmatter(path).fields["disable-model-invocation"] === "true";
-  }),
-);
-for (const name of skillNames) {
-  for (const file of walk(join(skillsRoot, name))) {
-    if (file.endsWith(".md")) {
-      checkNoCallsToUserInvokedSkills(file, readFileSync(file, "utf8"), name, userInvoked);
-    }
+for (const { name, files } of validated) {
+  for (const file of files) {
+    checkNoCallsToUserInvokedSkills(file, readFileSync(file, "utf8"), name, userInvoked);
   }
 }
 for (const name of ROOT_DOCS) {

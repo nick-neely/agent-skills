@@ -32,7 +32,7 @@ Three things can be open at this point:
 - a choice the ticket leaves open that is costly to reverse, such as a data migration, a new dependency, a public contract or an authorization boundary;
 - something the runtime check will need from the user, such as a sign-in.
 
-Settle each one now, the way the caller says; with no calling workflow, ask the user everything in one stop. From there the work runs through to the caller's next step.
+Settle each one now, the way the caller says. With no calling workflow the user is the caller: ask them whatever is open in one stop, and go straight on when nothing is. From there the work runs through to the caller's next step.
 
 Done: the entries are stated and nothing is open.
 
