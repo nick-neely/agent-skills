@@ -1,6 +1,6 @@
 # PR body
 
-The reader decides whether to merge, and may be meeting this change for the first time. Every line either helps that decision or costs them attention. Write the least that lets them trust the change: a section with nothing to say is deleted, never filled with "None" or "N/A", and no section restates the diff.
+The reader decides whether to merge, and may be meeting this change for the first time. Every line either helps that decision or costs them attention. Write the least that lets them trust the change: a section with nothing to say is deleted, never filled with "None" or "N/A", and no section restates the diff. Implementation detail belongs in code, commits or the issue.
 
 ## Layout
 
@@ -24,7 +24,7 @@ Closes #<issue>
 
 - **Door:** <clean two-way, two-way, one-way or uncertain>
 - **Blast radius:** <what breaks if this is wrong>
-- **Rollback:** <how to undo or contain it>
+- **Rollback:** <how to undo or contain it, when the door is not clean two-way>
 
 ## Verification
 
@@ -43,7 +43,7 @@ Closes #<issue>
 - <a choice made on the reader's behalf>
 ```
 
-When the repository has a template, its headings and order win. Apply each section's rules below to the template section that does the same job. What has no such section is left out, with two exceptions that go in the template's summary section, one line each: a door that is not `clean two-way`, and anything that needs a person.
+With a repository template, apply each section's rules below to the template section that does the same job. What has no such section is left out, with three exceptions, one line each: a door that is not `clean two-way`, anything that needs a person, and the verification outcome. Put them in the template's summary section, or above its first heading when it has none.
 
 ## Summary
 
@@ -69,11 +69,11 @@ End with the issue line the repository uses, such as `Closes #12`, when the chan
 
 ## UI evidence
 
-This section exists only when the change alters what a user sees or does. The `ui-evidence` publisher writes between the two markers, so leave them empty and in place. When evidence was warranted but could not be captured or uploaded, say that in one line here and name the claim it leaves unshown.
+Include this section only when something will fill it: an asset `ui-evidence` chose for a change to what a user sees or does, or for a request for visual evidence. The publisher writes between the two markers once the PR exists, so submit them empty and in place. When evidence was warranted but could not be captured or uploaded, write one line here in place of the markers, naming the claim left unshown.
 
 ## Merge danger
 
-One short phrase per value, never a sentence. Reasons go under Decisions.
+One short phrase per value, never a sentence. A value that needs explaining gets a bullet under Decisions.
 
 - **Door:** one value for the whole change, set by its least reversible part.
   - `clean two-way`: a revert restores everything.
@@ -85,7 +85,7 @@ One short phrase per value, never a sentence. Reasons go under Decisions.
 
 ## Verification
 
-Write this for the final head. When the head moves, replace the rows; results from an earlier head are gone, not kept beside the new ones.
+Write this for the final head.
 
 The `<summary>` line is the outcome in at most 25 words, naming the head commit, such as "All checks pass on `4f2a9c1`; the acceptance run passed in the browser."
 
@@ -96,7 +96,7 @@ Rows hold only what was observed: the report from the workflow that built the ch
 - **Result:** what was observed, with ran and skipped counts for a test run.
 - **Limits:** where it ran (local, preview or production) and what it does not show.
 
-Fold repeats of one check into one row, and leave out routine steps such as formatting. A result whose commit you cannot name gets no row: rerun the check on the head or leave it out. More than five rows usually means some of them are not carrying weight.
+Fold repeats of one check into one row, and leave out routine steps such as formatting. A report from this session holds for the commit it finished on while nothing has changed since. A result you cannot tie to a commit gets no row: rerun the check on the head or leave it out. More than five rows usually means some of them are not carrying weight.
 
 After the table, add a line only when it applies:
 
@@ -110,11 +110,11 @@ Delete this section when it has no bullet. At most six bullets, in this order:
 1. What needs a person, each opening with `**Needs a decision:**` or `**Needs your eye:**`, within 50 words. That covers a choice only they can make, a check a person still has to do before merge, a behavior this change left worse, and a problem found outside the change and left alone.
 2. Choices made on the reader's behalf that change what users see, change the risk this merge carries, or depart from the request, each within 25 words. State what was chosen, and over what when that is not obvious, so the reader can disagree without asking. "Checked some extra cases" is not a choice.
 
-Implementation detail belongs in code, commits or the issue. When a reason or a declined review finding is something the reader would want, put it in a collapsed block under the bullets:
+Review history stays out: a finding that was fixed is in the diff, and a declined one appears only as the choice it left in place. When the reader could not judge a choice without its reason, put the reason in a collapsed block under the bullets:
 
 ```markdown
 <details>
-<summary>Reasons and declined findings</summary>
+<summary>Reasons</summary>
 
 </details>
 ```

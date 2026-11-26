@@ -21,8 +21,8 @@ readiness policy and use a portable REST event waiter instead of the upstream
 bot-specific readiness watcher. `file-pr` carries its own body format and calls
 `ui-evidence` for visible changes. The format's guidance on choosing a Summary
 sketch is adapted from the `pr` skill in
-[mattpocock/skills](https://github.com/mattpocock/skills), MIT licensed, which
-credits the `show-me` skill in
+[mattpocock/skills](https://github.com/mattpocock/skills), MIT licensed, at
+`4ae2317ddb22b046e26455e4f9c9b3aaaf62212d`, which credits the `show-me` skill in
 [humanlayer/skills](https://github.com/humanlayer/skills), also MIT licensed;
 the `file-pr` license file carries both copyright notices. `sol-loop` retains
 upstream's Sol requirement, concrete reviewer routes, scope checks, budget
