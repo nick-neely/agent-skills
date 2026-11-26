@@ -10,7 +10,7 @@ The method a calling workflow follows to implement a ticket or spec and show tha
 
 ## 1. Say what you will prove
 
-Before editing, state four short entries. A change with no behavior to prove, such as a rename or a formatting change, takes one line saying so in their place.
+Before editing, state four short entries. A change with no behavior to prove, such as a rename or a formatting change, takes one line saying so in place of the first three; Shape is always stated.
 
 - **Proves:** the acceptance criteria, the rules that must always hold and the failures worth catching, each with its expected result taken from the ticket. Mark an expectation you inferred as inferred.
 - **Seams:** the public interface each one is tested through, naming the technique where a risk calls for more than example tests.
@@ -37,7 +37,7 @@ Four things can be open at this point:
 
 Settle each one now, the way the caller says. With no calling workflow the user is the caller: ask them whatever is open in one stop, and go straight on when nothing is. From there the work runs through to the caller's next step.
 
-For a stack, follow the `gh-stack` skill for the commands and start the stack before editing, as it says; the Shape entry decides what each layer holds. Then run steps 2 to 4 once per layer, bottom up, comparing each layer against its parent, and run the full suite once more at the top. Stop short of that skill's submit step: pushing stays with the caller. When that skill is not installed, or starting the stack reports that stacked pull requests are unavailable, keep one pull request and say so.
+For a stack, follow the `gh-stack` skill for the commands and start the stack before editing, as it says; the Shape entry decides what each layer holds. Then run steps 2 to 4 once per layer, bottom up. Each layer's review compares against its parent's tip in place of the caller's commit, and a layer is committed before the next one starts. Run the full suite once more at the top. Stop short of that skill's submit step: pushing stays with the caller. When that skill is not installed, or starting the stack reports that stacked pull requests are unavailable, keep one pull request and say so.
 
 Done: the entries are stated and nothing is open.
 
