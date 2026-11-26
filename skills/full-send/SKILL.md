@@ -63,7 +63,8 @@ one appears.
    recorded merge-base; if it is not installed, ask the user. Settle what its
    first step leaves open yourself, under "Asking the user", and list each
    decision in the report. This workflow delivers one pull request, so its
-   Shape entry is always one. Its runtime check falls under "Testing permission".
+   Shape entry is always one; when the request asked for a stack, say so in the
+   report. Its runtime check falls under "Testing permission".
    Reuse observed results that cover unchanged code. Commit only the scoped
    implementation on the task branch.
 

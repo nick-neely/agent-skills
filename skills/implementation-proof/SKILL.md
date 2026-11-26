@@ -37,7 +37,7 @@ Four things can be open at this point:
 
 Settle each one now, the way the caller says. With no calling workflow the user is the caller: ask them whatever is open in one stop, and go straight on when nothing is. From there the work runs through to the caller's next step.
 
-For a stack, follow the `gh-stack` skill and start the stack before editing, as it says. Then run steps 2 to 4 once per layer, bottom up, comparing each layer against its parent, and run the full suite once more at the top. Where that skill is not installed or the repository has no stacked pull requests, keep one pull request and say so.
+For a stack, follow the `gh-stack` skill for the commands and start the stack before editing, as it says; the Shape entry decides what each layer holds. Then run steps 2 to 4 once per layer, bottom up, comparing each layer against its parent, and run the full suite once more at the top. Stop short of that skill's submit step: pushing stays with the caller. When that skill is not installed, or starting the stack reports that stacked pull requests are unavailable, keep one pull request and say so.
 
 Done: the entries are stated and nothing is open.
 
