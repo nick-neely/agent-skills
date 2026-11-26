@@ -12,8 +12,8 @@ If the user passes a ticket reference, fetch it from the issue tracker and state
 
 Before editing, state three short entries. A change with no behavior to prove, such as a rename or a formatting change, takes one line saying so in their place.
 
-- **Proves:** the acceptance criteria and the failures worth catching, each with its expected result taken from the ticket. Mark an expectation you inferred as inferred.
-- **Seams:** the public interface each one is tested through.
+- **Proves:** the acceptance criteria, the rules that must always hold and the failures worth catching, each with its expected result taken from the ticket. Mark an expectation you inferred as inferred.
+- **Seams:** the public interface each one is tested through, naming the technique where a risk calls for more than example tests.
 - **Runtime:** a check the user or the project asks for; otherwise the first row below that fits the change. The project asks in its agent instructions or its flow-walk notes, which are at the path those instructions name, otherwise `docs/agents/flow-walk.md`.
 
 | The change | Runtime check |
@@ -24,7 +24,7 @@ Before editing, state three short entries. A change with no behavior to prove, s
 | Its effect is one the tests at these seams cannot observe, such as a migration, a scheduled job, a command or infrastructure | Run it yourself against a local or non-production target, as a dry run where the tool has one, and observe the result |
 | Anything else | None |
 
-Match the technique to the risk with tooling the repository already has, such as a property test for a rule over many inputs. Name a warranted technique it lacks in the handoff.
+Example tests are the default. When the ticket carries a rule over many inputs, a contract others rely on, critical logic, untested code you must change, shared state or retries, untrusted input, an authorization boundary or a replaced implementation, read [test techniques](references/techniques.md) and choose from it.
 
 Proceed when the seams are clear: existing tests reach this behavior through them, or the repository has an established way to test this kind of interface. Confirm with the user first when a seam is a judgment call, or when the ticket leaves open a choice that is costly to reverse, such as a data migration, a new dependency, a public contract or an authorization boundary. Ask everything in this one stop, including anything the runtime check will need from the user, such as a sign-in; from there the work runs through to the commit.
 
