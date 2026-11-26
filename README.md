@@ -67,8 +67,9 @@ its `compatibility` line and install what it requires. `implement`,
 - [`babysit-pr`](skills/babysit-pr/) - Monitor CI and review bots, address
   findings, and stop within a bounded review budget.
 - [`file-pr`](skills/file-pr/) - Review the branch diff, reuse or open a PR
-  with the separately installed `pr` skill's body format, and attach warranted
-  UI evidence.
+  and attach warranted UI evidence. Without a repository template, the body
+  leads with a summary and UI evidence, then merge danger, verification and
+  decisions.
 - [`full-send`](skills/full-send/) - Implement an issue or spec through
   `implementation-proof`, then prove, file, babysit and merge.
 - [`full-stop`](skills/full-stop/) - Follow the same implementation and

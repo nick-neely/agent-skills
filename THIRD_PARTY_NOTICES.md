@@ -18,8 +18,13 @@ The adaptations give babysit three routine PR-bot rounds, with evidenced
 high-impact extensions bounded at five total, a persistent finding ledger and
 focused follow-up reviews. They separate event notification from repository
 readiness policy and use a portable REST event waiter instead of the upstream
-bot-specific readiness watcher. `file-pr` calls the separately installed `pr`
-skill for its body format and `ui-evidence` for visible changes. `sol-loop` retains
+bot-specific readiness watcher. `file-pr` carries its own body format and calls
+`ui-evidence` for visible changes. The format's guidance on choosing a Summary
+sketch is adapted from the `pr` skill in
+[mattpocock/skills](https://github.com/mattpocock/skills), MIT licensed, at
+`4ae2317ddb22b046e26455e4f9c9b3aaaf62212d`, which credits the `show-me` skill in
+[humanlayer/skills](https://github.com/humanlayer/skills), also MIT licensed;
+the `file-pr` license file carries both copyright notices. `sol-loop` retains
 upstream's Sol requirement, concrete reviewer routes, scope checks, budget
 extensions and push gate. It judges findings by material impact, keeps its
 reviewer brief and routing reference separate, and makes public attribution
