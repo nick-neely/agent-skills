@@ -39,6 +39,8 @@ Settle each one now, the way the caller says. With no calling workflow the user 
 
 For a stack, follow the `gh-stack` skill for the commands and start the stack before editing, as it says; the Shape entry decides what each layer holds. Then run steps 2 to 4 once per layer, bottom up. Each layer's review compares against its parent's tip in place of the caller's commit, and a layer is committed before the next one starts. Run the full suite once more at the top. Stop short of that skill's submit step: pushing stays with the caller. When that skill is not installed, or starting the stack reports that stacked pull requests are unavailable, keep one pull request and say so.
 
+The layers are a plan made before the code exists, and building can show a better split. Merge or redraw layers when it does and say so in the report. Ask first before going beyond the number of layers that was agreed.
+
 Done: the entries are stated and nothing is open.
 
 ## 2. Implement
