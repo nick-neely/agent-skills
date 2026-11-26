@@ -43,7 +43,12 @@ Closes #<issue>
 - <a choice made on the reader's behalf>
 ```
 
-With a repository template, apply each section's rules below to the template section that does the same job. What has no such section is left out, with three exceptions, one line each: a door that is not `clean two-way`, anything that needs a person, and the verification outcome. Put them in the template's summary section, or above its first heading when it has none.
+With a repository template, apply each section's rules below to the template section that does the same job. What has no such section is left out, with four exceptions that go in the template's summary section, or above its first heading when it has none:
+
+- a door that is not `clean two-way`, in one line;
+- anything that needs a person, one line each;
+- the verification outcome, in one line;
+- UI evidence, as the two markers with no heading, or the one line that stands in for them.
 
 ## Summary
 
@@ -69,16 +74,16 @@ End with the issue line the repository uses, such as `Closes #12`, when the chan
 
 ## UI evidence
 
-Include this section only when something will fill it: an asset `ui-evidence` chose for a change to what a user sees or does, or for a request for visual evidence. The publisher writes between the two markers once the PR exists, so submit them empty and in place. When evidence was warranted but could not be captured or uploaded, write one line here in place of the markers, naming the claim left unshown.
+Include this section only when something will fill it: an asset `ui-evidence` chose for a change to what a user sees or does, or for a request for visual evidence. The publisher writes between the two markers once the PR exists, so submit them empty and in place. When evidence was warranted but some of it could not be captured or uploaded, add one line naming the claim left unshown. Keep the markers and whatever was published between them; the line replaces the markers only when nothing was published.
 
 ## Merge danger
 
 One short phrase per value, never a sentence. A value that needs explaining gets a bullet under Decisions.
 
 - **Door:** one value for the whole change, set by its least reversible part.
-  - `clean two-way`: a revert restores everything.
-  - `two-way`: a revert restores behavior but leaves known cleanup, such as data in a new shape, a setting or a cache.
-  - `one-way`: a revert cannot undo it, as with deleted or rewritten data, a sent message, a charge or a published release.
+  - `clean two-way`: reverting the code restores everything.
+  - `two-way`: a revert plus a known cleanup restores everything, such as running a reverse migration, resetting a setting or clearing a cache.
+  - `one-way`: nothing available restores it, as with deleted data, a sent message, a charge or a published release.
   - `uncertain`: treat it as one-way until you can tell.
 - **Blast radius:** what breaks if the change is wrong, within 12 words, such as "docs only", "one page" or "stored orders". Name the likeliest failure when it is not obvious.
 - **Rollback:** only when the door is not `clean two-way`, within 12 words, such as "revert, then clear the cache".
@@ -107,7 +112,7 @@ After the table, add a line only when it applies:
 
 Delete this section when it has no bullet. At most six bullets, in this order:
 
-1. What needs a person, each opening with `**Needs a decision:**` or `**Needs your eye:**`, within 50 words. That covers a choice only they can make, a check a person still has to do before merge, a behavior this change left worse, and a problem found outside the change and left alone.
+1. What needs a person, each opening with `**Needs a decision:**` or `**Needs your eye:**`, within 50 words. That covers a choice only they can make, a check a person still has to do before merge, a behavior this change left worse, and a problem found outside the change when it bears on this merge. Other problems found along the way belong in the handoff to whoever asked for the work.
 2. Choices made on the reader's behalf that change what users see, change the risk this merge carries, or depart from the request, each within 25 words. State what was chosen, and over what when that is not obvious, so the reader can disagree without asking. "Checked some extra cases" is not a choice.
 
 Review history stays out: a finding that was fixed is in the diff, and a declined one appears only as the choice it left in place. When the reader could not judge a choice without its reason, put the reason in a collapsed block under the bullets:
