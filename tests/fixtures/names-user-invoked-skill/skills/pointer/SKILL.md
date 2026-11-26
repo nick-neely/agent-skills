@@ -2,7 +2,7 @@
 name: pointer
 description: Sample skill that names a user-invoked skill without calling it.
 metadata:
-  uses: helper sample/tools@outside
+  uses: helper manual sample/tools@outside
 ---
 
 # Pointer

@@ -85,8 +85,11 @@ call.
 Declare every skill a skill calls under `metadata`, as space-separated names:
 `requires` for skills it cannot work without, and `uses` for skills only some
 paths reach. A skill from another repository is written `owner/repo@skill`.
-`compatibility` stays for tools and runtimes. The validator fails on a call
-that is not declared, a declaration the skill never names, and a `requires`
+`compatibility` stays for tools and runtimes, and `metadata` holds only those
+two keys. Naming another skill of this repository in a skill's prose, in
+backticks, after `$`, quoted, or as `/name`, counts as depending on it. The
+validator fails on a skill that is named but not declared, a declared skill
+that does not exist, a declaration the skill never names, and a `requires`
 cycle.
 
 The README's install table is generated from those declarations. After

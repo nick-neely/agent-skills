@@ -4,6 +4,7 @@ description: Implement an issue or spec through a verified PR ready for the user
 compatibility: Shares the requirements of the full-send skill.
 metadata:
   requires: full-send
+  uses: implementation-proof ui-evidence
 ---
 
 # Full Stop

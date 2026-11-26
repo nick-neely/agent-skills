@@ -7,8 +7,8 @@
 - [`pointer`](skills/pointer/) - Names the user-invoked skill without calling it.
 
 <!-- install-commands:start -->
-| To use | Install from this repository | Also uses, from other repositories |
-| --- | --- | --- |
-| `manual` | `manual helper` | - |
-| `pointer` | `pointer helper` | `sample/tools@outside` |
+| Skill | Install | Add for the paths that use them | From other repositories |
+| --- | --- | --- | --- |
+| `manual` | `manual helper` | - | - |
+| `pointer` | `pointer` | `helper manual` | `sample/tools@outside` |
 <!-- install-commands:end -->

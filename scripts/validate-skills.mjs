@@ -175,20 +175,21 @@ const QUOTED_CALLS = [
 // code removed.
 const DOLLAR_CALL = /\$([a-z0-9]+(?:-[a-z0-9]+)*)(?![A-Za-z0-9_-])/g;
 
-function callTargets(text) {
+// A `$word` in prose is a call only when the word is a skill of this
+// repository; anything else, such as a price, is ordinary text.
+function quotedCallTargets(text) {
   const prose = stripFences(text);
-  return new Set(
-    [
-      ...QUOTED_CALLS.flatMap((form) => [...prose.matchAll(form)]),
-      ...stripCode(text).matchAll(DOLLAR_CALL),
-    ].map((match) => match[1]),
-  );
+  return QUOTED_CALLS.flatMap((form) => [...prose.matchAll(form)]).map((match) => match[1]);
+}
+
+function dollarCallTargets(text) {
+  return [...stripCode(text).matchAll(DOLLAR_CALL)].map((match) => match[1]);
 }
 
 // An agent cannot reach a user-invoked skill, so a skill that calls one stops
 // there. A shared method belongs in a model-invoked skill.
 function checkNoCallsToUserInvokedSkills(path, text, userInvoked) {
-  for (const target of callTargets(text)) {
+  for (const target of new Set([...quotedCallTargets(text), ...dollarCallTargets(text)])) {
     if (userInvoked.has(target)) {
       fail(`Skill calls user-invoked skill ${target}: ${path}`);
     }
@@ -197,8 +198,23 @@ function checkNoCallsToUserInvokedSkills(path, text, userInvoked) {
 
 const dependencyName = (token) => EXTERNAL_SKILL.exec(token)?.[1] ?? token;
 
+// How a skill names another in prose: in backticks, after `$`, or quoted, and
+// as `/name` when it tells the person what to run.
+const names = (prose, name) => new RegExp(`[\`$"]/?${name}(?![A-Za-z0-9_-])`).test(prose);
+
+// A skill's own prose: frontmatter and fenced examples name nothing, and each
+// file is stripped on its own so an unclosed fence hides only that file.
+function skillProse(skill) {
+  return skill.files.map((file) => {
+    const text = readFileSync(file, "utf8").replace(/\r\n/g, "\n");
+    const body = file === skill.path ? text.replace(/^---\n[\s\S]*?\n---\n/, "") : text;
+    return { body, prose: stripFences(body) };
+  });
+}
+
 // Someone installing one skill learns what else it needs only from its
-// declarations, so every call must be declared and every declaration real.
+// declarations, so every skill it names must be declared and every
+// declaration real.
 function checkDependencies(skills) {
   for (const [name, skill] of skills) {
     const declared = new Set();
@@ -214,80 +230,104 @@ function checkDependencies(skills) {
         fail(`Skill depends on itself: ${skill.path}`);
       }
     }
-    const text = skill.files.map((file) => readFileSync(file, "utf8")).join("\n");
-    for (const target of callTargets(text)) {
-      if (target !== name && !declared.has(target)) {
-        fail(`Skill calls undeclared skill ${target}: ${skill.path}`);
-      }
+    const files = skillProse(skill);
+    const prose = files.map((file) => file.prose).join("\n");
+    const named = new Set([
+      ...[...skills.keys()].filter((other) => other !== name && names(prose, other)),
+      ...files.flatMap((file) => quotedCallTargets(file.body)).filter((target) => target !== name),
+    ]);
+    for (const target of named) {
+      if (!declared.has(target)) fail(`Skill names undeclared skill ${target}: ${skill.path}`);
     }
-    const prose = stripFences(text);
     for (const target of declared) {
-      if (!new RegExp(`[\`$"]${target}(?![A-Za-z0-9_-])`).test(prose)) {
-        fail(`Declared dependency ${target} is never named: ${skill.path}`);
-      }
+      if (!names(prose, target)) fail(`Declared dependency ${target} is never named: ${skill.path}`);
     }
   }
+  const reported = new Set();
   for (const start of skills.keys()) {
     const visit = (name, trail) => {
       for (const next of skills.get(name)?.requires ?? []) {
-        if (next === start) return fail(`Required skills form a cycle: ${[...trail, next].join(" -> ")}`);
-        if (skills.has(next) && !trail.includes(next)) visit(next, [...trail, next]);
+        if (next === start) {
+          const key = [...trail].sort().join(" ");
+          if (!reported.has(key)) fail(`Required skills form a cycle: ${[...trail, next].join(" -> ")}`);
+          reported.add(key);
+        } else if (skills.has(next) && !trail.includes(next)) {
+          visit(next, [...trail, next]);
+        }
       }
     };
     visit(start, [start]);
   }
 }
 
-// Everything one skill can reach, itself first, in declaration order.
-function installClosure(name, skills) {
-  const local = [name];
-  const external = [];
-  for (let index = 0; index < local.length; index += 1) {
-    const skill = skills.get(local[index]);
+// What one skill reaches: `needs` through requires alone, itself first;
+// `sometimes` through any path with a uses step; `outside` from other
+// repositories. Declaration order keeps the output stable.
+function installSets(name, skills) {
+  const needs = [name];
+  for (let index = 0; index < needs.length; index += 1) {
+    for (const token of skills.get(needs[index]).requires) {
+      if (skills.has(token) && !needs.includes(token)) needs.push(token);
+    }
+  }
+  const all = [...needs];
+  const outside = [];
+  for (let index = 0; index < all.length; index += 1) {
+    const skill = skills.get(all[index]);
     for (const token of [...skill.requires, ...skill.uses]) {
       if (EXTERNAL_SKILL.test(token)) {
-        if (!external.includes(token)) external.push(token);
-      } else if (skills.has(token) && !local.includes(token)) {
-        local.push(token);
+        if (!outside.includes(token)) outside.push(token);
+      } else if (skills.has(token) && !all.includes(token)) {
+        all.push(token);
       }
     }
   }
-  return { local, external };
+  return { needs, sometimes: all.slice(needs.length), outside };
 }
 
 function installTable(skills) {
+  const cell = (list) => (list.length ? `\`${list.join(" ")}\`` : "-");
   const rows = [...skills.keys()]
     .sort()
     .filter((name) => skills.get(name).requires.length || skills.get(name).uses.length)
     .map((name) => {
-      const { local, external } = installClosure(name, skills);
-      const others = external.length ? external.map((token) => `\`${token}\``).join(", ") : "-";
-      return `| \`${name}\` | \`${local.join(" ")}\` | ${others} |`;
+      const { needs, sometimes, outside } = installSets(name, skills);
+      return `| \`${name}\` | ${cell(needs)} | ${cell(sometimes)} | ${cell(outside)} |`;
     });
-  if (!rows.length) return null;
+  if (!rows.length) return "";
   return [
-    "| To use | Install from this repository | Also uses, from other repositories |",
-    "| --- | --- | --- |",
+    "| Skill | Install | Add for the paths that use them | From other repositories |",
+    "| --- | --- | --- | --- |",
     ...rows,
+    "",
   ].join("\n");
 }
 
 // The README is where someone installing by hand looks, so its table is
-// generated from the declarations and a stale copy fails.
+// generated from the declarations and a stale copy fails. It is written only
+// from declarations that passed every other check.
 function checkInstallTable(readmePath, skills) {
+  if (!existsSync(readmePath)) return;
+  const original = readFileSync(readmePath, "utf8");
+  const eol = original.includes("\r\n") ? "\r\n" : "\n";
+  const readme = original.replace(/\r\n/g, "\n");
   const table = installTable(skills);
-  if (table === null || !existsSync(readmePath)) return;
-  const readme = readFileSync(readmePath, "utf8");
   const start = readme.indexOf(INSTALL_START);
   const end = readme.indexOf(INSTALL_END);
   if (start < 0 || end < start) {
-    fail(`README lacks the generated install table between ${INSTALL_START} and ${INSTALL_END}: ${readmePath}`);
+    if (table) fail(`README lacks the generated install table between ${INSTALL_START} and ${INSTALL_END}: ${readmePath}`);
     return;
   }
-  const expected = `${INSTALL_START}\n${table}\n`;
+  const expected = `${INSTALL_START}\n${table}`;
   if (readme.slice(start, end) === expected) return;
-  if (writeInstall) writeFileSync(readmePath, readme.slice(0, start) + expected + readme.slice(end));
-  else fail(`README install table is stale; run scripts/validate-skills.mjs --write-install: ${readmePath}`);
+  if (!writeInstall) {
+    fail(`README install table is stale; run scripts/validate-skills.mjs --write-install: ${readmePath}`);
+  } else if (errors.length) {
+    fail(`README install table was not written; fix the errors above first: ${readmePath}`);
+  } else {
+    const updated = readme.slice(0, start) + expected + readme.slice(end);
+    writeFileSync(readmePath, updated.replace(/\n/g, eol));
+  }
 }
 
 function checkLinks(path, text, skillRoot) {
@@ -465,7 +505,6 @@ for (const { files } of validated.values()) {
   }
 }
 checkDependencies(validated);
-checkInstallTable(join(root, "README.md"), validated);
 for (const name of ROOT_DOCS) {
   const path = join(root, name);
   if (existsSync(path)) checkNoEmDash(path);
@@ -477,6 +516,8 @@ for (const file of existsSync(skillsRoot) ? walk(skillsRoot) : []) {
     fail(`Machine-specific absolute path detected: ${file}`);
   }
 }
+
+checkInstallTable(join(root, "README.md"), validated);
 
 if (errors.length) {
   for (const error of errors) process.stderr.write(`${error}\n`);
