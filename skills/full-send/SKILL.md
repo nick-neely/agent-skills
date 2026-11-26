@@ -52,9 +52,11 @@ one appears.
    Make the smallest robust change that fulfills the request.
    Inspect repository instructions, current progress and Git status; preserve
    unrelated work. If on the default branch, create a task branch before editing.
-   If the current branch is a layer of a stack, ask the user before editing:
-   this workflow delivers one pull request against the default branch, and its
-   merge gate does not cover a layer that sits on another pull request.
+   If the current branch is a layer of a stack, or the request asks for a
+   stack, ask the user before editing whether one pull request from a branch
+   off the default branch will do: this workflow delivers one pull request
+   against the default branch, and its merge gate does not cover a layer that
+   sits on another pull request.
    Record the intended base and its merge-base SHA for review. Continue existing
    implementation from its current state rather than restarting it.
    For a change to what a user sees or does, or when the user requests visual
@@ -66,8 +68,8 @@ one appears.
    recorded merge-base; if it is not installed, ask the user. Settle what its
    first step leaves open yourself, under "Asking the user", and list each
    decision in the report. This workflow delivers one pull request, so its
-   Shape entry is always one; when the request asked for a stack, say so in the
-   report. Its runtime check falls under "Testing permission".
+   Shape entry is always one. Its runtime check falls under "Testing
+   permission".
    Reuse observed results that cover unchanged code. Commit only the scoped
    implementation on the task branch.
 
@@ -158,7 +160,7 @@ the PR link, what blocks you, and the options with your recommendation first.
 Ask only when you cannot continue alone:
 
 - You cannot prove the change.
-- The current branch is a layer of a stack.
+- The current branch is a layer of a stack, or the request asks for one.
 - The merge gate cannot pass, and you cannot fix that yourself.
 - The next step is outside the grant above: deleting data, touching production,
   changing things outside the repo, closing a PR, or force-pushing any other
