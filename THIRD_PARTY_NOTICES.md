@@ -74,7 +74,10 @@ keeps the integration branch, the task-graph frontier, fresh subagents per
 ticket and the closing `code-review`. Each implementer follows
 `implementation-proof` instead of calling `tdd` directly, after a planning pass
 that asks every open question in one stop. Each ticket lands as one commit,
-and the integration branch advances only on a passing full suite. Acceptance criteria that span
+and the integration branch advances only on a passing full suite, except for
+wide-refactor batches that go green only at a final integrate-and-verify
+ticket: those advance on their own tests, and the full suite gates that final
+ticket. Acceptance criteria that span
 tickets get one runtime check on the integrated build. The skill opens no pull
 request: it leaves one integration branch, or a short stack cut at ticket
 boundaries, for the user to file.
