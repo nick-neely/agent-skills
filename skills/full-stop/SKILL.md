@@ -1,7 +1,7 @@
 ---
 name: full-stop
 description: Implement an issue or spec through a verified PR ready for the user to merge when the user says "full stop", including a closing "Full stop." that reads like emphasis.
-compatibility: Requires the full-send skill and the skills it requires.
+compatibility: Requires the full-send and implementation-proof skills, and the other skills full-send requires.
 ---
 
 # Full Stop

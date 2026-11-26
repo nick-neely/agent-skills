@@ -54,7 +54,7 @@ one appears.
    unrelated work. If on the default branch, create a task branch before editing.
    Record the intended base and its merge-base SHA for review. Continue existing
    implementation from its current state rather than restarting it.
-   For UI, UX, design or interaction changes, or when the user requests visual
+   For a change to what a user sees or does, or when the user requests visual
    PR evidence, load the `ui-evidence` skill now to identify claims and plan a
    before/after baseline where useful. Let that skill select the medium and
    whether an asset is useful for the visible claim.
@@ -82,8 +82,8 @@ one appears.
    passed. This evidence belongs on the PR even when full-send will merge it.
 5. **Babysit the PR** with the `babysit-pr` skill. Fix real findings and CI
    failures. Get proof for each fix before you push it. If follow-up commits or
-   rebases change the captured UI, refresh the affected PR evidence before
-   applying the final gate.
+   rebases change the captured UI, refresh the affected PR evidence with
+   `ui-evidence` before applying the final gate.
 6. **Rewrite the description** for the final head, following `file-pr`'s
    rewrite rule; only the body changes. Do it after the last commit and before
    the merge gate, and again whenever the head changes after it.

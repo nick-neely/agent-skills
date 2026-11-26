@@ -1,13 +1,14 @@
 ---
 name: file-pr
 description: File or update a pull request when asked to open or create a PR, or when a delivery workflow reaches PR submission.
+compatibility: Requires the pr skill. Uses ui-evidence for visible changes.
 ---
 
 # File PR
 
 1. **Identify the branch and PR.** Read repository instructions, Git status, the branch's remote and intended base. Preserve unrelated changes. Check for an existing open PR for this head and base, including fork ownership. Update the matching PR rather than creating a duplicate. Resolve ambiguous matches before writing.
 
-2. **Review the final diff.** Fetch the base and review the complete branch diff against its merge-base, plus intended uncommitted changes and untracked files. Confirm every change serves the user's goal. Run required verification and account for inherited failures. Stage only intended paths, commit and push when authorized. Re-read the pushed diff so the description covers what reviewers will receive. From the request and that diff, decide whether the change alters what a user sees or does, including through backend code. When it does, or visual evidence was requested, use the $ui-evidence skill to choose what warrants an asset, reusing reviewed captures that still match the head and capturing only what is missing or stale. When its capture tooling is missing, name the missing prerequisite and the claim left without evidence instead of installing anything.
+2. **Review the final diff.** Fetch the base and review the complete branch diff against its merge-base, plus intended uncommitted changes and untracked files. Confirm every change serves the user's goal. Run required verification and account for inherited failures. Stage only intended paths, commit and push when authorized. Re-read the pushed diff so the description covers what reviewers will receive. From the request and that diff, decide whether the change alters what a user sees or does, including through backend code. When it does, or visual evidence was requested, use the $ui-evidence skill to choose what warrants an asset, reusing reviewed captures that still match the head and capturing only what is missing or stale. When its capture tooling is missing, report it as $ui-evidence says and name the claim left without evidence.
 
 3. **Write the title and body.** Follow repository title conventions, using recent merged PRs and Git history as title examples. Lead the title with the outcome or problem resolved. Prefer `perf(server): reduce websocket payload size` to `perf(server): negotiate permessage-deflate`. Add a number only when measured.
 

@@ -19,7 +19,7 @@ high-impact extensions bounded at five total, a persistent finding ledger and
 focused follow-up reviews. They separate event notification from repository
 readiness policy and use a portable REST event waiter instead of the upstream
 bot-specific readiness watcher. `file-pr` calls the separately installed `pr`
-skill for its body format. `sol-loop` retains
+skill for its body format and `ui-evidence` for visible changes. `sol-loop` retains
 upstream's Sol requirement, concrete reviewer routes, scope checks, budget
 extensions and push gate. It judges findings by material impact, keeps its
 reviewer brief and routing reference separate, and makes public attribution

@@ -32,7 +32,7 @@ Three things can be open at this point:
 - a choice the ticket leaves open that is costly to reverse, such as a data migration, a new dependency, a public contract or an authorization boundary;
 - something the runtime check will need from the user, such as a sign-in.
 
-Settle each one now, the way the caller says. From there the work runs through to the caller's next step.
+Settle each one now, the way the caller says; with no calling workflow, ask the user everything in one stop. From there the work runs through to the caller's next step.
 
 Done: the entries are stated and nothing is open.
 
@@ -46,7 +46,7 @@ Done: the behavior is implemented and the full suite passes.
 
 ## 3. Check it running
 
-Run the **Runtime** check against a build you know holds this change. For `uat` or `flow-walk`, call that skill as the one who built the change, so it hands the test to a fresh tester. Point the tester at that build, and have it return anything it needs from the user that step 1 did not arrange as a blocker instead of waiting. Handle the findings as that skill says, within the ticket's scope: what falls outside it, including a bug the skill would file, goes in the report. For your own look, fix what it turns up and look again. When the check led to code changes, rerun the full suite before review.
+Run the **Runtime** check against a build you know holds this change. For `uat` or `flow-walk`, call that skill as the one who built the change, so it hands the test to a fresh tester; keep any label it puts on a run made without one. Point the tester at that build, and have it return anything it needs from the user that step 1 did not arrange as a blocker instead of waiting. Handle the findings as that skill says, within the ticket's scope: what falls outside it, including a bug the skill would file, goes in the report. For your own look, fix what it turns up and look again. When the check led to code changes, rerun the full suite before review.
 
 When the skill is not installed, the app cannot be run or reached, the skill would hand the check back to the user, or the check needs something from the user that step 1 did not arrange, use the changed path yourself where you can and record the check as not run, with what blocked it.
 

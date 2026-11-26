@@ -29,9 +29,10 @@ Skills that shell out have their own runtime dependencies, listed in each
 `SKILL.md`. `ui-evidence` checks its own up front with
 `scripts/preflight.mjs`.
 
-Some skills call others by name. When you install one skill at a time, install
-the ones it names too: `implement`, `full-send` and `full-stop` all need
-`implementation-proof`.
+Some skills call others by name. When you install one skill at a time, read
+its `compatibility` line and install what it requires. `implement`,
+`full-send` and `full-stop` all need `implementation-proof`, which needs
+`comment-audit`, `code-review` and the external `tdd`.
 
 ## Skills
 

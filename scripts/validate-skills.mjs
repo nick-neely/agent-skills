@@ -132,14 +132,15 @@ function stripCode(text) {
   return stripFences(text).replace(/(`+)[^\n]*?\1/g, "");
 }
 
-// The three forms a skill uses to hand work to another skill.
-const SKILL_CALL = /Skill tool with "([a-z0-9-]+)"|\$([a-z][a-z0-9-]*)|`([a-z][a-z0-9-]*)` skill/g;
+// The forms a skill uses to hand work to another skill: call "x", $x and the
+// `x` skill. A slash form such as /x addresses the person and stays allowed.
+const SKILL_CALL = /\bcall(?:ed)? "([a-z0-9-]+)"|Skill tool with "([a-z0-9-]+)"|\$([a-z][a-z0-9-]*)(?![A-Za-z0-9_-])|`([a-z][a-z0-9-]*)`\s+skill\b/g;
 
 // An agent cannot reach a user-invoked skill, so a skill that calls one stops
 // there. A shared method belongs in a model-invoked skill.
 function checkNoCallsToUserInvokedSkills(path, text, ownName, userInvoked) {
   for (const match of stripFences(text).matchAll(SKILL_CALL)) {
-    const target = match[1] ?? match[2] ?? match[3];
+    const target = match[1] ?? match[2] ?? match[3] ?? match[4];
     if (target !== ownName && userInvoked.has(target)) {
       fail(`Skill calls user-invoked skill ${target}: ${path}`);
     }

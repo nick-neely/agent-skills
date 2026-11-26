@@ -65,9 +65,9 @@ so the main file stays short enough to load cheaply.
 Skills split on who can invoke them:
 
 - A **user-invoked** skill sets `disable-model-invocation: true`. Only a person
-  typing its name reaches it, and its job is to orchestrate.
-- A **model-invoked** skill holds a reusable discipline. An agent can reach it
-  when the task fits, and so can another skill.
+  typing its name reaches it, so no other skill can call it.
+- Any other skill is **model-invoked**: an agent can reach it when the task
+  fits, and so can another skill.
 
 A skill may call model-invoked skills only; the validator rejects a call to a
 user-invoked one. When two skills need the same method, put it in a
