@@ -46,9 +46,10 @@ npx skills add nick-neely/agent-skills --global --skill implement implementation
 | `full-send` | `full-send implementation-proof sol-loop file-pr babysit-pr tdd comment-audit code-review` | `ui-evidence uat flow-walk leaving-pr-comments` | `github/gh-stack@gh-stack`, `openai/skills@gh-fix-ci` |
 | `full-stop` | `full-stop full-send implementation-proof sol-loop file-pr babysit-pr tdd comment-audit code-review` | `ui-evidence uat flow-walk leaving-pr-comments` | `github/gh-stack@gh-stack`, `openai/skills@gh-fix-ci` |
 | `implement` | `implement implementation-proof tdd comment-audit code-review` | `uat flow-walk` | `github/gh-stack@gh-stack` |
+| `implement-spec` | `implement-spec implementation-proof code-review tdd comment-audit` | `uat flow-walk` | `github/gh-stack@gh-stack`, `mattpocock/skills@setup-matt-pocock-skills` |
 | `implementation-proof` | `implementation-proof tdd comment-audit code-review` | `uat flow-walk` | `github/gh-stack@gh-stack` |
 | `to-spec` | `to-spec` | - | `mattpocock/skills@setup-matt-pocock-skills` |
-| `to-tickets` | `to-tickets` | `implement implementation-proof tdd comment-audit code-review uat flow-walk` | `mattpocock/skills@setup-matt-pocock-skills`, `github/gh-stack@gh-stack` |
+| `to-tickets` | `to-tickets` | `implement implement-spec implementation-proof code-review uat flow-walk tdd comment-audit` | `mattpocock/skills@setup-matt-pocock-skills`, `github/gh-stack@gh-stack` |
 <!-- install-commands:end -->
 
 A name in the last column has the form `owner/repo@skill` and installs from
@@ -75,6 +76,9 @@ are on its `compatibility` line.
   run through scenarios with a recommendation.
 - [`implement`](skills/implement/) - Implement a ticket or spec through
   `implementation-proof`, asking any open question once up front, then commit.
+- [`implement-spec`](skills/implement-spec/) - Implement a whole spec from its
+  ticket graph on one integration branch, a fresh implementer per ticket
+  following `implementation-proof`, ready to file as one PR or a short stack.
 - [`tdd`](skills/tdd/) - Build test-first in red-green slices at agreed seams,
   with a reference on what makes a test worth keeping.
 - [`jira-acli`](skills/jira-acli/) - Read, plan, and update Jira work items through
@@ -122,9 +126,9 @@ lives in one place. You don't invoke one yourself: install it alongside the
 skills that name it.
 
 - [`implementation-proof`](skills/implementation-proof/) - The method behind
-  `implement`, `full-send` and `full-stop`: state what the work must prove,
-  build it test-first, check it running when the change calls for it, then
-  audit comments and review.
+  `implement`, `implement-spec`, `full-send` and `full-stop`: state what the
+  work must prove, build it test-first, check it running when the change calls
+  for it, then audit comments and review.
 
 Several workflows call separately installed skills. Read their `SKILL.md`
 before use; installing this collection does not install external skills or tools.
