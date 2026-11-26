@@ -135,9 +135,9 @@ function stripCode(text) {
 // The call forms CONTRIBUTING.md documents. The verb form needs its backticks,
 // so these read text with only fences removed.
 const QUOTED_CALLS = [
-  /Skill tool with "([a-z0-9]+(?:-[a-z0-9]+)*)"/g,
-  /\bcall "([a-z0-9]+(?:-[a-z0-9]+)*)"/gi,
-  /\b(?:use|follow|run|load|read|invoke|with)\s+(?:the\s+)?`([a-z0-9]+(?:-[a-z0-9]+)*)`\s+skill\b/gi,
+  /Skill\s+tool\s+with\s+"([a-z0-9]+(?:-[a-z0-9]+)*)"/g,
+  /\bcall\s+"([a-z0-9]+(?:-[a-z0-9]+)*)"/gi,
+  /\b(?:call|use|follow|run|load|read|invoke)\s+(?:the\s+)?`([a-z0-9]+(?:-[a-z0-9]+)*)`\s+skill\b/gi,
 ];
 // A `$name` inside an inline span is shell, so this one reads text with all
 // code removed.

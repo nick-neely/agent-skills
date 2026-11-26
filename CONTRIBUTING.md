@@ -71,9 +71,10 @@ Skills split on who can invoke them:
 
 A skill may call model-invoked skills only; the validator rejects a call to a
 user-invoked one. Write a call in one of the forms it reads: `Call the Skill
-tool with "name"`, `call "name"`, `$name`, or a verb with the skill named, as in
-``follow the `name` skill``. A slash form such as `/name` addresses the person
-and is not a call. When two skills need the same method, put it in a
+tool with "name"`, `call "name"`, `$name`, or one of the verbs call, use,
+follow, run, load, read or invoke with the skill named, as in ``follow the
+`name` skill``. A slash form such as `/name` addresses the person and is not a
+call. When two skills need the same method, put it in a
 model-invoked skill whose description names its callers, list it under "Shared
 methods" in the README, and name it in each caller's `compatibility` line.
 

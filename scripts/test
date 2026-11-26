@@ -35,8 +35,10 @@ while IFS= read -r form; do
   call_form=$((call_form + 1))
   call_fixture="$temporary/call-form-$call_form"
   cp -R "$repo/tests/fixtures/calls-user-invoked-skill" "$call_fixture"
-  printf '%s\n' '---' 'name: caller' 'description: Sample skill that calls a user-invoked skill.' '---' '' "$form" \
+  printf '%s\n' '---' 'name: caller' 'description: Sample skill that calls a user-invoked skill.' '---' '' \
     >"$call_fixture/skills/caller/SKILL.md"
+  # A form may wrap: \n in the list below becomes a line break in the skill.
+  printf '%b\n' "$form" >>"$call_fixture/skills/caller/SKILL.md"
   if node "$repo/scripts/validate-skills.mjs" "$call_fixture" >/dev/null 2>"$temporary/stderr"; then
     printf 'Call form unexpectedly passed: %s\n' "$form" >&2
     exit 1
@@ -44,8 +46,12 @@ while IFS= read -r form; do
   grep -Fq 'Skill calls user-invoked skill manual' "$temporary/stderr"
 done <<'FORMS'
 Call the Skill tool with "manual".
+Call the Skill tool\nwith "manual".
 Then call "manual" on the result.
+Then call\n"manual" on the result.
 Follow the `manual` skill for the rest.
+Follow the\n`manual` skill for the rest.
+Call the `manual` skill.
 Use `manual` skill here.
 Finish with $manual.
 FORMS

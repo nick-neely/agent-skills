@@ -111,7 +111,8 @@ reproduction, a screenshot. Use the most direct proof the change allows:
 - For UI and runtime behavior, use the result of the runtime check
   `implementation-proof` ran; a fresh tester's report from this session
   counts. When no result from this session covers a change, as on a branch
-  that arrived already implemented, run the check that skill's table selects.
+  that arrived already implemented, choose the runtime check as that skill's
+  first step says and run it.
   Green mocked tests do not prove that the user experience works. Where that check was recorded as not run, what you saw
   using the changed path yourself is the proof, and behavior you could not
   observe is unproven. Use `ui-evidence` for warranted screenshots or
