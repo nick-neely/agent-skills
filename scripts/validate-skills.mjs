@@ -99,8 +99,9 @@ function parseFrontmatter(path) {
       if (fields.metadata !== undefined) fail(`Duplicate frontmatter key metadata: ${path}`);
       fields.metadata = "";
       while (index + 1 < end && /^ {2}\S/.test(lines[index + 1])) {
-        // YAML needs the space after the colon; without it the line is a scalar.
-        const entry = lines[++index].match(/^ {2}([a-z][a-z0-9-]*):\s+(\S.*)$/);
+        // YAML needs an ASCII space after the colon; without one, or with a
+        // lookalike such as a nonbreaking space, the line is a scalar.
+        const entry = lines[++index].match(/^ {2}([a-z][a-z0-9-]*): +(\S.*)$/);
         if (!entry) fail(`Malformed metadata line in ${path}: ${lines[index]}`);
         else if (metadata[entry[1]] !== undefined) fail(`Duplicate metadata key ${entry[1]}: ${path}`);
         else metadata[entry[1]] = entry[2];
@@ -461,7 +462,9 @@ function checkReadmeSkillList(root, skillNames) {
 // Filled only from skills whose layout passed, so a malformed one is never read.
 const userInvoked = new Set();
 const validated = new Map();
-const tokens = (value) => (value ? value.trim().split(/\s+/) : []);
+// Split on ASCII spaces alone, as YAML does, so a lookalike space stays in
+// its token and fails as malformed.
+const tokens = (value) => (value ? value.replace(/^ +| +$/g, "").split(/ +/) : []);
 
 if (!existsSync(skillsRoot)) fail(`Missing skills directory: ${skillsRoot}`);
 const entries = existsSync(skillsRoot)

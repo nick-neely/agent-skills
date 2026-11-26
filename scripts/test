@@ -77,7 +77,9 @@ expect_broken() {
   cp -R "$repo/tests/fixtures/names-user-invoked-skill" "$fixture"
   node -e '
     const fs = require("node:fs");
-    const [path, from, to] = process.argv.slice(1).map((arg) => arg.replaceAll("\\n", "\n"));
+    const [path, from, to] = process.argv
+      .slice(1)
+      .map((arg) => arg.replaceAll("\\n", "\n").replaceAll("\\u00a0", "\u00a0"));
     // A checkout may carry CRLF endings; the validator reads both.
     const text = fs.readFileSync(path, "utf8").replaceAll("\r\n", "\n");
     if (!text.includes(from)) throw new Error(`fixture text not found: ${from}`);
@@ -106,6 +108,9 @@ expect_broken 'names a skill in this repository' skills/pointer/SKILL.md \
   'sample/tools@outside' 'sample/tools@helper'
 expect_broken 'Malformed metadata line' skills/manual/SKILL.md '  requires: helper' '  Requires helper'
 expect_broken 'Malformed metadata line' skills/manual/SKILL.md '  requires: helper' '  requires:helper'
+# A nonbreaking space after the colon looks like a space and is not one.
+expect_broken 'Malformed metadata line' skills/manual/SKILL.md '  requires: helper' '  requires:\u00a0helper'
+expect_broken 'Malformed dependency' skills/pointer/SKILL.md 'uses: helper manual' 'uses: helper\u00a0manual'
 expect_broken 'Duplicate metadata key requires' skills/manual/SKILL.md \
   'requires: helper' 'requires: helper\n  requires: helper'
 expect_broken 'Duplicate frontmatter key metadata' skills/manual/SKILL.md \
