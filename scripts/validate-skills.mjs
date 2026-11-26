@@ -106,9 +106,7 @@ function parseFrontmatter(path) {
   return { text, fields };
 }
 
-// Code holds examples, not links. Scanning it reports every documented
-// `![alt](path)` snippet as a broken local link.
-function stripCode(text) {
+function stripFences(text) {
   const kept = [];
   let fence = null;
   for (const line of text.split("\n")) {
@@ -123,9 +121,51 @@ function stripCode(text) {
     }
     kept.push(line);
   }
+  return kept.join("\n");
+}
+
+// Code holds examples, not links. Scanning it reports every documented
+// `![alt](path)` snippet as a broken local link.
+function stripCode(text) {
   // Inline spans may be delimited by any run of backticks, so a doubled span
   // like ``![alt](x)`` has to be matched by its own opening run.
-  return kept.join("\n").replace(/(`+)[^\n]*?\1/g, "");
+  return stripFences(text).replace(/(`+)[^\n]*?\1/g, "");
+}
+
+// The call forms CONTRIBUTING.md documents. The verb form needs its backticks,
+// so these read text with only fences removed.
+// A call may wrap onto the next line but never spans a blank one, which ends
+// the paragraph.
+const GAP = String.raw`(?:[ \t]+|[ \t]*\r?\n[ \t]*)`;
+const NAME = String.raw`([a-z0-9]+(?:-[a-z0-9]+)*)`;
+const QUOTED_CALLS = [
+  new RegExp(`Skill${GAP}tool${GAP}with${GAP}"${NAME}"`, "g"),
+  new RegExp(String.raw`\bcall${GAP}"${NAME}"`, "gi"),
+  new RegExp(
+    String.raw`\b(?:call|use|follow|run|load|read|invoke)${GAP}(?:the${GAP})?` +
+      "`" + NAME + "`" + GAP + String.raw`skill\b`,
+    "gi",
+  ),
+];
+// A `$name` inside an inline span is shell, so this one reads text with all
+// code removed.
+const DOLLAR_CALL = /\$([a-z0-9]+(?:-[a-z0-9]+)*)(?![A-Za-z0-9_-])/g;
+
+// An agent cannot reach a user-invoked skill, so a skill that calls one stops
+// there. A shared method belongs in a model-invoked skill.
+function checkNoCallsToUserInvokedSkills(path, text, userInvoked) {
+  const prose = stripFences(text);
+  const targets = new Set(
+    [
+      ...QUOTED_CALLS.flatMap((form) => [...prose.matchAll(form)]),
+      ...stripCode(text).matchAll(DOLLAR_CALL),
+    ].map((match) => match[1]),
+  );
+  for (const target of targets) {
+    if (userInvoked.has(target)) {
+      fail(`Skill calls user-invoked skill ${target}: ${path}`);
+    }
+  }
 }
 
 function checkLinks(path, text, skillRoot) {
@@ -219,6 +259,10 @@ function checkReadmeSkillList(root, skillNames) {
   }
 }
 
+// Filled only from skills whose layout passed, so a malformed one is never read.
+const userInvoked = new Set();
+const validated = [];
+
 if (!existsSync(skillsRoot)) fail(`Missing skills directory: ${skillsRoot}`);
 const entries = existsSync(skillsRoot)
   ? readdirSync(skillsRoot, { withFileTypes: true })
@@ -237,6 +281,8 @@ for (const entry of entries) {
     continue;
   }
   const { text, fields } = parseFrontmatter(skillPath);
+  if (fields["disable-model-invocation"] === "true") userInvoked.add(entry.name);
+  validated.push(walk(skillRoot).filter((path) => path.endsWith(".md")));
   if (fields.name !== entry.name) fail(`Skill name must match directory ${entry.name}: ${skillPath}`);
   if (!fields.description) fail(`Missing frontmatter description: ${skillPath}`);
   checkFrontmatterSchema(fields, skillPath);
@@ -281,6 +327,12 @@ for (const entry of entries) {
 
 const skillNames = entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name);
 checkReadmeSkillList(root, skillNames);
+
+for (const files of validated) {
+  for (const file of files) {
+    checkNoCallsToUserInvokedSkills(file, readFileSync(file, "utf8"), userInvoked);
+  }
+}
 for (const name of ROOT_DOCS) {
   const path = join(root, name);
   if (existsSync(path)) checkNoEmDash(path);

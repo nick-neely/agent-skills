@@ -1,6 +1,7 @@
 ---
 name: full-send
 description: Implement an issue or spec through a verified merged PR when the user explicitly asks for full send.
+compatibility: Requires the implementation-proof, sol-loop, file-pr and babysit-pr skills. Uses ui-evidence for visible changes.
 ---
 
 # Full Send
@@ -53,18 +54,17 @@ one appears.
    unrelated work. If on the default branch, create a task branch before editing.
    Record the intended base and its merge-base SHA for review. Continue existing
    implementation from its current state rather than restarting it.
-   For UI, UX, design or interaction changes, or when the user requests visual
+   For a change to what a user sees or does, or when the user requests visual
    PR evidence, load the `ui-evidence` skill now to identify claims and plan a
    before/after baseline where useful. Let that skill select the medium and
    whether an asset is useful for the visible claim.
 
-   - Use the `tdd` skill where appropriate at agreed behavior seams.
-   - Run typechecking and focused tests during implementation, then the required
-     full suite at the end. Reuse observed results that cover unchanged code.
-   - Commit only the scoped implementation on the task branch so the
-     `code-review` skill can inspect the complete committed diff. Run that skill
-     with the recorded base and originating issue/spec. Assess its findings,
-     fix real in-scope problems, rerun affected checks and commit the fixes.
+   Follow the `implementation-proof` skill with that issue or spec and the
+   recorded merge-base; if it is not installed, ask the user. Settle what its
+   first step leaves open yourself, under "Asking the user", and list each
+   decision in the report. Its runtime check falls under "Testing permission".
+   Reuse observed results that cover unchanged code. Commit only the scoped
+   implementation on the task branch.
 
    Complete this step when the requested behavior is implemented, covering
    checks are accounted for, and the implementation review has no unresolved
@@ -77,20 +77,20 @@ one appears.
 4. **File the PR** with the `file-pr` skill. Rebase onto the latest default
    branch first. Say how you proved the change where the description keeps
    evidence, such as its template's verification section; only when it has no
-   such section, add one short line for it. Once the PR exists, use
-   `ui-evidence` to publish warranted visual evidence to that PR and complete
-   the skill's publication verification.
-   This evidence belongs on the PR even when full-send will merge it.
+   such section, add one short line for it. `file-pr` publishes the warranted
+   visual evidence once the PR exists; confirm its publication verification
+   passed. This evidence belongs on the PR even when full-send will merge it.
 5. **Babysit the PR** with the `babysit-pr` skill. Fix real findings and CI
    failures. Get proof for each fix before you push it. If follow-up commits or
-   rebases change the captured UI, refresh the affected PR evidence before
-   applying the final gate.
+   rebases change the captured UI, refresh the affected PR evidence with
+   `ui-evidence` before applying the final gate.
 6. **Rewrite the description** for the final head, following `file-pr`'s
    rewrite rule; only the body changes. Do it after the last commit and before
    the merge gate, and again whenever the head changes after it.
 7. **Merge** when the merge gate passes.
 8. **Report** in your final message: the PR link, the merge commit, your proof,
-   the issue assignment outcome, and each decision you made for the user.
+   the issue assignment outcome, each decision you made for the user, and any
+   finding the work left outside the issue.
 
 Stay active from step 1 to step 8. If you end your turn while checks or bots are
 pending, the work stops, because nobody will prompt you again. Wait with the
@@ -108,9 +108,15 @@ reproduction, a screenshot. Use the most direct proof the change allows:
 - Run the checks that the repo's CI runs (typecheck, lint, tests).
 - Add one focused test that fails without the fix, when the behavior has none
   and the repo has a test setup.
-- For UI and runtime behavior, run the app and look at the change. Green mocked
-  tests do not prove that the user experience works. Use `ui-evidence` for
-  warranted screenshots or recordings and their publication to the PR.
+- For UI and runtime behavior, use the result of the runtime check
+  `implementation-proof` ran; a fresh tester's report from this session
+  counts. When no result from this session covers a change, as on a branch
+  that arrived already implemented, choose the runtime check as that skill's
+  first step says and run it.
+  Green mocked tests do not prove that the user experience works. Where that check was recorded as not run, what you saw
+  using the changed path yourself is the proof, and behavior you could not
+  observe is unproven. Use `ui-evidence` for warranted screenshots or
+  recordings.
 
 When you cannot find a way to prove a change, you do not have full confidence.
 Ask the user.

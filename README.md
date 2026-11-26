@@ -29,6 +29,11 @@ Skills that shell out have their own runtime dependencies, listed in each
 `SKILL.md`. `ui-evidence` checks its own up front with
 `scripts/preflight.mjs`.
 
+Some skills call others by name. When you install one skill at a time, read
+its `compatibility` line and install what it requires. `implement`,
+`full-send` and `full-stop` all need `implementation-proof`, which needs
+`comment-audit`, `code-review` and the external `tdd`.
+
 ## Skills
 
 ### Plan and implement
@@ -40,9 +45,8 @@ Skills that shell out have their own runtime dependencies, listed in each
 - [`prototype`](skills/prototype/) - Answer a design question with throwaway
   code: divergent UI variants behind a live picker, or candidate logic models
   run through scenarios with a recommendation.
-- [`implement`](skills/implement/) - Implement a ticket or spec: state what
-  the work must prove, build it test-first, check the running app when the
-  change calls for it, then audit comments and review before committing.
+- [`implement`](skills/implement/) - Implement a ticket or spec through
+  `implementation-proof`, asking any open question once up front, then commit.
 - [`implement-stack`](skills/implement-stack/) - Implement a spec, issue set, or
   free-form request as a reviewable stack of pull requests.
 - [`implement-program`](skills/implement-program/) - Deliver dependency-linked
@@ -57,15 +61,16 @@ Skills that shell out have their own runtime dependencies, listed in each
 
 - [`comment-audit`](skills/comment-audit/) - Review relevant comments and
   report a table of recommended actions. Request edits to apply them, as
-  `implement` does before code review.
+  `implementation-proof` does before code review.
 - [`code-review`](skills/code-review/) - Review implementation changes against
   project standards and the spec, including callers outside the diff.
 - [`babysit-pr`](skills/babysit-pr/) - Monitor CI and review bots, address
   findings, and stop within a bounded review budget.
-- [`file-pr`](skills/file-pr/) - Review the branch diff, reuse or open a PR,
-  and use the separately installed `pr` skill for its body format.
-- [`full-send`](skills/full-send/) - Implement an issue or spec with TDD and
-  code review, then prove, file, attach warranted UI evidence, babysit and merge.
+- [`file-pr`](skills/file-pr/) - Review the branch diff, reuse or open a PR
+  with the separately installed `pr` skill's body format, and attach warranted
+  UI evidence.
+- [`full-send`](skills/full-send/) - Implement an issue or spec through
+  `implementation-proof`, then prove, file, babysit and merge.
 - [`full-stop`](skills/full-stop/) - Follow the same implementation and
   delivery workflow, leaving the PR ready for the user to merge.
 - [`leaving-pr-comments`](skills/leaving-pr-comments/) - Write and verify
@@ -84,6 +89,17 @@ Skills that shell out have their own runtime dependencies, listed in each
   UI screenshots and video into a pull request or issue.
 - [`generated-image-assets`](skills/generated-image-assets/) - Remove an image's
   background, verify the alpha edges, and size it for shipping.
+
+### Shared methods
+
+A shared method holds a discipline that several skills follow, so the rule
+lives in one place. You don't invoke one yourself: install it alongside the
+skills that name it.
+
+- [`implementation-proof`](skills/implementation-proof/) - The method behind
+  `implement`, `full-send` and `full-stop`: state what the work must prove,
+  build it test-first, check it running when the change calls for it, then
+  audit comments and review.
 
 Several workflows call separately installed skills. Read their `SKILL.md`
 before use; installing this collection does not install external skills or tools.

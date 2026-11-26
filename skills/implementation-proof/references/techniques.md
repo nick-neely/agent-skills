@@ -1,6 +1,6 @@
 # Test techniques by risk
 
-Example tests at the seam are the default and are often enough. Add a technique below when the ticket shows its signal and the repository already has the tooling. Where it lacks the tooling, use the row's by-hand form when it gives one; otherwise cover the rule's boundaries with example tests and name the technique in the handoff. Add no test dependency for it. Take every expected value from the ticket or a worked example, so a test can disagree with the code.
+Example tests at the seam are the default and are often enough. Add a technique below when the ticket shows its signal and the repository already has the tooling. Where it lacks the tooling, use the row's by-hand form when it gives one; otherwise cover the rule's boundaries with example tests and name the technique in the report. Add no test dependency for it. Take every expected value from the ticket or a worked example, so a test can disagree with the code.
 
 | Signal in the ticket | Technique | Doing it well |
 | --- | --- | --- |

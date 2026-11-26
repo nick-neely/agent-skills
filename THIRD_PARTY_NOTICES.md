@@ -19,7 +19,7 @@ high-impact extensions bounded at five total, a persistent finding ledger and
 focused follow-up reviews. They separate event notification from repository
 readiness policy and use a portable REST event waiter instead of the upstream
 bot-specific readiness watcher. `file-pr` calls the separately installed `pr`
-skill for its body format. `sol-loop` retains
+skill for its body format and `ui-evidence` for visible changes. `sol-loop` retains
 upstream's Sol requirement, concrete reviewer routes, scope checks, budget
 extensions and push gate. It judges findings by material impact, keeps its
 reviewer brief and routing reference separate, and makes public attribution
@@ -27,14 +27,14 @@ optional. `leaving-pr-comments` follows project attribution rules and adds
 target checks, retry deduplication and saved-comment readback.
 
 `full-send` adds an implementation step that loads the supplied issue/spec,
-continues current progress, and uses the separately installed `tdd` and
-`code-review` skills before proof and PR delivery. `full-stop` uses that same
-workflow with its existing prohibition on merging. This deliberately encodes
-the implementation practice rather than invoking or changing Matt Pocock's
-manual-only `implement` skill. The remaining Tstack delivery rules are retained.
+continues current progress, and follows the `implementation-proof` skill
+before proof and PR delivery. `full-stop` uses that same workflow with its
+existing prohibition on merging. The implementation practice lives in that
+shared skill because Matt Pocock's `implement` skill is manual-only and other
+skills cannot invoke it. The remaining Tstack delivery rules are retained.
 Both delivery workflows use `ui-evidence` when visual proof is warranted,
-publish the reviewed assets after the PR exists, and refresh affected evidence
-before handoff or merge when the UI changes.
+leave publication of the reviewed assets to `file-pr` once the PR exists, and
+refresh affected evidence before handoff or merge when the UI changes.
 They also add the authenticated GitHub user to selected implementation issues
 through `gh`, preserving existing assignees and verifying the saved assignment.
 
@@ -60,9 +60,14 @@ My changes are deliberately narrow:
 
 `skills/implement` adapts the upstream skill at
 `4ae2317ddb22b046e26455e4f9c9b3aaaf62212d` and includes its MIT license.
-It keeps manual invocation, states what the work must prove before editing,
-adds a reference for choosing test techniques by risk, runs the runtime check
-the change calls for, and calls `comment-audit` before `code-review`.
+It keeps manual invocation and the closing commit, and hands the method to
+`implementation-proof`.
+
+`skills/implementation-proof` carries the method that grew out of that adapted
+skill and includes the same MIT license. It states what the work must prove
+before editing, adds a reference for choosing test techniques by risk, runs
+the runtime check the change calls for, and calls `comment-audit` before
+`code-review`.
 
 `skills/code-review` adapts the same repository's two-axis review at
 `4ae2317ddb22b046e26455e4f9c9b3aaaf62212d` and includes its MIT license.

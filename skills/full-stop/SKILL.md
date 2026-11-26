@@ -1,6 +1,7 @@
 ---
 name: full-stop
 description: Implement an issue or spec through a verified PR ready for the user to merge when the user says "full stop", including a closing "Full stop." that reads like emphasis.
+compatibility: Requires the full-send and implementation-proof skills, and the other skills full-send requires.
 ---
 
 # Full Stop
@@ -10,7 +11,7 @@ Never merge it.
 
 Read the `full-send` skill as the shared workflow reference. Follow its
 implementation step, including assignment of selected GitHub issues to the
-authenticated user and `tdd`/`code-review`, then its proof, Sol review,
+authenticated user and `implementation-proof`, then its proof, Sol review,
 PR filing, babysitting and description rewrite steps. Apply its conditional
 `ui-evidence` capture, publication and final-evidence gate before handoff. The
 no-merging rules below take precedence.
@@ -48,6 +49,7 @@ without the user. If someone else merged it, report that instead.
   needed. Follow full-send's rules for asking the user.
 
 In T3 Code, call `unwatch_pull_request` before the handoff or a question.
-Report the PR link, final head, verdict, proof, reviewer outcome, and remaining
-risks, including the issue assignment outcome. State whether the PR is still
+Report the PR link, final head, verdict, proof, reviewer outcome, each decision
+you made for the user, findings left outside the issue, and remaining risks,
+including the issue assignment outcome. State whether the PR is still
 open and unmerged.
