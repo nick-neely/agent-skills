@@ -1,14 +1,19 @@
 ---
 name: pointer
 description: Sample skill that names a user-invoked skill without calling it.
+metadata:
+  uses: helper manual sample/tools@outside
 ---
 
 # Pointer
 
 When this is done, the user can run `/manual` on the result. The `manual` skill
 is user-invoked, so nothing here calls it. This workflow is compatible with the
-`manual` skill. Use the $helper skill for the rest,
-keep `$manual_dir` out of the output, and print `$manual` to see the variable.
+`manual` skill. Use the $helper skill for the rest, and `sample/tools@outside`
+when it is installed. A function named `extra()` and the message "extra event
+received" are ordinary text, not the extra skill, and so is a price such as $5.
+Keep `$manual_dir` out of the output, print `$manual` to see the variable, and
+run `echo $extra` to see another: a `$word` inside code is shell, not a call.
 
 ```bash
 echo "$manual"

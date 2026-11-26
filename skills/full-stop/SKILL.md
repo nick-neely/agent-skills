@@ -1,7 +1,10 @@
 ---
 name: full-stop
 description: Implement an issue or spec through a verified PR ready for the user to merge when the user says "full stop", including a closing "Full stop." that reads like emphasis.
-compatibility: Requires the full-send and implementation-proof skills, and the other skills full-send requires.
+compatibility: Requires authenticated GitHub CLI and a route to OpenAI's Sol reviewer, as the full-send skill does.
+metadata:
+  requires: full-send implementation-proof
+  uses: ui-evidence
 ---
 
 # Full Stop

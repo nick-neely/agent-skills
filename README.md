@@ -29,10 +29,38 @@ Skills that shell out have their own runtime dependencies, listed in each
 `SKILL.md`. `ui-evidence` checks its own up front with
 `scripts/preflight.mjs`.
 
-Some skills call others by name. When you install one skill at a time, read
-its `compatibility` line and install what it requires. `implement`,
-`full-send` and `full-stop` all need `implementation-proof`, which needs
-`tdd`, `comment-audit` and `code-review`.
+Some skills call others. The table below says what to install with each one;
+a skill with no row needs nothing else. Pass every name in a row's Install
+column to one command, and add the next column's names for the paths that use
+them, such as browser testing or screenshots:
+
+```sh
+npx skills add nick-neely/agent-skills --global --skill implement implementation-proof tdd comment-audit code-review
+```
+
+<!-- install-commands:start -->
+| Skill | Install | Add for the paths that use them | From other repositories |
+| --- | --- | --- | --- |
+| `babysit-pr` | `babysit-pr` | `leaving-pr-comments` | `openai/skills@gh-fix-ci` |
+| `file-pr` | `file-pr` | `ui-evidence babysit-pr leaving-pr-comments` | `github/gh-stack@gh-stack`, `openai/skills@gh-fix-ci` |
+| `full-send` | `full-send implementation-proof sol-loop file-pr babysit-pr tdd comment-audit code-review` | `ui-evidence uat flow-walk leaving-pr-comments` | `github/gh-stack@gh-stack`, `openai/skills@gh-fix-ci` |
+| `full-stop` | `full-stop full-send implementation-proof sol-loop file-pr babysit-pr tdd comment-audit code-review` | `ui-evidence uat flow-walk leaving-pr-comments` | `github/gh-stack@gh-stack`, `openai/skills@gh-fix-ci` |
+| `implement` | `implement implementation-proof tdd comment-audit code-review` | `uat flow-walk` | `github/gh-stack@gh-stack` |
+| `implementation-proof` | `implementation-proof tdd comment-audit code-review` | `uat flow-walk` | `github/gh-stack@gh-stack` |
+| `to-spec` | `to-spec` | - | `mattpocock/skills@setup-matt-pocock-skills` |
+| `to-tickets` | `to-tickets` | `implement implementation-proof tdd comment-audit code-review uat flow-walk` | `mattpocock/skills@setup-matt-pocock-skills`, `github/gh-stack@gh-stack` |
+<!-- install-commands:end -->
+
+A name in the last column has the form `owner/repo@skill` and installs from
+that repository:
+
+```sh
+npx skills add github/gh-stack --global --skill gh-stack
+```
+
+The table is generated from each skill's `metadata` declarations, so it cannot
+drift from them. Tools a skill needs, such as the GitHub CLI or agent-browser,
+are on its `compatibility` line.
 
 ## Skills
 

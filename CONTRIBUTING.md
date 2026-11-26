@@ -31,17 +31,24 @@ runtime state before committing; these require judgment.
 
 ## Writing a skill
 
-Frontmatter carries only these keys:
+Frontmatter carries these keys:
 
 ```yaml
 ---
 name: my-skill # must match the directory name
 description: What it does, and the triggers that should invoke it.
-compatibility: Required tooling, if any.
+compatibility: Tools and runtimes it needs, if any.
+metadata:
+  requires: other-skill
+  uses: third-skill owner/repo@outside-skill
 disable-model-invocation: true # slash-command only, no implicit invocation
 argument-hint: "<arg> [--flag]"
 ---
 ```
+
+`metadata` lists the skills a skill depends on; see "Skills that call skills".
+The validator also accepts `license`, `allowed-tools` and `model` from the
+Agent Skills specification.
 
 `description` is the only thing an agent sees before deciding whether to load
 the skill, so spend the words there. Name the triggers explicitly.
@@ -74,9 +81,30 @@ user-invoked one. Write a call in one of the forms it reads: `Call the Skill
 tool with "name"`, `call "name"`, `$name`, or one of the verbs call, use,
 follow, run, load, read or invoke with the skill named, as in ``follow the
 `name` skill``. A slash form such as `/name` addresses the person and is not a
-call. When two skills need the same method, put it in a
-model-invoked skill whose description names its callers, list it under "Shared
-methods" in the README, and name it in each caller's `compatibility` line.
+call.
+
+Declare every skill a skill calls under `metadata`, as space-separated names:
+`requires` for skills it cannot work without, and `uses` for skills only some
+paths reach. A skill from another repository is written `owner/repo@skill`.
+`compatibility` stays for tools and runtimes, and `metadata` is a block holding
+only those two keys, with bare unquoted names.
+
+Naming another skill of this repository in a skill's prose counts as depending
+on it. A skill is named by `` `name` `` or `` `/name` `` in backticks, `$name`,
+or `"name"` in double quotes; an outside skill is also named by its full
+`` `owner/repo@skill` ``. Write a skill's name another way, or reword, when
+you mean the word and not the skill. A `$word` in prose that starts with a
+letter is read as a call to a skill, so keep shell variables inside code. The validator fails on a skill that is
+named but not declared, a declared skill that does not exist, a declaration
+the skill never names, and a `requires` cycle.
+
+The README's install table is generated from those declarations. After
+changing one, run `node scripts/validate-skills.mjs --write-install` and commit
+the result; a stale table fails validation.
+
+When two skills need the same method, put it in a model-invoked skill whose
+description names its callers and list it under "Shared methods" in the
+README.
 
 ## Before you open a PR
 

@@ -2,6 +2,8 @@
 name: manual
 description: Sample user-invoked skill for a fixture.
 disable-model-invocation: true
+metadata:
+  requires: helper
 ---
 
 # Manual

@@ -1,7 +1,10 @@
 ---
 name: full-send
 description: Implement an issue or spec through a verified merged PR when the user explicitly asks for full send.
-compatibility: Requires the implementation-proof, sol-loop, file-pr and babysit-pr skills. Uses ui-evidence for visible changes.
+compatibility: Requires authenticated GitHub CLI and a route to OpenAI's Sol reviewer, as the sol-loop skill describes.
+metadata:
+  requires: implementation-proof sol-loop file-pr babysit-pr
+  uses: ui-evidence
 ---
 
 # Full Send
@@ -161,6 +164,7 @@ Ask only when you cannot continue alone:
 
 - You cannot prove the change.
 - The current branch is a layer of a stack, or the request asks for one.
+- A skill this workflow requires is not installed.
 - The merge gate cannot pass, and you cannot fix that yourself.
 - The next step is outside the grant above: deleting data, touching production,
   changing things outside the repo, closing a PR, or force-pushing any other

@@ -7,10 +7,14 @@ import {
   readdirSync,
   realpathSync,
   statSync,
+  writeFileSync,
 } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 
-const root = resolve(process.argv[2] || process.cwd());
+const args = process.argv.slice(2);
+// Rewrites the README's generated install table instead of checking it.
+const writeInstall = args.includes("--write-install");
+const root = resolve(args.find((arg) => !arg.startsWith("--")) || process.cwd());
 const skillsRoot = join(root, "skills");
 const noticesPath = join(root, "THIRD_PARTY_NOTICES.md");
 const notices = existsSync(noticesPath) ? readFileSync(noticesPath, "utf8") : "";
@@ -26,8 +30,15 @@ const FRONTMATTER_KEYS = [
   "argument-hint",
   "allowed-tools",
   "model",
+  "metadata",
 ];
 const BOOLEAN_FRONTMATTER_KEYS = ["disable-model-invocation"];
+// `requires` lists skills a skill cannot work without and `uses` the ones only
+// some paths reach, each a space-separated list.
+const METADATA_KEYS = ["requires", "uses"];
+const EXTERNAL_SKILL = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+@([a-z0-9]+(?:-[a-z0-9]+)*)$/;
+const INSTALL_START = "<!-- install-commands:start -->";
+const INSTALL_END = "<!-- install-commands:end -->";
 const SKILL_NAME_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 const ALLOWED_SKILL_SUBDIRS = ["scripts", "references", "assets", "agents"];
 const SKILL_INSTALL_PATH = /~\/\.(claude|codex|cursor|agents)\/skills\//;
@@ -73,17 +84,36 @@ function parseFrontmatter(path) {
   const lines = text.split(/\r?\n/);
   if (lines[0] !== "---") {
     fail(`Missing YAML frontmatter: ${path}`);
-    return { text, fields: {} };
+    return { text, fields: {}, metadata: {} };
   }
   const end = lines.indexOf("---", 1);
   if (end < 0) {
     fail(`Unterminated YAML frontmatter: ${path}`);
-    return { text, fields: {} };
+    return { text, fields: {}, metadata: {} };
   }
   const fields = {};
+  const metadata = {};
   for (let index = 1; index < end; index += 1) {
     const line = lines[index];
+    if (line === "metadata:") {
+      if (fields.metadata !== undefined) fail(`Duplicate frontmatter key metadata: ${path}`);
+      fields.metadata = "";
+      while (index + 1 < end && /^ {2}\S/.test(lines[index + 1])) {
+        // YAML needs an ASCII space after the colon; without one, or with a
+        // lookalike such as a nonbreaking space, the line is a scalar.
+        const entry = lines[++index].match(/^ {2}([a-z][a-z0-9-]*): +(\S.*)$/);
+        if (!entry) fail(`Malformed metadata line in ${path}: ${lines[index]}`);
+        else if (metadata[entry[1]] !== undefined) fail(`Duplicate metadata key ${entry[1]}: ${path}`);
+        else metadata[entry[1]] = entry[2];
+      }
+      if (!Object.keys(metadata).length) fail(`Metadata block is empty: ${path}`);
+      continue;
+    }
     const match = line.match(/^([a-z][a-z0-9-]*):\s*(.+)$/);
+    if (match?.[1] === "metadata") {
+      fail(`Metadata must be a block of indented keys: ${path}`);
+      continue;
+    }
     if (!match) {
       fail(`Malformed YAML frontmatter line in ${path}: ${line}`);
       continue;
@@ -103,7 +133,7 @@ function parseFrontmatter(path) {
     }
     fields[match[1]] = foldedDescription ? value : value.replace(/^["']|["']$/g, "");
   }
-  return { text, fields };
+  return { text, fields, metadata };
 }
 
 function stripFences(text) {
@@ -151,20 +181,198 @@ const QUOTED_CALLS = [
 // code removed.
 const DOLLAR_CALL = /\$([a-z0-9]+(?:-[a-z0-9]+)*)(?![A-Za-z0-9_-])/g;
 
+function quotedCallTargets(text) {
+  const prose = stripFences(text);
+  return QUOTED_CALLS.flatMap((form) => [...prose.matchAll(form)]).map((match) => match[1]);
+}
+
+function dollarCallTargets(text) {
+  return [...stripCode(text).matchAll(DOLLAR_CALL)].map((match) => match[1]);
+}
+
 // An agent cannot reach a user-invoked skill, so a skill that calls one stops
 // there. A shared method belongs in a model-invoked skill.
 function checkNoCallsToUserInvokedSkills(path, text, userInvoked) {
-  const prose = stripFences(text);
-  const targets = new Set(
-    [
-      ...QUOTED_CALLS.flatMap((form) => [...prose.matchAll(form)]),
-      ...stripCode(text).matchAll(DOLLAR_CALL),
-    ].map((match) => match[1]),
-  );
-  for (const target of targets) {
+  for (const target of new Set([...quotedCallTargets(text), ...dollarCallTargets(text)])) {
     if (userInvoked.has(target)) {
       fail(`Skill calls user-invoked skill ${target}: ${path}`);
     }
+  }
+}
+
+const dependencyName = (token) => EXTERNAL_SKILL.exec(token)?.[1] ?? token;
+const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+// The exact ways prose names a skill, besides a $name call: `name` or `/name`
+// in backticks, "name" in double quotes, and for an outside skill its full
+// `owner/repo@name`. Anything looser would read ordinary words such as
+// `name()` as a dependency.
+function names(prose, token) {
+  const name = escapeRegExp(dependencyName(token));
+  const forms = [`\`/?${name}\``, `"${name}"`];
+  if (EXTERNAL_SKILL.test(token)) forms.push(`\`${escapeRegExp(token)}\``);
+  return new RegExp(forms.join("|")).test(prose);
+}
+
+// A skill's own prose: frontmatter and fenced examples name nothing, and each
+// file is stripped on its own so an unclosed fence hides only that file.
+function skillProse(skill) {
+  return skill.files.map((file) => {
+    const text = readFileSync(file, "utf8").replace(/\r\n/g, "\n");
+    const body = file === skill.path ? text.replace(/^---\n[\s\S]*?\n---\n/, "") : text;
+    return { body, prose: stripFences(body) };
+  });
+}
+
+// Someone installing one skill learns what else it needs only from its
+// declarations, so every skill it names must be declared and every
+// declaration real.
+function checkDependencies(skills) {
+  for (const [name, skill] of skills) {
+    const declared = new Map();
+    for (const token of [...skill.requires, ...skill.uses]) {
+      if (!SKILL_NAME_PATTERN.test(token) && !EXTERNAL_SKILL.test(token)) {
+        fail(`Malformed dependency ${token}: ${skill.path}`);
+        continue;
+      }
+      const target = dependencyName(token);
+      if (declared.has(target)) fail(`Dependency ${target} is declared twice: ${skill.path}`);
+      declared.set(target, token);
+      if (EXTERNAL_SKILL.test(token)) {
+        if (skills.has(target)) fail(`External dependency ${token} names a skill in this repository: ${skill.path}`);
+      } else if (!skills.has(token)) {
+        fail(`Unknown skill dependency ${token}: ${skill.path}`);
+      } else if (token === name) {
+        fail(`Skill depends on itself: ${skill.path}`);
+      }
+    }
+    const files = skillProse(skill);
+    const prose = files.map((file) => file.prose).join("\n");
+    const dollarCalls = new Set(files.flatMap((file) => dollarCallTargets(file.body)));
+    const named = new Set([
+      ...[...skills.keys()].filter((other) => names(prose, other)),
+      ...files.flatMap((file) => quotedCallTargets(file.body)),
+      // A `$word` calls a skill wherever it comes from, so an outside one must
+      // be declared too. A leading letter keeps a price such as $5 out.
+      ...[...dollarCalls].filter((target) => /^[a-z]/.test(target)),
+    ]);
+    named.delete(name);
+    for (const target of named) {
+      if (!declared.has(target)) fail(`Skill names undeclared skill ${target}: ${skill.path}`);
+    }
+    const declaredTokens = new Set(declared.values());
+    for (const [, token] of prose.matchAll(/`([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+@[a-z0-9]+(?:-[a-z0-9]+)*)`/g)) {
+      if (!declaredTokens.has(token)) fail(`Skill names undeclared skill ${token}: ${skill.path}`);
+    }
+    for (const [target, token] of declared) {
+      if (!names(prose, token) && !dollarCalls.has(target)) {
+        fail(`Declared dependency ${target} is never named: ${skill.path}`);
+      }
+    }
+  }
+  const reported = new Set();
+  for (const start of skills.keys()) {
+    const visit = (name, trail) => {
+      for (const next of skills.get(name)?.requires ?? []) {
+        if (next === start) {
+          const key = [...trail].sort().join(" ");
+          if (!reported.has(key)) fail(`Required skills form a cycle: ${[...trail, next].join(" -> ")}`);
+          reported.add(key);
+        } else if (skills.has(next) && !trail.includes(next)) {
+          visit(next, [...trail, next]);
+        }
+      }
+    };
+    visit(start, [start]);
+  }
+}
+
+// What one skill reaches. `needs` follows requires alone, itself first, and
+// `sometimes` is everything else reachable; each holds repository skills in
+// `local` and other repositories' in `outside`. Declaration order keeps the
+// output stable.
+function installSets(name, skills) {
+  const reach = (start, keys) => {
+    const local = [...start];
+    const outside = [];
+    for (let index = 0; index < local.length; index += 1) {
+      for (const token of keys.flatMap((key) => skills.get(local[index])[key])) {
+        if (EXTERNAL_SKILL.test(token)) {
+          if (!outside.includes(token)) outside.push(token);
+        } else if (skills.has(token) && !local.includes(token)) {
+          local.push(token);
+        }
+      }
+    }
+    return { local, outside };
+  };
+  const needs = reach([name], ["requires"]);
+  const all = reach(needs.local, ["requires", "uses"]);
+  return {
+    needs,
+    sometimes: {
+      local: all.local.slice(needs.local.length),
+      outside: all.outside.filter((token) => !needs.outside.includes(token)),
+    },
+  };
+}
+
+function installTable(skills) {
+  const cell = (list) => (list.length ? `\`${list.join(" ")}\`` : "-");
+  const rows = [...skills.keys()]
+    .sort()
+    .filter((name) => skills.get(name).requires.length || skills.get(name).uses.length)
+    .map((name) => {
+      const { needs, sometimes } = installSets(name, skills);
+      const outside = [
+        ...needs.outside.map((token) => `\`${token}\` (required)`),
+        ...sometimes.outside.map((token) => `\`${token}\``),
+      ];
+      return `| \`${name}\` | ${cell(needs.local)} | ${cell(sometimes.local)} | ${outside.join(", ") || "-"} |`;
+    });
+  if (!rows.length) return "";
+  return [
+    "| Skill | Install | Add for the paths that use them | From other repositories |",
+    "| --- | --- | --- | --- |",
+    ...rows,
+    "",
+  ].join("\n");
+}
+
+// The README is where someone installing by hand looks, so its table is
+// generated from the declarations and a stale copy fails. It is written only
+// from declarations that passed every other check, and only between its
+// markers.
+function checkInstallTable(readmePath, skills) {
+  if (!existsSync(readmePath)) return;
+  // Bytes, so a rewrite leaves everything outside the markers exactly as it
+  // was, whatever its encoding.
+  const readme = readFileSync(readmePath);
+  const count = (marker) => readme.toString("latin1").split(marker).length - 1;
+  const table = installTable(skills);
+  if (count(INSTALL_START) > 1 || count(INSTALL_END) > 1) {
+    fail(`README has more than one install table: ${readmePath}`);
+    return;
+  }
+  const start = readme.indexOf(INSTALL_START);
+  const end = readme.indexOf(INSTALL_END);
+  if (start < 0 || end < start) {
+    if (table) fail(`README lacks the generated install table between ${INSTALL_START} and ${INSTALL_END}: ${readmePath}`);
+    return;
+  }
+  const current = readme.subarray(start, end).toString("utf8");
+  const expected = `${INSTALL_START}\n${table}`;
+  if (current.replace(/\r\n/g, "\n") === expected) return;
+  if (!writeInstall) {
+    fail(`README install table is stale; run scripts/validate-skills.mjs --write-install: ${readmePath}`);
+  } else if (errors.length) {
+    fail(`README install table was not written; fix the errors above first: ${readmePath}`);
+  } else {
+    const eol = current.includes("\r\n") ? "\r\n" : "\n";
+    writeFileSync(
+      readmePath,
+      Buffer.concat([readme.subarray(0, start), Buffer.from(expected.replace(/\n/g, eol)), readme.subarray(end)]),
+    );
   }
 }
 
@@ -261,7 +469,10 @@ function checkReadmeSkillList(root, skillNames) {
 
 // Filled only from skills whose layout passed, so a malformed one is never read.
 const userInvoked = new Set();
-const validated = [];
+const validated = new Map();
+// Split on ASCII spaces alone, as YAML does, so a lookalike space stays in
+// its token and fails as malformed.
+const tokens = (value) => (value ? value.replace(/^ +| +$/g, "").split(/ +/) : []);
 
 if (!existsSync(skillsRoot)) fail(`Missing skills directory: ${skillsRoot}`);
 const entries = existsSync(skillsRoot)
@@ -280,9 +491,17 @@ for (const entry of entries) {
     fail(`Expected exactly one immediate SKILL.md: ${skillRoot}`);
     continue;
   }
-  const { text, fields } = parseFrontmatter(skillPath);
+  const { text, fields, metadata } = parseFrontmatter(skillPath);
   if (fields["disable-model-invocation"] === "true") userInvoked.add(entry.name);
-  validated.push(walk(skillRoot).filter((path) => path.endsWith(".md")));
+  for (const key of Object.keys(metadata)) {
+    if (!METADATA_KEYS.includes(key)) fail(`Unknown metadata key ${key}: ${skillPath}`);
+  }
+  validated.set(entry.name, {
+    path: skillPath,
+    files: walk(skillRoot).filter((path) => path.endsWith(".md")),
+    requires: tokens(metadata.requires),
+    uses: tokens(metadata.uses),
+  });
   if (fields.name !== entry.name) fail(`Skill name must match directory ${entry.name}: ${skillPath}`);
   if (!fields.description) fail(`Missing frontmatter description: ${skillPath}`);
   checkFrontmatterSchema(fields, skillPath);
@@ -328,11 +547,12 @@ for (const entry of entries) {
 const skillNames = entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name);
 checkReadmeSkillList(root, skillNames);
 
-for (const files of validated) {
+for (const { files } of validated.values()) {
   for (const file of files) {
     checkNoCallsToUserInvokedSkills(file, readFileSync(file, "utf8"), userInvoked);
   }
 }
+checkDependencies(validated);
 for (const name of ROOT_DOCS) {
   const path = join(root, name);
   if (existsSync(path)) checkNoEmDash(path);
@@ -344,6 +564,8 @@ for (const file of existsSync(skillsRoot) ? walk(skillsRoot) : []) {
     fail(`Machine-specific absolute path detected: ${file}`);
   }
 }
+
+checkInstallTable(join(root, "README.md"), validated);
 
 if (errors.length) {
   for (const error of errors) process.stderr.write(`${error}\n`);

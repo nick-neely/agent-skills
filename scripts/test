@@ -65,6 +65,106 @@ if node "$repo/scripts/validate-skills.mjs" "$self_fixture" >/dev/null 2>"$tempo
   exit 1
 fi
 grep -Fq 'Skill calls user-invoked skill manual' "$temporary/stderr"
+
+expect_invalid undeclared-skill-call 'Skill names undeclared skill helper'
+
+# Each dependency rule fails on its own when the passing fixture changes in
+# one place: expect_broken <error> <file> <text> <replacement>.
+broken=0
+expect_broken() {
+  broken=$((broken + 1))
+  local fixture="$temporary/broken-$broken"
+  cp -R "$repo/tests/fixtures/names-user-invoked-skill" "$fixture"
+  node -e '
+    const fs = require("node:fs");
+    const [path, from, to] = process.argv
+      .slice(1)
+      .map((arg) => arg.replaceAll("\\n", "\n").replaceAll("\\u00a0", "\u00a0"));
+    // A checkout may carry CRLF endings; the validator reads both.
+    const text = fs.readFileSync(path, "utf8").replaceAll("\r\n", "\n");
+    if (!text.includes(from)) throw new Error(`fixture text not found: ${from}`);
+    fs.writeFileSync(path, text.replace(from, to));
+  ' "$fixture/$2" "$3" "$4"
+  if node "$repo/scripts/validate-skills.mjs" "$fixture" >/dev/null 2>"$temporary/stderr"; then
+    printf 'Broken dependency fixture unexpectedly passed: %s\n' "$1" >&2
+    exit 1
+  fi
+  grep -Fq "$1" "$temporary/stderr"
+}
+helper_description='description: Sample model-invoked skill for a fixture.'
+expect_broken 'Unknown skill dependency missing' skills/pointer/SKILL.md \
+  'uses: helper manual' 'uses: helper manual missing'
+expect_broken 'Declared dependency pointer is never named' skills/helper/SKILL.md \
+  "$helper_description" "$helper_description\nmetadata:\n  uses: pointer"
+expect_broken 'Unknown metadata key needs' skills/pointer/SKILL.md 'uses: helper' 'needs: helper'
+expect_broken 'Metadata block is empty' skills/manual/SKILL.md '  requires: helper\n' ''
+expect_broken 'Dependency helper is declared twice' skills/manual/SKILL.md \
+  'requires: helper' 'requires: helper\n  uses: helper'
+expect_broken 'Skill depends on itself' skills/helper/SKILL.md \
+  "$helper_description" "$helper_description\nmetadata:\n  uses: helper"
+expect_broken 'Required skills form a cycle' skills/helper/SKILL.md \
+  "$helper_description" "$helper_description\nmetadata:\n  requires: manual"
+expect_broken 'names a skill in this repository' skills/pointer/SKILL.md \
+  'sample/tools@outside' 'sample/tools@helper'
+expect_broken 'Malformed metadata line' skills/manual/SKILL.md '  requires: helper' '  Requires helper'
+expect_broken 'Malformed metadata line' skills/manual/SKILL.md '  requires: helper' '  requires:helper'
+# A nonbreaking space after the colon looks like a space and is not one.
+expect_broken 'Malformed metadata line' skills/manual/SKILL.md '  requires: helper' '  requires:\u00a0helper'
+expect_broken 'Malformed dependency' skills/pointer/SKILL.md 'uses: helper manual' 'uses: helper\u00a0manual'
+expect_broken 'Duplicate metadata key requires' skills/manual/SKILL.md \
+  'requires: helper' 'requires: helper\n  requires: helper'
+expect_broken 'Duplicate frontmatter key metadata' skills/manual/SKILL.md \
+  '  requires: helper' '  requires: helper\nmetadata:\n  uses: helper'
+expect_broken 'Skill names undeclared skill helper' skills/pointer/SKILL.md 'uses: helper manual' 'uses: manual'
+expect_broken 'Metadata must be a block' skills/manual/SKILL.md 'metadata:\n  requires: helper' 'metadata: helper'
+expect_broken 'Metadata must be a block' skills/manual/SKILL.md \
+  'metadata:\n  requires: helper' 'metadata: {requires: helper}'
+expect_broken 'Malformed dependency [' skills/manual/SKILL.md 'requires: helper' 'requires: ['
+expect_broken 'Malformed dependency "helper"' skills/manual/SKILL.md 'requires: helper' 'requires: "helper"'
+expect_broken 'Malformed dependency ""' skills/pointer/SKILL.md 'uses: helper manual sample/tools@outside' 'uses: ""'
+expect_broken 'Skill names undeclared skill extra' skills/pointer/SKILL.md '`extra()`' '`extra`'
+expect_broken 'Skill names undeclared skill extra' skills/pointer/SKILL.md '`extra()`' '`/extra`'
+expect_broken 'Skill names undeclared skill elsewhere' skills/pointer/SKILL.md 'a price such as $5' 'a call to $elsewhere'
+expect_broken 'Declared dependency helper is never named' skills/pointer/SKILL.md 'the $helper skill' 'the `$helper` skill'
+expect_broken 'Declared dependency outside is never named' skills/pointer/SKILL.md '`sample/tools@outside`' 'that outside tool'
+expect_broken 'Skill names undeclared skill sample/tools@outside' skills/pointer/SKILL.md \
+  'uses: helper manual sample/tools@outside' 'uses: helper manual'
+expect_broken 'README install table is stale' README.md '`manual helper`' '`manual`'
+expect_broken 'README install table is stale' skills/pointer/SKILL.md \
+  'uses: helper manual sample/tools@outside' 'requires: sample/tools@outside\n  uses: helper manual'
+expect_broken 'README lacks the generated install table' README.md '<!-- install-commands:start -->' ''
+expect_broken 'README has more than one install table' README.md \
+  '<!-- install-commands:end -->' '<!-- install-commands:end -->\n<!-- install-commands:start -->\n<!-- install-commands:end -->'
+
+# --write-install repairs a stale table, touches nothing outside the markers,
+# and refuses to write from declarations that fail another check.
+write_fixture="$temporary/write-install"
+cp -R "$repo/tests/fixtures/names-user-invoked-skill" "$write_fixture"
+# The first line ends in CRLF and holds a byte that is not valid UTF-8, so a
+# rewrite that normalized or re-encoded the file would change bytes outside
+# the table.
+node -e '
+  const fs = require("node:fs");
+  const [path, expected] = process.argv.slice(1);
+  const text = fs.readFileSync(path, "utf8").replaceAll("\r\n", "\n");
+  const head = Buffer.concat([Buffer.from("caf"), Buffer.from([0xe9]), Buffer.from("\r\n")]);
+  fs.writeFileSync(expected, Buffer.concat([head, Buffer.from(text)]));
+  fs.writeFileSync(path, Buffer.concat([head, Buffer.from(text.replace("`manual helper`", "`manual`"))]));
+' "$write_fixture/README.md" "$temporary/write-install-expected.md"
+node "$repo/scripts/validate-skills.mjs" --write-install "$write_fixture" >/dev/null
+cmp -s "$write_fixture/README.md" "$temporary/write-install-expected.md"
+node -e '
+  const fs = require("node:fs");
+  const [readme, skill] = process.argv.slice(1);
+  fs.writeFileSync(readme, fs.readFileSync(readme, "utf8").replace("`manual helper`", "`manual`"));
+  fs.writeFileSync(skill, fs.readFileSync(skill, "utf8").replace("uses: helper", "uses: helper missing"));
+' "$write_fixture/README.md" "$write_fixture/skills/pointer/SKILL.md"
+if node "$repo/scripts/validate-skills.mjs" --write-install "$write_fixture" >/dev/null 2>"$temporary/stderr"; then
+  printf '%s\n' 'Install table was written from failing declarations' >&2
+  exit 1
+fi
+grep -Fq 'README install table was not written' "$temporary/stderr"
+grep -Fq '| `manual` | `manual` |' "$write_fixture/README.md"
 expect_invalid empty-folded-description 'Folded description requires indented content'
 expect_invalid overlong-folded-description 'Frontmatter description exceeds 1024 characters'
 expect_invalid quoted-overlong-folded-description 'Frontmatter description exceeds 1024 characters'

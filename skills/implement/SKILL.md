@@ -1,7 +1,8 @@
 ---
 name: implement
 description: "Implement a piece of work based on a spec or set of tickets."
-compatibility: Requires the implementation-proof skill.
+metadata:
+  requires: implementation-proof
 disable-model-invocation: true
 ---
 
