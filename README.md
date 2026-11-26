@@ -40,8 +40,9 @@ Skills that shell out have their own runtime dependencies, listed in each
 - [`prototype`](skills/prototype/) - Answer a design question with throwaway
   code: divergent UI variants behind a live picker, or candidate logic models
   run through scenarios with a recommendation.
-- [`implement`](skills/implement/) - Implement a ticket or spec, audit the
-  affected comments, and review the result before committing.
+- [`implement`](skills/implement/) - Implement a ticket or spec: state what
+  the work must prove, build it test-first, check the running app when the
+  change calls for it, then audit comments and review before committing.
 - [`implement-stack`](skills/implement-stack/) - Implement a spec, issue set, or
   free-form request as a reviewable stack of pull requests.
 - [`implement-program`](skills/implement-program/) - Deliver dependency-linked
@@ -74,8 +75,9 @@ Skills that shell out have their own runtime dependencies, listed in each
 
 ### Test flows and prepare visuals
 
-- [`flow-walk`](skills/flow-walk/) - Hand one user goal to a fresh tester before
-  code review, and sort its report on friction, copy weight and hierarchy.
+- [`flow-walk`](skills/flow-walk/) - For a new or reshaped user flow, hand one
+  user goal to a fresh tester before code review, and sort its report on
+  friction, copy weight and hierarchy.
 - [`uat`](skills/uat/) - Test acceptance criteria and explore user workflows
   with agent-browser, retaining reproducible findings and responsive checks.
 - [`ui-evidence`](skills/ui-evidence/) - Capture, prepare, annotate, compare, and publish
