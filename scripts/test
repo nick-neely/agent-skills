@@ -55,6 +55,16 @@ Call the `manual` skill.
 Use `manual` skill here.
 Finish with $manual.
 FORMS
+
+# A user-invoked skill cannot be called even by itself.
+self_fixture="$temporary/call-self"
+cp -R "$repo/tests/fixtures/names-user-invoked-skill" "$self_fixture"
+printf '%s\n' '' 'Call the Skill tool with "manual".' >>"$self_fixture/skills/manual/SKILL.md"
+if node "$repo/scripts/validate-skills.mjs" "$self_fixture" >/dev/null 2>"$temporary/stderr"; then
+  printf '%s\n' 'A user-invoked skill calling itself unexpectedly passed' >&2
+  exit 1
+fi
+grep -Fq 'Skill calls user-invoked skill manual' "$temporary/stderr"
 expect_invalid empty-folded-description 'Folded description requires indented content'
 expect_invalid overlong-folded-description 'Frontmatter description exceeds 1024 characters'
 expect_invalid quoted-overlong-folded-description 'Frontmatter description exceeds 1024 characters'

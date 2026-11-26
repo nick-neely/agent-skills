@@ -153,7 +153,7 @@ const DOLLAR_CALL = /\$([a-z0-9]+(?:-[a-z0-9]+)*)(?![A-Za-z0-9_-])/g;
 
 // An agent cannot reach a user-invoked skill, so a skill that calls one stops
 // there. A shared method belongs in a model-invoked skill.
-function checkNoCallsToUserInvokedSkills(path, text, ownName, userInvoked) {
+function checkNoCallsToUserInvokedSkills(path, text, userInvoked) {
   const prose = stripFences(text);
   const targets = new Set(
     [
@@ -162,7 +162,7 @@ function checkNoCallsToUserInvokedSkills(path, text, ownName, userInvoked) {
     ].map((match) => match[1]),
   );
   for (const target of targets) {
-    if (target !== ownName && userInvoked.has(target)) {
+    if (userInvoked.has(target)) {
       fail(`Skill calls user-invoked skill ${target}: ${path}`);
     }
   }
@@ -282,7 +282,7 @@ for (const entry of entries) {
   }
   const { text, fields } = parseFrontmatter(skillPath);
   if (fields["disable-model-invocation"] === "true") userInvoked.add(entry.name);
-  validated.push({ name: entry.name, files: walk(skillRoot).filter((path) => path.endsWith(".md")) });
+  validated.push(walk(skillRoot).filter((path) => path.endsWith(".md")));
   if (fields.name !== entry.name) fail(`Skill name must match directory ${entry.name}: ${skillPath}`);
   if (!fields.description) fail(`Missing frontmatter description: ${skillPath}`);
   checkFrontmatterSchema(fields, skillPath);
@@ -328,9 +328,9 @@ for (const entry of entries) {
 const skillNames = entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name);
 checkReadmeSkillList(root, skillNames);
 
-for (const { name, files } of validated) {
+for (const files of validated) {
   for (const file of files) {
-    checkNoCallsToUserInvokedSkills(file, readFileSync(file, "utf8"), name, userInvoked);
+    checkNoCallsToUserInvokedSkills(file, readFileSync(file, "utf8"), userInvoked);
   }
 }
 for (const name of ROOT_DOCS) {
