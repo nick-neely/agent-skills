@@ -1,0 +1,3 @@
+interface:
+  display_name: "Implementation Proof"
+  short_description: "Shared method: state the proof, build, check it running, review"

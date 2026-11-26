@@ -106,9 +106,7 @@ function parseFrontmatter(path) {
   return { text, fields };
 }
 
-// Code holds examples, not links. Scanning it reports every documented
-// `![alt](path)` snippet as a broken local link.
-function stripCode(text) {
+function stripFences(text) {
   const kept = [];
   let fence = null;
   for (const line of text.split("\n")) {
@@ -123,9 +121,29 @@ function stripCode(text) {
     }
     kept.push(line);
   }
+  return kept.join("\n");
+}
+
+// Code holds examples, not links. Scanning it reports every documented
+// `![alt](path)` snippet as a broken local link.
+function stripCode(text) {
   // Inline spans may be delimited by any run of backticks, so a doubled span
   // like ``![alt](x)`` has to be matched by its own opening run.
-  return kept.join("\n").replace(/(`+)[^\n]*?\1/g, "");
+  return stripFences(text).replace(/(`+)[^\n]*?\1/g, "");
+}
+
+// The three forms a skill uses to hand work to another skill.
+const SKILL_CALL = /Skill tool with "([a-z0-9-]+)"|\$([a-z][a-z0-9-]*)|`([a-z][a-z0-9-]*)` skill/g;
+
+// An agent cannot reach a user-invoked skill, so a skill that calls one stops
+// there. A shared method belongs in a model-invoked skill.
+function checkNoCallsToUserInvokedSkills(path, text, ownName, userInvoked) {
+  for (const match of stripFences(text).matchAll(SKILL_CALL)) {
+    const target = match[1] ?? match[2] ?? match[3];
+    if (target !== ownName && userInvoked.has(target)) {
+      fail(`Skill calls user-invoked skill ${target}: ${path}`);
+    }
+  }
 }
 
 function checkLinks(path, text, skillRoot) {
@@ -281,6 +299,20 @@ for (const entry of entries) {
 
 const skillNames = entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name);
 checkReadmeSkillList(root, skillNames);
+
+const userInvoked = new Set(
+  skillNames.filter((name) => {
+    const path = join(skillsRoot, name, "SKILL.md");
+    return existsSync(path) && parseFrontmatter(path).fields["disable-model-invocation"] === "true";
+  }),
+);
+for (const name of skillNames) {
+  for (const file of walk(join(skillsRoot, name))) {
+    if (file.endsWith(".md")) {
+      checkNoCallsToUserInvokedSkills(file, readFileSync(file, "utf8"), name, userInvoked);
+    }
+  }
+}
 for (const name of ROOT_DOCS) {
   const path = join(root, name);
   if (existsSync(path)) checkNoEmDash(path);

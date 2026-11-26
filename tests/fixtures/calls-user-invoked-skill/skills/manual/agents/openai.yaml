@@ -1,0 +1,5 @@
+interface:
+  display_name: "Manual"
+  short_description: "Sample fixture"
+policy:
+  allow_implicit_invocation: false
