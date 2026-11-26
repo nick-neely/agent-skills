@@ -93,7 +93,8 @@ Naming another skill of this repository in a skill's prose counts as depending
 on it. A skill is named by `` `name` `` or `` `/name` `` in backticks, `$name`,
 or `"name"` in double quotes; an outside skill is also named by its full
 `` `owner/repo@skill` ``. Write a skill's name another way, or reword, when
-you mean the word and not the skill. The validator fails on a skill that is
+you mean the word and not the skill. A `$word` in prose that starts with a
+letter is read as a call to a skill, so keep shell variables inside code. The validator fails on a skill that is
 named but not declared, a declared skill that does not exist, a declaration
 the skill never names, and a `requires` cycle.
 

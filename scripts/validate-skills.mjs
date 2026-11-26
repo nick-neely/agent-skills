@@ -250,6 +250,11 @@ function checkDependencies(skills) {
     const named = new Set([
       ...[...skills.keys()].filter((other) => other !== name && names(prose, other)),
       ...files.flatMap((file) => quotedCallTargets(file.body)).filter((target) => target !== name),
+      // A `$word` calls a skill wherever it comes from, so an outside one must
+      // be declared too. A leading letter keeps a price such as $5 out.
+      ...files
+        .flatMap((file) => dollarCallTargets(file.body))
+        .filter((target) => target !== name && /^[a-z]/.test(target)),
     ]);
     for (const target of named) {
       if (!declared.has(target)) fail(`Skill names undeclared skill ${target}: ${skill.path}`);

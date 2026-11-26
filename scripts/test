@@ -124,6 +124,7 @@ expect_broken 'Malformed dependency "helper"' skills/manual/SKILL.md 'requires: 
 expect_broken 'Malformed dependency ""' skills/pointer/SKILL.md 'uses: helper manual sample/tools@outside' 'uses: ""'
 expect_broken 'Skill names undeclared skill extra' skills/pointer/SKILL.md '`extra()`' '`extra`'
 expect_broken 'Skill names undeclared skill extra' skills/pointer/SKILL.md '`extra()`' '`/extra`'
+expect_broken 'Skill names undeclared skill elsewhere' skills/pointer/SKILL.md 'a price such as $5' 'a call to $elsewhere'
 expect_broken 'Declared dependency outside is never named' skills/pointer/SKILL.md '`sample/tools@outside`' 'that outside tool'
 expect_broken 'Skill names undeclared skill sample/tools@outside' skills/pointer/SKILL.md \
   'uses: helper manual sample/tools@outside' 'uses: helper manual'
