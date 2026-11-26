@@ -105,6 +105,7 @@ expect_broken 'Required skills form a cycle' skills/helper/SKILL.md \
 expect_broken 'names a skill in this repository' skills/pointer/SKILL.md \
   'sample/tools@outside' 'sample/tools@helper'
 expect_broken 'Malformed metadata line' skills/manual/SKILL.md '  requires: helper' '  Requires helper'
+expect_broken 'Malformed metadata line' skills/manual/SKILL.md '  requires: helper' '  requires:helper'
 expect_broken 'Duplicate metadata key requires' skills/manual/SKILL.md \
   'requires: helper' 'requires: helper\n  requires: helper'
 expect_broken 'Duplicate frontmatter key metadata' skills/manual/SKILL.md \
@@ -119,6 +120,8 @@ expect_broken 'Malformed dependency ""' skills/pointer/SKILL.md 'uses: helper ma
 expect_broken 'Skill names undeclared skill extra' skills/pointer/SKILL.md '`extra()`' '`extra`'
 expect_broken 'Skill names undeclared skill extra' skills/pointer/SKILL.md '`extra()`' '`/extra`'
 expect_broken 'Declared dependency outside is never named' skills/pointer/SKILL.md '`sample/tools@outside`' 'that outside tool'
+expect_broken 'Skill names undeclared skill sample/tools@outside' skills/pointer/SKILL.md \
+  'uses: helper manual sample/tools@outside' 'uses: helper manual'
 expect_broken 'README install table is stale' README.md '`manual helper`' '`manual`'
 expect_broken 'README install table is stale' skills/pointer/SKILL.md \
   'uses: helper manual sample/tools@outside' 'requires: sample/tools@outside\n  uses: helper manual'
@@ -130,14 +133,16 @@ expect_broken 'README has more than one install table' README.md \
 # and refuses to write from declarations that fail another check.
 write_fixture="$temporary/write-install"
 cp -R "$repo/tests/fixtures/names-user-invoked-skill" "$write_fixture"
-# The heading gets a CRLF ending the table does not have, so a rewrite that
-# normalized the whole file would show up as a byte difference.
+# The first line ends in CRLF and holds a byte that is not valid UTF-8, so a
+# rewrite that normalized or re-encoded the file would change bytes outside
+# the table.
 node -e '
   const fs = require("node:fs");
   const [path, expected] = process.argv.slice(1);
-  const mixed = fs.readFileSync(path, "utf8").replaceAll("\r\n", "\n").replace("# Fixture\n", "# Fixture\r\n");
-  fs.writeFileSync(expected, mixed);
-  fs.writeFileSync(path, mixed.replace("`manual helper`", "`manual`"));
+  const text = fs.readFileSync(path, "utf8").replaceAll("\r\n", "\n");
+  const head = Buffer.concat([Buffer.from("caf"), Buffer.from([0xe9]), Buffer.from("\r\n")]);
+  fs.writeFileSync(expected, Buffer.concat([head, Buffer.from(text)]));
+  fs.writeFileSync(path, Buffer.concat([head, Buffer.from(text.replace("`manual helper`", "`manual`"))]));
 ' "$write_fixture/README.md" "$temporary/write-install-expected.md"
 node "$repo/scripts/validate-skills.mjs" --write-install "$write_fixture" >/dev/null
 cmp -s "$write_fixture/README.md" "$temporary/write-install-expected.md"

@@ -99,7 +99,8 @@ function parseFrontmatter(path) {
       if (fields.metadata !== undefined) fail(`Duplicate frontmatter key metadata: ${path}`);
       fields.metadata = "";
       while (index + 1 < end && /^ {2}\S/.test(lines[index + 1])) {
-        const entry = lines[++index].match(/^ {2}([a-z][a-z0-9-]*):\s*(.+)$/);
+        // YAML needs the space after the colon; without it the line is a scalar.
+        const entry = lines[++index].match(/^ {2}([a-z][a-z0-9-]*):\s+(\S.*)$/);
         if (!entry) fail(`Malformed metadata line in ${path}: ${lines[index]}`);
         else if (metadata[entry[1]] !== undefined) fail(`Duplicate metadata key ${entry[1]}: ${path}`);
         else metadata[entry[1]] = entry[2];
@@ -252,6 +253,10 @@ function checkDependencies(skills) {
     for (const target of named) {
       if (!declared.has(target)) fail(`Skill names undeclared skill ${target}: ${skill.path}`);
     }
+    const declaredTokens = new Set(declared.values());
+    for (const [, token] of prose.matchAll(/`([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+@[a-z0-9]+(?:-[a-z0-9]+)*)`/g)) {
+      if (!declaredTokens.has(token)) fail(`Skill names undeclared skill ${token}: ${skill.path}`);
+    }
     for (const [target, token] of declared) {
       if (!names(prose, token)) fail(`Declared dependency ${target} is never named: ${skill.path}`);
     }
@@ -331,8 +336,10 @@ function installTable(skills) {
 // markers.
 function checkInstallTable(readmePath, skills) {
   if (!existsSync(readmePath)) return;
-  const readme = readFileSync(readmePath, "utf8");
-  const count = (marker) => readme.split(marker).length - 1;
+  // Bytes, so a rewrite leaves everything outside the markers exactly as it
+  // was, whatever its encoding.
+  const readme = readFileSync(readmePath);
+  const count = (marker) => readme.toString("latin1").split(marker).length - 1;
   const table = installTable(skills);
   if (count(INSTALL_START) > 1 || count(INSTALL_END) > 1) {
     fail(`README has more than one install table: ${readmePath}`);
@@ -344,7 +351,7 @@ function checkInstallTable(readmePath, skills) {
     if (table) fail(`README lacks the generated install table between ${INSTALL_START} and ${INSTALL_END}: ${readmePath}`);
     return;
   }
-  const current = readme.slice(start, end);
+  const current = readme.subarray(start, end).toString("utf8");
   const expected = `${INSTALL_START}\n${table}`;
   if (current.replace(/\r\n/g, "\n") === expected) return;
   if (!writeInstall) {
@@ -353,7 +360,10 @@ function checkInstallTable(readmePath, skills) {
     fail(`README install table was not written; fix the errors above first: ${readmePath}`);
   } else {
     const eol = current.includes("\r\n") ? "\r\n" : "\n";
-    writeFileSync(readmePath, readme.slice(0, start) + expected.replace(/\n/g, eol) + readme.slice(end));
+    writeFileSync(
+      readmePath,
+      Buffer.concat([readme.subarray(0, start), Buffer.from(expected.replace(/\n/g, eol)), readme.subarray(end)]),
+    );
   }
 }
 
