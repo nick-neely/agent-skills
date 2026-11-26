@@ -110,20 +110,37 @@ expect_broken 'Duplicate metadata key requires' skills/manual/SKILL.md \
 expect_broken 'Duplicate frontmatter key metadata' skills/manual/SKILL.md \
   '  requires: helper' '  requires: helper\nmetadata:\n  uses: helper'
 expect_broken 'Skill names undeclared skill helper' skills/pointer/SKILL.md 'uses: helper manual' 'uses: manual'
+expect_broken 'Metadata must be a block' skills/manual/SKILL.md 'metadata:\n  requires: helper' 'metadata: helper'
+expect_broken 'Metadata must be a block' skills/manual/SKILL.md \
+  'metadata:\n  requires: helper' 'metadata: {requires: helper}'
+expect_broken 'Malformed dependency [' skills/manual/SKILL.md 'requires: helper' 'requires: ['
+expect_broken 'Malformed dependency "helper"' skills/manual/SKILL.md 'requires: helper' 'requires: "helper"'
+expect_broken 'Malformed dependency ""' skills/pointer/SKILL.md 'uses: helper manual sample/tools@outside' 'uses: ""'
+expect_broken 'Skill names undeclared skill extra' skills/pointer/SKILL.md '`extra()`' '`extra`'
+expect_broken 'Skill names undeclared skill extra' skills/pointer/SKILL.md '`extra()`' '`/extra`'
+expect_broken 'Declared dependency outside is never named' skills/pointer/SKILL.md '`sample/tools@outside`' 'that outside tool'
 expect_broken 'README install table is stale' README.md '`manual helper`' '`manual`'
+expect_broken 'README install table is stale' skills/pointer/SKILL.md \
+  'uses: helper manual sample/tools@outside' 'requires: sample/tools@outside\n  uses: helper manual'
 expect_broken 'README lacks the generated install table' README.md '<!-- install-commands:start -->' ''
+expect_broken 'README has more than one install table' README.md \
+  '<!-- install-commands:end -->' '<!-- install-commands:end -->\n<!-- install-commands:start -->\n<!-- install-commands:end -->'
 
 # --write-install repairs a stale table, touches nothing outside the markers,
 # and refuses to write from declarations that fail another check.
 write_fixture="$temporary/write-install"
 cp -R "$repo/tests/fixtures/names-user-invoked-skill" "$write_fixture"
+# The heading gets a CRLF ending the table does not have, so a rewrite that
+# normalized the whole file would show up as a byte difference.
 node -e '
   const fs = require("node:fs");
-  const path = process.argv[1];
-  fs.writeFileSync(path, fs.readFileSync(path, "utf8").replace("`manual helper`", "`manual`"));
-' "$write_fixture/README.md"
+  const [path, expected] = process.argv.slice(1);
+  const mixed = fs.readFileSync(path, "utf8").replaceAll("\r\n", "\n").replace("# Fixture\n", "# Fixture\r\n");
+  fs.writeFileSync(expected, mixed);
+  fs.writeFileSync(path, mixed.replace("`manual helper`", "`manual`"));
+' "$write_fixture/README.md" "$temporary/write-install-expected.md"
 node "$repo/scripts/validate-skills.mjs" --write-install "$write_fixture" >/dev/null
-cmp -s "$write_fixture/README.md" "$repo/tests/fixtures/names-user-invoked-skill/README.md"
+cmp -s "$write_fixture/README.md" "$temporary/write-install-expected.md"
 node -e '
   const fs = require("node:fs");
   const [readme, skill] = process.argv.slice(1);

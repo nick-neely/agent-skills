@@ -42,13 +42,13 @@ npx skills add nick-neely/agent-skills --global --skill implement implementation
 | Skill | Install | Add for the paths that use them | From other repositories |
 | --- | --- | --- | --- |
 | `babysit-pr` | `babysit-pr` | `leaving-pr-comments` | `openai/skills@gh-fix-ci` |
-| `file-pr` | `file-pr` | `ui-evidence babysit-pr leaving-pr-comments` | `github/gh-stack@gh-stack openai/skills@gh-fix-ci` |
-| `full-send` | `full-send implementation-proof sol-loop file-pr babysit-pr tdd comment-audit code-review` | `ui-evidence uat flow-walk leaving-pr-comments` | `github/gh-stack@gh-stack openai/skills@gh-fix-ci` |
-| `full-stop` | `full-stop full-send implementation-proof sol-loop file-pr babysit-pr tdd comment-audit code-review` | `ui-evidence uat flow-walk leaving-pr-comments` | `github/gh-stack@gh-stack openai/skills@gh-fix-ci` |
+| `file-pr` | `file-pr` | `ui-evidence babysit-pr leaving-pr-comments` | `github/gh-stack@gh-stack`, `openai/skills@gh-fix-ci` |
+| `full-send` | `full-send implementation-proof sol-loop file-pr babysit-pr tdd comment-audit code-review` | `ui-evidence uat flow-walk leaving-pr-comments` | `github/gh-stack@gh-stack`, `openai/skills@gh-fix-ci` |
+| `full-stop` | `full-stop full-send implementation-proof sol-loop file-pr babysit-pr tdd comment-audit code-review` | `ui-evidence uat flow-walk leaving-pr-comments` | `github/gh-stack@gh-stack`, `openai/skills@gh-fix-ci` |
 | `implement` | `implement implementation-proof tdd comment-audit code-review` | `uat flow-walk` | `github/gh-stack@gh-stack` |
 | `implementation-proof` | `implementation-proof tdd comment-audit code-review` | `uat flow-walk` | `github/gh-stack@gh-stack` |
 | `to-spec` | `to-spec` | - | `mattpocock/skills@setup-matt-pocock-skills` |
-| `to-tickets` | `to-tickets` | `implement implementation-proof tdd comment-audit code-review uat flow-walk` | `mattpocock/skills@setup-matt-pocock-skills github/gh-stack@gh-stack` |
+| `to-tickets` | `to-tickets` | `implement implementation-proof tdd comment-audit code-review uat flow-walk` | `mattpocock/skills@setup-matt-pocock-skills`, `github/gh-stack@gh-stack` |
 <!-- install-commands:end -->
 
 A name in the last column has the form `owner/repo@skill` and installs from

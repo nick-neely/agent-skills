@@ -38,7 +38,7 @@ Frontmatter carries these keys:
 name: my-skill # must match the directory name
 description: What it does, and the triggers that should invoke it.
 compatibility: Tools and runtimes it needs, if any.
-metadata: # skills it calls; see "Skills that call skills"
+metadata:
   requires: other-skill
   uses: third-skill owner/repo@outside-skill
 disable-model-invocation: true # slash-command only, no implicit invocation
@@ -46,6 +46,7 @@ argument-hint: "<arg> [--flag]"
 ---
 ```
 
+`metadata` lists the skills a skill depends on; see "Skills that call skills".
 The validator also accepts `license`, `allowed-tools` and `model` from the
 Agent Skills specification.
 
@@ -85,12 +86,16 @@ call.
 Declare every skill a skill calls under `metadata`, as space-separated names:
 `requires` for skills it cannot work without, and `uses` for skills only some
 paths reach. A skill from another repository is written `owner/repo@skill`.
-`compatibility` stays for tools and runtimes, and `metadata` holds only those
-two keys. Naming another skill of this repository in a skill's prose, in
-backticks, after `$`, quoted, or as `/name`, counts as depending on it. The
-validator fails on a skill that is named but not declared, a declared skill
-that does not exist, a declaration the skill never names, and a `requires`
-cycle.
+`compatibility` stays for tools and runtimes, and `metadata` is a block holding
+only those two keys, with bare unquoted names.
+
+Naming another skill of this repository in a skill's prose counts as depending
+on it. A skill is named by `` `name` `` or `` `/name` `` in backticks, `$name`,
+or `"name"` in double quotes; an outside skill is also named by its full
+`` `owner/repo@skill` ``. Write a skill's name another way, or reword, when
+you mean the word and not the skill. The validator fails on a skill that is
+named but not declared, a declared skill that does not exist, a declaration
+the skill never names, and a `requires` cycle.
 
 The README's install table is generated from those declarations. After
 changing one, run `node scripts/validate-skills.mjs --write-install` and commit

@@ -9,8 +9,9 @@ metadata:
 
 When this is done, the user can run `/manual` on the result. The `manual` skill
 is user-invoked, so nothing here calls it. This workflow is compatible with the
-`manual` skill. Use the $helper skill for the rest, and the `outside` skill
-when it is installed. Keep `$manual_dir` out of the output, and print `$manual`
+`manual` skill. Use the $helper skill for the rest, and `sample/tools@outside`
+when it is installed. A function named `extra()` and the message "extra event
+received" are ordinary text, not the extra skill. Keep `$manual_dir` out of the output, and print `$manual`
 to see the variable.
 
 ```bash

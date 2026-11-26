@@ -102,12 +102,16 @@ function parseFrontmatter(path) {
         const entry = lines[++index].match(/^ {2}([a-z][a-z0-9-]*):\s*(.+)$/);
         if (!entry) fail(`Malformed metadata line in ${path}: ${lines[index]}`);
         else if (metadata[entry[1]] !== undefined) fail(`Duplicate metadata key ${entry[1]}: ${path}`);
-        else metadata[entry[1]] = entry[2].replace(/^["']|["']$/g, "");
+        else metadata[entry[1]] = entry[2];
       }
       if (!Object.keys(metadata).length) fail(`Metadata block is empty: ${path}`);
       continue;
     }
     const match = line.match(/^([a-z][a-z0-9-]*):\s*(.+)$/);
+    if (match?.[1] === "metadata") {
+      fail(`Metadata must be a block of indented keys: ${path}`);
+      continue;
+    }
     if (!match) {
       fail(`Malformed YAML frontmatter line in ${path}: ${line}`);
       continue;
@@ -175,8 +179,6 @@ const QUOTED_CALLS = [
 // code removed.
 const DOLLAR_CALL = /\$([a-z0-9]+(?:-[a-z0-9]+)*)(?![A-Za-z0-9_-])/g;
 
-// A `$word` in prose is a call only when the word is a skill of this
-// repository; anything else, such as a price, is ordinary text.
 function quotedCallTargets(text) {
   const prose = stripFences(text);
   return QUOTED_CALLS.flatMap((form) => [...prose.matchAll(form)]).map((match) => match[1]);
@@ -197,10 +199,17 @@ function checkNoCallsToUserInvokedSkills(path, text, userInvoked) {
 }
 
 const dependencyName = (token) => EXTERNAL_SKILL.exec(token)?.[1] ?? token;
+const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-// How a skill names another in prose: in backticks, after `$`, or quoted, and
-// as `/name` when it tells the person what to run.
-const names = (prose, name) => new RegExp(`[\`$"]/?${name}(?![A-Za-z0-9_-])`).test(prose);
+// The exact ways prose names a skill: `name` or `/name` in backticks, $name,
+// "name" in double quotes, and for an outside skill its full `owner/repo@name`.
+// Anything looser would read ordinary words such as `name()` as a dependency.
+function names(prose, token) {
+  const name = escapeRegExp(dependencyName(token));
+  const forms = [`\`/?${name}\``, `\\$${name}(?![A-Za-z0-9_-])`, `"${name}"`];
+  if (EXTERNAL_SKILL.test(token)) forms.push(`\`${escapeRegExp(token)}\``);
+  return new RegExp(forms.join("|")).test(prose);
+}
 
 // A skill's own prose: frontmatter and fenced examples name nothing, and each
 // file is stripped on its own so an unclosed fence hides only that file.
@@ -217,11 +226,15 @@ function skillProse(skill) {
 // declaration real.
 function checkDependencies(skills) {
   for (const [name, skill] of skills) {
-    const declared = new Set();
+    const declared = new Map();
     for (const token of [...skill.requires, ...skill.uses]) {
+      if (!SKILL_NAME_PATTERN.test(token) && !EXTERNAL_SKILL.test(token)) {
+        fail(`Malformed dependency ${token}: ${skill.path}`);
+        continue;
+      }
       const target = dependencyName(token);
       if (declared.has(target)) fail(`Dependency ${target} is declared twice: ${skill.path}`);
-      declared.add(target);
+      declared.set(target, token);
       if (EXTERNAL_SKILL.test(token)) {
         if (skills.has(target)) fail(`External dependency ${token} names a skill in this repository: ${skill.path}`);
       } else if (!skills.has(token)) {
@@ -239,8 +252,8 @@ function checkDependencies(skills) {
     for (const target of named) {
       if (!declared.has(target)) fail(`Skill names undeclared skill ${target}: ${skill.path}`);
     }
-    for (const target of declared) {
-      if (!names(prose, target)) fail(`Declared dependency ${target} is never named: ${skill.path}`);
+    for (const [target, token] of declared) {
+      if (!names(prose, token)) fail(`Declared dependency ${target} is never named: ${skill.path}`);
     }
   }
   const reported = new Set();
@@ -260,29 +273,34 @@ function checkDependencies(skills) {
   }
 }
 
-// What one skill reaches: `needs` through requires alone, itself first;
-// `sometimes` through any path with a uses step; `outside` from other
-// repositories. Declaration order keeps the output stable.
+// What one skill reaches. `needs` follows requires alone, itself first, and
+// `sometimes` is everything else reachable; each holds repository skills in
+// `local` and other repositories' in `outside`. Declaration order keeps the
+// output stable.
 function installSets(name, skills) {
-  const needs = [name];
-  for (let index = 0; index < needs.length; index += 1) {
-    for (const token of skills.get(needs[index]).requires) {
-      if (skills.has(token) && !needs.includes(token)) needs.push(token);
-    }
-  }
-  const all = [...needs];
-  const outside = [];
-  for (let index = 0; index < all.length; index += 1) {
-    const skill = skills.get(all[index]);
-    for (const token of [...skill.requires, ...skill.uses]) {
-      if (EXTERNAL_SKILL.test(token)) {
-        if (!outside.includes(token)) outside.push(token);
-      } else if (skills.has(token) && !all.includes(token)) {
-        all.push(token);
+  const reach = (start, keys) => {
+    const local = [...start];
+    const outside = [];
+    for (let index = 0; index < local.length; index += 1) {
+      for (const token of keys.flatMap((key) => skills.get(local[index])[key])) {
+        if (EXTERNAL_SKILL.test(token)) {
+          if (!outside.includes(token)) outside.push(token);
+        } else if (skills.has(token) && !local.includes(token)) {
+          local.push(token);
+        }
       }
     }
-  }
-  return { needs, sometimes: all.slice(needs.length), outside };
+    return { local, outside };
+  };
+  const needs = reach([name], ["requires"]);
+  const all = reach(needs.local, ["requires", "uses"]);
+  return {
+    needs,
+    sometimes: {
+      local: all.local.slice(needs.local.length),
+      outside: all.outside.filter((token) => !needs.outside.includes(token)),
+    },
+  };
 }
 
 function installTable(skills) {
@@ -291,8 +309,12 @@ function installTable(skills) {
     .sort()
     .filter((name) => skills.get(name).requires.length || skills.get(name).uses.length)
     .map((name) => {
-      const { needs, sometimes, outside } = installSets(name, skills);
-      return `| \`${name}\` | ${cell(needs)} | ${cell(sometimes)} | ${cell(outside)} |`;
+      const { needs, sometimes } = installSets(name, skills);
+      const outside = [
+        ...needs.outside.map((token) => `\`${token}\` (required)`),
+        ...sometimes.outside.map((token) => `\`${token}\``),
+      ];
+      return `| \`${name}\` | ${cell(needs.local)} | ${cell(sometimes.local)} | ${outside.join(", ") || "-"} |`;
     });
   if (!rows.length) return "";
   return [
@@ -305,28 +327,33 @@ function installTable(skills) {
 
 // The README is where someone installing by hand looks, so its table is
 // generated from the declarations and a stale copy fails. It is written only
-// from declarations that passed every other check.
+// from declarations that passed every other check, and only between its
+// markers.
 function checkInstallTable(readmePath, skills) {
   if (!existsSync(readmePath)) return;
-  const original = readFileSync(readmePath, "utf8");
-  const eol = original.includes("\r\n") ? "\r\n" : "\n";
-  const readme = original.replace(/\r\n/g, "\n");
+  const readme = readFileSync(readmePath, "utf8");
+  const count = (marker) => readme.split(marker).length - 1;
   const table = installTable(skills);
+  if (count(INSTALL_START) > 1 || count(INSTALL_END) > 1) {
+    fail(`README has more than one install table: ${readmePath}`);
+    return;
+  }
   const start = readme.indexOf(INSTALL_START);
   const end = readme.indexOf(INSTALL_END);
   if (start < 0 || end < start) {
     if (table) fail(`README lacks the generated install table between ${INSTALL_START} and ${INSTALL_END}: ${readmePath}`);
     return;
   }
+  const current = readme.slice(start, end);
   const expected = `${INSTALL_START}\n${table}`;
-  if (readme.slice(start, end) === expected) return;
+  if (current.replace(/\r\n/g, "\n") === expected) return;
   if (!writeInstall) {
     fail(`README install table is stale; run scripts/validate-skills.mjs --write-install: ${readmePath}`);
   } else if (errors.length) {
     fail(`README install table was not written; fix the errors above first: ${readmePath}`);
   } else {
-    const updated = readme.slice(0, start) + expected + readme.slice(end);
-    writeFileSync(readmePath, updated.replace(/\n/g, eol));
+    const eol = current.includes("\r\n") ? "\r\n" : "\n";
+    writeFileSync(readmePath, readme.slice(0, start) + expected.replace(/\n/g, eol) + readme.slice(end));
   }
 }
 
