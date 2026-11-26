@@ -32,7 +32,7 @@ Skills that shell out have their own runtime dependencies, listed in each
 Some skills call others by name. When you install one skill at a time, read
 its `compatibility` line and install what it requires. `implement`,
 `full-send` and `full-stop` all need `implementation-proof`, which needs
-`comment-audit`, `code-review` and the external `tdd`.
+`tdd`, `comment-audit` and `code-review`.
 
 ## Skills
 
@@ -47,6 +47,8 @@ its `compatibility` line and install what it requires. `implement`,
   run through scenarios with a recommendation.
 - [`implement`](skills/implement/) - Implement a ticket or spec through
   `implementation-proof`, asking any open question once up front, then commit.
+- [`tdd`](skills/tdd/) - Build test-first in red-green slices at agreed seams,
+  with a reference on what makes a test worth keeping.
 - [`jira-acli`](skills/jira-acli/) - Read, plan, and update Jira work items through
   Atlassian ACLI, with Markdown conversion, backups, and verified description
   and link writes. Requires local Jira authentication and explicit write intent.

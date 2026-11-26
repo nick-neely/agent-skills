@@ -45,7 +45,7 @@ Done: the entries are stated and nothing is open.
 
 ## 2. Implement
 
-Call the Skill tool with "tdd" where possible. Step 1 replaces its seam confirmation: write tests at those seams without asking again.
+Call the Skill tool with "tdd" where the change has behavior to test, handing it the seams from step 1 as settled.
 
 Run typechecking regularly, single test files regularly, and the full test suite once the behavior is implemented.
 

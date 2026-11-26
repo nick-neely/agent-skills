@@ -68,6 +68,13 @@ My changes are deliberately narrow:
 It keeps manual invocation and the closing commit, and hands the method to
 `implementation-proof`.
 
+`skills/tdd` adapts the upstream skill at
+`4ae2317ddb22b046e26455e4f9c9b3aaaf62212d` and includes its MIT license. Its
+two reference files are unchanged apart from moving under `references/`. The
+skill takes seams a calling workflow has already settled instead of confirming
+them again, states the seam-placement rule itself in place of a call to the
+upstream `codebase-design` skill, and names no other skill.
+
 `skills/implementation-proof` carries the method that grew out of that adapted
 skill and includes the same MIT license. It states what the work must prove
 before editing, adds a reference for choosing test techniques by risk, runs
