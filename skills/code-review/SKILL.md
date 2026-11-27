@@ -98,6 +98,8 @@ Issue both sub-agent calls together, in the foreground, and aggregate the report
 
 If the spec is missing, skip the Spec sub-agent and note this in the final report.
 
+When the caller passes findings from an earlier round, give each reviewer the ones on its axis after the rest of its prompt. It reviews the whole change as usual, then marks each earlier finding resolved or still open, with the evidence.
+
 ### 5. Aggregate
 
 Present the two reports under `## Standards` and `## Spec` headings, verbatim or lightly cleaned. Do **not** merge or rerank findings, because the two axes are deliberately separate (see _Why two axes_).

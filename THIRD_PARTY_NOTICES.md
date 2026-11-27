@@ -81,23 +81,25 @@ It keeps manual invocation and the closing commit, and hands the method to
 `skills/implement-spec` adapts the upstream skill at
 `4ae2317ddb22b046e26455e4f9c9b3aaaf62212d` and includes its MIT license. It
 keeps the integration branch, the task-graph frontier, fresh subagents per
-ticket and the closing `code-review`. Each implementer follows
-`implementation-proof` instead of calling `tdd` directly, after a planning pass
-that asks every open question in one stop. Each ticket lands as one commit,
-and the integration branch advances only on a passing full suite, except for
-wide-refactor batches that go green only at a final integrate-and-verify
-ticket: those advance on their own tests, and the full suite gates that final
-ticket. Acceptance criteria that span
-tickets get one runtime check on the integrated build. The skill opens no pull
-request: it leaves one integration branch, or a short stack cut at ticket
-boundaries, for the user to file.
+ticket and the closing `code-review`, repeated in rounds until one finds
+nothing substantive or the review limit is reached, with what is left open
+reported. Each implementer follows `implementation-proof` instead of
+calling `tdd` directly, after a planning pass that asks every open question in
+one stop. Each ticket lands as one commit, and the integration branch advances
+only once the project's required checks pass, except for wide-refactor batches
+that go green only at a final integrate-and-verify ticket: those advance on
+their own tests, and the required checks gate that final ticket. Acceptance
+criteria that span tickets get one runtime check on the integrated build. The
+skill opens no pull request: it leaves one integration branch, or a short stack
+cut at ticket boundaries, for the user to file.
 
 `skills/tdd` adapts the upstream skill at
 `4ae2317ddb22b046e26455e4f9c9b3aaaf62212d` and includes its MIT license. Its
 two reference files are unchanged apart from moving under `references/`. The
 skill takes seams a calling workflow has already settled instead of confirming
 them again, states the seam-placement rule itself in place of a call to the
-upstream `codebase-design` skill, and names no other skill.
+upstream `codebase-design` skill, runs the smallest run that includes the test at
+hand each cycle and the affected tests once a slice is green, and names no other skill.
 
 `skills/implementation-proof` carries the method that grew out of that adapted
 skill and includes the same MIT license. It states what the work must prove
@@ -108,8 +110,9 @@ the runtime check the change calls for, and calls `comment-audit` before
 `skills/code-review` adapts the same repository's two-axis review at
 `4ae2317ddb22b046e26455e4f9c9b3aaaf62212d` and includes its MIT license.
 It carries the implementation ticket and uncommitted work into review, asks
-for a concrete benefit before recommending a refactor, and checks untouched
-entry points that share a requirement.
+for a concrete benefit before recommending a refactor, checks untouched entry
+points that share a requirement, and marks each finding a caller passes from an
+earlier round resolved or still open.
 
 `skills/prototype` is based on the same repository's `prototype` skill at
 `321658273cb1d20b76026717d027d505790106d4`, and on Emil Kowalski's skill of the
