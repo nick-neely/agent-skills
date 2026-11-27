@@ -1,7 +1,30 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
-  "installCommand": "",
-  "buildCommand": "node scripts/build-workflows.mjs",
-  "outputDirectory": "dist"
+  "installCommand": "npx --yes pnpm@11.25.0 --dir site install --frozen-lockfile",
+  "buildCommand": "node scripts/build-workflows.mjs && node scripts/build-site.mjs",
+  "outputDirectory": "dist",
+  "routes": [
+    { "src": "^/workflows/([a-z0-9-]+)/?$", "status": 308, "headers": { "Location": "/skills/$1" } },
+    { "src": "^/(.+)/$", "status": 308, "headers": { "Location": "/$1" } },
+    {
+      "src": "^/$",
+      "has": [{ "type": "header", "key": "accept", "value": "(.*)text/markdown(.*)" }],
+      "dest": "/index.md",
+      "headers": { "Content-Type": "text/markdown; charset=utf-8", "Vary": "Accept", "Link": "<https://skills.nickneely.dev/>; rel=\"canonical\"" }
+    },
+    {
+      "src": "^/skills/([a-z0-9-]+)$",
+      "has": [{ "type": "header", "key": "accept", "value": "(.*)text/markdown(.*)" }],
+      "dest": "/skills/$1.md",
+      "headers": { "Content-Type": "text/markdown; charset=utf-8", "Vary": "Accept", "Link": "<https://skills.nickneely.dev/skills/$1>; rel=\"canonical\"" }
+    }
+  ],
+  "headers": [
+    { "source": "/", "headers": [{ "key": "Vary", "value": "Accept" }, { "key": "Link", "value": "</index.md>; rel=\"alternate\"; type=\"text/markdown\"" }] },
+    { "source": "/skills/:name([a-z0-9-]+)", "headers": [{ "key": "Vary", "value": "Accept" }, { "key": "Link", "value": "</skills/:name.md>; rel=\"alternate\"; type=\"text/markdown\"" }] },
+    { "source": "/skills/:name([a-z0-9-]+).md", "headers": [{ "key": "Content-Type", "value": "text/markdown; charset=utf-8" }] },
+    { "source": "/:page(index|setup).md", "headers": [{ "key": "Content-Type", "value": "text/markdown; charset=utf-8" }] },
+    { "source": "/:file(llms|llms-full).txt", "headers": [{ "key": "Content-Type", "value": "text/plain; charset=utf-8" }] }
+  ]
 }

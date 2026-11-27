@@ -1,0 +1,14 @@
+---
+interface Props {
+  label: string;
+  visibleLabel?: string;
+}
+const { label, visibleLabel = "Scope" } = Astro.props;
+---
+<span class="ix-row js-only">
+  <span class="ix-label" aria-hidden="true">{visibleLabel}</span>
+  <span class="seg" role="group" aria-label={label}>
+    <button type="button" data-scope-set="global" aria-pressed="true">global</button>
+    <button type="button" data-scope-set="project" aria-pressed="false">project</button>
+  </span>
+</span>

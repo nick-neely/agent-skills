@@ -1,0 +1,35 @@
+---
+import CommandBlock from "./CommandBlock.astro";
+import CopyButton from "./CopyButton.astro";
+import ScopeToggle from "./ScopeToggle.astro";
+import { installTarget, type Skill } from "../lib/catalog.ts";
+import { AGENTS, installNote } from "../lib/commands.ts";
+
+interface Props {
+  skill: Skill;
+  agents?: boolean;
+  note?: boolean;
+}
+const { skill, agents = false, note = false } = Astro.props;
+const target = installTarget(skill);
+---
+<div class="ix" data-install data-scope-root data-scope="global" data-name={skill.name} data-packed={String(target.packed)} data-kind={skill.kind} data-agents="">
+  <ScopeToggle label={`Install scope for ${skill.name}`} />
+  {agents && (
+    <span class="ix-row js-only" role="group" aria-label="Agents to install for">
+      <span class="ix-label" aria-hidden="true">Agents</span>
+      {AGENTS.map((agent) => (
+        <button type="button" class="chip" data-agent={agent} aria-pressed="false"><span class="dot" aria-hidden="true"></span>{agent}</button>
+      ))}
+    </span>
+  )}
+  <CommandBlock target={target}>
+    <CopyButton label="Copy" name={`Copy install command for ${skill.name}`} class="cmd-copy" />
+  </CommandBlock>
+  {/* Breaks the command into lines now, before the first paint; see command-fit.js. */}
+  <script is:inline>window.commandFit?.fit(document.currentScript.previousElementSibling.querySelector("[data-cmd]"))</script>
+  {note && <p class="ix-note" data-note>{installNote("global")}</p>}
+</div>
+<script>
+  import "../scripts/install.ts";
+</script>

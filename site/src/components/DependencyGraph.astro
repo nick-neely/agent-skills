@@ -1,0 +1,22 @@
+---
+import type { Skill } from "../lib/catalog.ts";
+import { dependencyGraph } from "../lib/graph.ts";
+
+interface Props {
+  skill: Skill;
+}
+const { svg, tree } = dependencyGraph(Astro.props.skill);
+---
+<div class="graph" data-graph>
+  <div class="dg" set:html={svg} />
+  <div class="dg-legend" aria-hidden="true">
+    <span><svg width="28" height="8"><path d="M0,4 H28" stroke="currentColor" stroke-width="1.25"></path></svg>requires</span>
+    <span><svg width="28" height="8"><path d="M0,4 H28" stroke="currentColor" stroke-width="1.25" stroke-dasharray="5 4"></path></svg>uses on some paths</span>
+    <span>dashed box: from another repo</span>
+    <span><s>struck</s>: not installed by this workflow</span>
+  </div>
+  <div class="dg-tree" set:html={tree} />
+</div>
+<script>
+  import "../scripts/graph.ts";
+</script>

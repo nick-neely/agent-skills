@@ -1,0 +1,17 @@
+---
+// The secondary way in: a prompt a reader hands their agent, which then walks
+// them through choosing skills with /setup.md. The text is always on the page;
+// only the copy button waits for scripts.
+import CopyButton from "./CopyButton.astro";
+import { SETUP_PROMPT } from "../lib/agent-text.ts";
+---
+<div class="setup" data-snippet="setup prompt" data-snippet-event="Copy setup prompt">
+  <p class="setup-h">Not sure where to start? Copy a setup prompt for your agent.</p>
+  <div class="setup-box">
+    <p class="setup-text" data-snippet-text>{SETUP_PROMPT}</p>
+    <CopyButton label="Copy" name="Copy setup prompt" class="cmd-copy setup-copy" />
+  </div>
+</div>
+<script>
+  import "../scripts/install.ts";
+</script>

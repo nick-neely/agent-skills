@@ -1,0 +1,125 @@
+{
+  "categories": [
+    {
+      "title": "Plan and implement",
+      "skills": [
+        {
+          "name": "to-spec",
+          "summary": "Synthesize the current conversation into a spec and publish it to the issue tracker.",
+          "featured": false
+        },
+        {
+          "name": "to-tickets",
+          "summary": "Break a spec or plan into tracer-bullet tickets that declare their blocking edges.",
+          "featured": false
+        },
+        {
+          "name": "prototype",
+          "summary": "Answer a design question with throwaway code: divergent UI variants behind a live picker, or candidate logic models run through scenarios with a recommendation.",
+          "featured": false
+        },
+        {
+          "name": "implement",
+          "summary": "Implement a ticket or spec through `implementation-proof`, asking any open question once up front, then commit.",
+          "featured": false
+        },
+        {
+          "name": "implement-spec",
+          "summary": "Implement a whole spec from its ticket graph on one integration branch, a fresh implementer per ticket following `implementation-proof`, ready to file as one PR or a short stack.",
+          "featured": false
+        },
+        {
+          "name": "tdd",
+          "summary": "Build test-first in red-green slices at agreed seams, with a reference on what makes a test worth keeping.",
+          "featured": false
+        },
+        {
+          "name": "jira-acli",
+          "summary": "Read, plan, and update Jira work items through Atlassian ACLI, with Markdown conversion, backups, and verified description and link writes. Requires local Jira authentication and explicit write intent.",
+          "featured": false
+        }
+      ]
+    },
+    {
+      "title": "Review and deliver",
+      "skills": [
+        {
+          "name": "comment-audit",
+          "summary": "Review relevant comments and report a table of recommended actions. Request edits to apply them, as `implementation-proof` does before code review.",
+          "featured": false
+        },
+        {
+          "name": "code-review",
+          "summary": "Review implementation changes against project standards and the spec, including callers outside the diff.",
+          "featured": false
+        },
+        {
+          "name": "babysit-pr",
+          "summary": "Monitor CI and review bots, address findings, and stop within a bounded review budget.",
+          "featured": false
+        },
+        {
+          "name": "file-pr",
+          "summary": "Review the branch diff, reuse or open a PR and attach warranted UI evidence. Without a repository template, the body leads with a summary and UI evidence, then merge danger, verification and decisions.",
+          "featured": false
+        },
+        {
+          "name": "full-send",
+          "summary": "Implement an issue or spec through `implementation-proof`, then prove, file, babysit and merge.",
+          "featured": true
+        },
+        {
+          "name": "full-stop",
+          "summary": "Implement an issue or spec through `implementation-proof`, then prove, file and babysit, leaving the PR ready for you to merge.",
+          "featured": true
+        },
+        {
+          "name": "leaving-pr-comments",
+          "summary": "Write and verify evidence-backed GitHub comments and review replies.",
+          "featured": false
+        },
+        {
+          "name": "sol-loop",
+          "summary": "Run bounded independent code review with Sol through explicit T3 or native reviewer routes.",
+          "featured": false
+        }
+      ]
+    },
+    {
+      "title": "Test flows and prepare visuals",
+      "skills": [
+        {
+          "name": "flow-walk",
+          "summary": "For a new or reshaped user flow, hand one user goal to a fresh tester before code review, and sort its report on friction, copy weight and hierarchy.",
+          "featured": false
+        },
+        {
+          "name": "uat",
+          "summary": "Test acceptance criteria and explore user workflows with agent-browser, retaining reproducible findings and responsive checks.",
+          "featured": false
+        },
+        {
+          "name": "ui-evidence",
+          "summary": "Capture, prepare, annotate, compare, and publish UI screenshots and video into a pull request or issue.",
+          "featured": false
+        },
+        {
+          "name": "generated-image-assets",
+          "summary": "Remove an image's background, verify the alpha edges, and size it for shipping.",
+          "featured": false
+        }
+      ]
+    },
+    {
+      "title": "Shared methods",
+      "intro": "A shared method holds a discipline that several skills follow, so the rule lives in one place. You don't invoke one yourself: install it alongside the skills that name it.",
+      "skills": [
+        {
+          "name": "implementation-proof",
+          "summary": "The method behind `implement`, `implement-spec`, `full-send` and `full-stop`: state what the work must prove, build it test-first, check it running when the change calls for it, then audit comments and review.",
+          "featured": false
+        }
+      ]
+    }
+  ]
+}

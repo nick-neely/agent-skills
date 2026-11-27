@@ -22,8 +22,12 @@ jobs:
           node-version: '22'
       - name: Install the release verification CLI
         run: npm install --prefix "$RUNNER_TEMP/skills-cli" --ignore-scripts --no-audit --no-fund skills@1.9.1
+      - name: Install the site dependencies
+        run: npx --yes pnpm@11.25.0 --dir site install --frozen-lockfile
+      - name: Check the site
+        run: node site/scripts/check.mjs
       - name: Build the expected release files
-        run: node scripts/build-workflows.mjs
+        run: node scripts/build-workflows.mjs && node scripts/build-site.mjs
       - name: Verify installs and updates from the PR build
         if: github.event_name == 'pull_request'
         run: |

@@ -25,5 +25,14 @@ fi
 
 "$repo/scripts/test"
 
+# The site reads catalog.json, packs and SKILL.md, so a skill change can break
+# it. Its dependencies are optional for skill authors; CI installs them in the
+# Workflow installs job, which also checks the merged deployment output.
+if [ -d "$repo/site/node_modules/astro" ]; then
+  node "$repo/site/scripts/check.mjs"
+else
+  printf 'Skipped the site check: install its dependencies with pnpm --dir site install.\n'
+fi
+
 git diff --check
 printf 'Validated repository skills, scripts, fixtures, and behavior tests.\n'

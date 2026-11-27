@@ -1,0 +1,12 @@
+---
+// The Ajar Threshold mark from nickneely.dev: ink follows the theme, the amber
+// doorway is the same in both.
+interface Props {
+  class?: string;
+}
+const { class: className = "" } = Astro.props;
+---
+<span class:list={["mark", className]} aria-hidden="true">
+  <img class="mark-light" src="/brand/frontdoor-mark-light.png" srcset="/brand/frontdoor-mark-light.png 1x, /brand/frontdoor-mark-light@2x.png 2x" width="37" height="64" alt="" />
+  <img class="mark-dark" src="/brand/frontdoor-mark-dark.png" srcset="/brand/frontdoor-mark-dark.png 1x, /brand/frontdoor-mark-dark@2x.png 2x" width="37" height="64" alt="" />
+</span>

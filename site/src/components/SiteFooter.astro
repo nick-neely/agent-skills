@@ -1,0 +1,32 @@
+---
+import SiteMark from "./SiteMark.astro";
+import { LLMS_PATH, SETUP_PATH } from "../lib/agent-text.ts";
+import { site } from "../lib/site.ts";
+
+const links = [
+  [site.repository, "nick-neely/agent-skills"],
+  [site.home, "nickneely.dev"],
+  [site.github, "GitHub"],
+  [SETUP_PATH, "setup.md"],
+  [LLMS_PATH, "llms.txt"],
+] as const;
+---
+<footer class="site-foot">
+  <div class="wrap site-foot-in">
+    <div class="foot-id">
+      <SiteMark class="mark-lg" />
+      <div>
+        <p class="foot-name">{site.owner}</p>
+        <p class="foot-tag">One developer's working set of agent skills, published as source. Upstream skills are credited on the workflows that install them.</p>
+      </div>
+    </div>
+    <ul class="foot-links" role="list">
+      {links.map(([href, label], i) => (
+        <li>
+          <a class="lu" href={href} rel={href.startsWith("https://") ? "noreferrer" : undefined}>{label}</a>
+          {i < links.length - 1 && <span class="sep" aria-hidden="true">·</span>}
+        </li>
+      ))}
+    </ul>
+  </div>
+</footer>

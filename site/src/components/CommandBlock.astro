@@ -1,0 +1,13 @@
+---
+import { commandHTML, commandParts, type InstallTarget } from "../lib/commands.ts";
+
+interface Props {
+  target: InstallTarget;
+  id?: string;
+}
+const { target, id } = Astro.props;
+---
+<div class="cmd" id={id}>
+  <pre data-cmd tabindex="0"><code set:html={commandHTML(commandParts(target, "global"))} /></pre>
+  <slot />
+</div>
