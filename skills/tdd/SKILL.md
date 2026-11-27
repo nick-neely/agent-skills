@@ -36,4 +36,5 @@ Prefer a seam that already exists, and the highest one that still observes the b
 
 - **Red before green.** Write the failing test first, then only enough code to pass it. Don't anticipate future tests or add speculative features.
 - **One slice at a time.** One seam, one test, one minimal implementation per cycle.
+- **Run narrow.** Each cycle runs only the test at hand, through the project's own command or the test runner's filter. Once a slice is green, run the tests it affects before starting the next.
 - **Refactoring is not part of the loop.** It belongs to the review stage, not the red → green implementation cycle.

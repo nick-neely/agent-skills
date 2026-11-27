@@ -10,7 +10,7 @@ metadata:
 
 The method a calling workflow follows to implement a ticket or spec and show that it works. The caller supplies the ticket, the commit to compare against, and how open questions get answered. For a batch of a wide refactor that goes green only at a later ticket, the caller also names the tests that stand in for the required checks until that ticket. Fetching the ticket, the closing commit and delivery stay with the caller. When a skill this method requires is not installed, stop and name it instead of doing its work another way.
 
-The **required checks** are what the project's instructions say a change must pass before it is done; without such instructions, what its CI runs, and without CI, the full test suite. While working, use the narrower checks the project offers, such as one test file or the tests affected by changed files. A required check the host cannot run is named in the report as not run, with the reason; "the required checks pass" below means every one the host can run.
+The **required checks** are what the project's instructions say a change must pass before it is done; without such instructions, what its CI runs, and without CI, the full test suite. While working, use **narrower checks**: the narrowest run that covers what you changed, through the project's own command where it has one, such as a changed-files script, otherwise the test runner's filter for the tests you touched. A required check the host cannot run is named in the report as not run, with the reason; "the required checks pass" below means every one the host can run.
 
 ## 1. Say what you will prove
 
@@ -24,7 +24,7 @@ Before editing, state four short entries. When the caller hands you entries it s
 | --- | --- |
 | Acceptance criteria describe behavior in a browser interface that tests at these seams cannot observe | `uat`, whose walkthrough also covers ease |
 | It adds, removes or reorders a screen, step or decision in a user flow, builds a state the user must act from, or changes how a first-time user finds the next step, weighs a consequential choice or recognizes completion | `flow-walk`, whose first step decides whether the change qualifies |
-| What a user sees or does changes in some other way | Use the changed path yourself in the running app, at desktop and phone widths for a web interface |
+| What a user sees or does changes in some other way | Use the changed path yourself in the running app: at desktop and phone widths for a web interface, or by calling it for an API |
 | Its effect is one the tests at these seams cannot observe, such as a migration, a scheduled job, a command or infrastructure | Run it yourself against a local or non-production target, as a dry run where the tool has one, and observe the result |
 | Anything else | None |
 
