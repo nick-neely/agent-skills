@@ -78,7 +78,8 @@ one appears.
 
    Complete this step when the requested behavior is implemented, covering
    checks are accounted for, and the implementation review has no unresolved
-   substantive finding. If implementation is already complete, retain its
+   substantive finding. When the method's reviews run out with one still open,
+   ask the user, under "Asking the user". If implementation is already complete, retain its
    evidence and continue with the remaining proof and delivery gates.
 2. **Prove it.** Get proof for every change you made. See "Proof". When visual
    evidence is warranted, use `ui-evidence` to capture, prepare and review the

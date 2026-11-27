@@ -82,7 +82,8 @@ It keeps manual invocation and the closing commit, and hands the method to
 `4ae2317ddb22b046e26455e4f9c9b3aaaf62212d` and includes its MIT license. It
 keeps the integration branch, the task-graph frontier, fresh subagents per
 ticket and the closing `code-review`, repeated in rounds until one finds
-nothing substantive. Each implementer follows `implementation-proof` instead of
+nothing substantive or the review limit is reached, with what is left open
+reported. Each implementer follows `implementation-proof` instead of
 calling `tdd` directly, after a planning pass that asks every open question in
 one stop. Each ticket lands as one commit, and the integration branch advances
 only once the project's required checks pass, except for wide-refactor batches
