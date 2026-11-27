@@ -1,17 +1,27 @@
 ---
 // The secondary way in: a prompt a reader hands their agent, which then walks
 // them through choosing skills with /setup.md. The text is always on the page;
-// only the copy button waits for scripts.
+// only the copy button waits for scripts. Phones fold the text behind a toggle
+// so the hero keeps one obvious action, the featured install.
 import CopyButton from "./CopyButton.astro";
 import { SETUP_PROMPT } from "../lib/agent-text.ts";
 ---
-<div class="setup" data-snippet="setup prompt" data-snippet-event="Copy setup prompt">
+<div class="setup" data-snippet="setup prompt" data-snippet-event="Copy setup prompt" data-setup>
   <p class="setup-h">Not sure where to start? Copy a setup prompt for your agent.</p>
   <div class="setup-box">
-    <p class="setup-text" data-snippet-text>{SETUP_PROMPT}</p>
+    <p class="setup-text" id="setup-text" data-snippet-text>{SETUP_PROMPT}</p>
     <CopyButton label="Copy" name="Copy setup prompt" class="cmd-copy setup-copy" />
+    <button type="button" class="setup-toggle js-only" aria-expanded="false" aria-controls="setup-text" data-setup-toggle>Show prompt</button>
   </div>
 </div>
 <script>
   import "../scripts/install.ts";
+
+  for (const toggle of document.querySelectorAll<HTMLButtonElement>("[data-setup-toggle]")) {
+    toggle.addEventListener("click", () => {
+      const open = toggle.getAttribute("aria-expanded") !== "true";
+      toggle.setAttribute("aria-expanded", String(open));
+      toggle.textContent = open ? "Hide prompt" : "Show prompt";
+    });
+  }
 </script>

@@ -264,6 +264,7 @@ html:not(.js) .js-only, .no-clipboard .copy-btn { display: none !important; }
 .setup-box { display: flex; align-items: stretch; border: 1px dashed var(--input); border-radius: var(--radius-md); min-width: 0; }
 .setup-text { flex: 1; min-width: 0; margin: 0; padding: 9px 14px; font-size: 0.84rem; line-height: 1.5; color: var(--foreground); overflow-wrap: break-word; }
 .setup-copy { background: transparent; }
+.setup-toggle { display: none; }
 
 /* The hero demo: a 16:10 card holding the static final frame, which the
    animated island (HeroDemoLive.tsx) lays itself over at the same size.
@@ -308,6 +309,15 @@ html:not(.js) .js-only, .no-clipboard .copy-btn { display: none !important; }
 @media (prefers-reduced-motion: no-preference) { .demo-toggle, .demo-toggle > span { transition: color 150ms var(--ease-out), border-color 150ms var(--ease-out); } }
 /* Phones get a short frame: just the proof list and the result, so the catalog stays near. */
 @media (max-width: 600px) {
+  /* The fade already says the command continues; a scrollbar reads as progress. */
+  .cmd pre { scrollbar-width: none; }
+  .cmd pre::-webkit-scrollbar { display: none; }
+  /* The setup prompt folds to one line of actions; the text opens on request. */
+  html.js .setup-toggle { display: inline-flex; align-items: center; min-height: 40px; padding: 0 12px; background: none; border: 0; border-left: 1px solid var(--border); color: var(--muted-foreground); font: 500 0.75rem/1 var(--font-mono); cursor: pointer; }
+  html.js .setup:has([data-setup-toggle][aria-expanded="false"]) .setup-text { display: none; }
+  html.js .setup:has([data-setup-toggle][aria-expanded="false"]) .setup-box { justify-content: flex-start; width: fit-content; border-style: solid; border-color: var(--border); }
+  html.js .setup:has([data-setup-toggle][aria-expanded="true"]) .setup-box { flex-wrap: wrap; }
+  html.js .setup:has([data-setup-toggle][aria-expanded="true"]) .setup-text { flex-basis: 100%; border-bottom: 1px dashed var(--input); }
   .demo { aspect-ratio: auto; }
   .demo-body { padding: 14px 16px 16px; font-size: 12px; line-height: 1.5; }
   .d-in, .d-steps { display: none !important; }
@@ -496,8 +506,14 @@ kbd { font: 500 0.75rem/1 var(--font-mono); color: var(--muted-foreground); bord
 
 /* ---------- Responsive ---------- */
 @media (max-width: 960px) {
-  .hero { grid-template-columns: minmax(0, 1fr); gap: 36px; padding-top: 40px; }
-  .hero-demo { max-width: 640px; }
+  /* Stacked, the hero reads: who and why, what it looks like, then the one install. */
+  .hero { grid-template-columns: minmax(0, 1fr); gap: 0; padding-top: 40px; }
+  .hero-copy { display: contents; }
+  .hero h1 { order: 1; }
+  .lede { order: 2; }
+  .hero-demo { order: 3; max-width: 640px; margin-top: 28px; }
+  .feature { order: 4; margin-top: 28px; }
+  .setup { order: 5; }
   .page { grid-template-columns: minmax(0, 1fr); gap: 0; }
   .toc { position: static; padding-top: 20px; }
   .toc ol { display: none; }
