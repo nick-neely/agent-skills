@@ -58,8 +58,8 @@ test("the home page shows real counts and one command per row", () => {
 // platform runs, split into phases by \`handle\` entries. This walks that list
 // the way the platform does: before it looks at files, a matching route adds
 // its headers, a status ends routing and a destination rewrites the path,
-// ending the phase unless it continues. When no file answers, the error phase
-// picks the 404 response.
+// ending the phase unless it continues. The hit phase sees the resolved path
+// only when a file answers. Otherwise the error phase picks the 404 response.
 function routePhases() {
   const require = createRequire(import.meta.url);
   const { getTransformedRoutes } = require("@vercel/routing-utils");
@@ -80,11 +80,10 @@ function matches(route, path, lower) {
   const ok = match && (route.has ?? []).every((c) => c.type === "header" && lower[c.key] !== undefined && new RegExp(`^${c.value}$`).test(lower[c.key]));
   return ok ? match : undefined;
 }
-/** The main phase alone: redirects, Markdown negotiation and headers, before any file is looked up. */
-function request(path, headers = {}) {
+function request(path, headers = {}, phase = "main") {
   const lower = lowerKeys(headers);
   const response = { path, headers: {} };
-  for (const route of phases.main) {
+  for (const route of phases[phase] ?? []) {
     const match = matches(route, response.path, lower);
     if (!match) continue;
     const fill = (value) => value.replace(/\$(\d)/g, (_, i) => match[Number(i)] ?? "");
@@ -97,10 +96,13 @@ function request(path, headers = {}) {
   }
   return { ...response, status: 200 };
 }
-/** The whole request: the main phase, then the file system, then the error phase when no file answers. */
 function respond(path, headers = {}, exists = (p) => served(p) !== undefined) {
   const result = request(path, headers);
-  if (result.status !== 200 || exists(result.path)) return result;
+  if (result.status !== 200) return result;
+  if (exists(result.path)) {
+    const hit = request(result.path, headers, "hit");
+    return { ...result, headers: { ...hit.headers, ...result.headers } };
+  }
   const lower = lowerKeys(headers);
   const route = (phases.error ?? []).find((r) => matches(r, result.path, lower));
   if (!route) return { ...result, status: 404 };
@@ -148,7 +150,8 @@ test("pages return Markdown when asked for it and HTML otherwise, varying on Acc
   ];
   for (const [path, md, html] of pages) {
     for (const accept of [markdown, { accept: "text/markdown" }]) {
-      const result = request(path, accept);
+      const result = respond(path, accept);
+      assert.equal(result.status, 200, path);
       assert.equal(result.path, md, path);
       assert.ok(served(result.path), `${md} is built`);
       assert.equal(result.headers["Content-Type"], "text/markdown; charset=utf-8", path);
@@ -163,6 +166,7 @@ test("pages return Markdown when asked for it and HTML otherwise, varying on Acc
       assert.equal(result.headers.Link, `<${md}>; rel="alternate"; type="text/markdown"`, path);
     }
   }
+  assert.equal(respond("/skills/tdd.md").headers.Link, `<${origin}/skills/tdd>; rel="canonical"`);
   // An unknown skill finds no Markdown file either way, so it gets the 404 page.
   assert.equal(served(request("/skills/not-a-skill", markdown).path), undefined);
   assert.equal(served(request("/skills/not-a-skill.md").path), undefined);
@@ -173,7 +177,7 @@ test("a path with no file answers Markdown with a Markdown 404 and browsers with
   const body = read(join(dist, "404.md"));
   assert.ok(body.length >= 20);
   for (const link of [`${origin}/llms.txt`, `${origin}/setup.md`, `(${origin}/)`, `${origin}/contact`]) assert.ok(body.includes(link), `404.md links ${link}`);
-  for (const path of ["/__ora-404-probe-k8pkdnbk", "/skills/not-a-skill", "/nope.md", "/about/more", "/workflows/full-stop/nope"]) {
+  for (const path of ["/__ora-404-probe-k8pkdnbk", "/skills/not-a-skill", "/skills/not-a-skill.md", "/nope.md", "/about/more", "/workflows/full-stop/nope"]) {
     for (const accept of [markdown, { accept: "text/markdown" }]) {
       const result = respond(path, accept);
       assert.equal(result.status, 404, path);
@@ -181,6 +185,7 @@ test("a path with no file answers Markdown with a Markdown 404 and browsers with
       assert.ok(served(result.path), "404.md is built");
       assert.equal(result.headers["Content-Type"], "text/markdown; charset=utf-8", path);
       assert.equal(result.headers.Vary, "Accept", path);
+      assert.equal(result.headers.Link, undefined, path);
     }
     for (const accept of [browser, {}]) {
       const result = respond(path, accept);

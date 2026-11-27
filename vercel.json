@@ -17,7 +17,7 @@
       "src": "^/skills/([a-z0-9-]+)$",
       "has": [{ "type": "header", "key": "accept", "value": "(.*)text/markdown(.*)" }],
       "dest": "/skills/$1.md",
-      "headers": { "Content-Type": "text/markdown; charset=utf-8", "Vary": "Accept", "Link": "<https://skills.nickneely.dev/skills/$1>; rel=\"canonical\"" }
+      "headers": { "Content-Type": "text/markdown; charset=utf-8", "Vary": "Accept" }
     },
     {
       "src": "^/(about|privacy|contact)$",
@@ -32,6 +32,8 @@
     { "src": "^/(index|setup|about|privacy|contact|404)\\.md$", "headers": { "Content-Type": "text/markdown; charset=utf-8" }, "continue": true },
     { "src": "^/(llms|llms-full)\\.txt$", "headers": { "Content-Type": "text/plain; charset=utf-8" }, "continue": true },
     { "handle": "filesystem" },
+    { "handle": "hit" },
+    { "src": "^/skills/([a-z0-9-]+)\\.md$", "headers": { "Link": "<https://skills.nickneely.dev/skills/$1>; rel=\"canonical\"" }, "continue": true },
     { "handle": "error" },
     {
       "src": "^/.*$",
