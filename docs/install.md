@@ -16,7 +16,7 @@ configured. See the [setup instructions](https://github.com/mattpocock/skills/bl
 ## babysit-pr
 
 ```sh
-npx skills add https://www.skills.sh/p/o2bgkk3rR1e5Rndd --global
+npx skills add https://agent-skills-theta-steel.vercel.app/workflows/babysit-pr --global --skill '*'
 ```
 
 <details>
@@ -53,7 +53,7 @@ npx skills add nick-neely/agent-skills --global --skill comment-audit
 ## file-pr
 
 ```sh
-npx skills add https://www.skills.sh/p/nJ7ZVhO8kJF9tqFk --global
+npx skills add https://agent-skills-theta-steel.vercel.app/workflows/file-pr --global --skill '*'
 ```
 
 <details>
@@ -83,7 +83,7 @@ npx skills add nick-neely/agent-skills --global --skill flow-walk
 ## full-send
 
 ```sh
-npx skills add https://www.skills.sh/p/RXPZKgoV9ofJFUO8 --global
+npx skills add https://agent-skills-theta-steel.vercel.app/workflows/full-send --global --skill '*'
 ```
 
 <details>
@@ -104,7 +104,7 @@ Requires authenticated GitHub CLI and a route to OpenAI's Sol reviewer, as the s
 ## full-stop
 
 ```sh
-npx skills add https://www.skills.sh/p/RrBIaAaOqEhHET5h --global
+npx skills add https://agent-skills-theta-steel.vercel.app/workflows/full-stop --global --skill '*'
 ```
 
 <details>
@@ -135,7 +135,7 @@ Requires Python 3.11 or newer, which the pinned NumPy and rembg releases both ne
 ## implement
 
 ```sh
-npx skills add https://www.skills.sh/p/PYupe9C9cHQGpHDK --global
+npx skills add https://agent-skills-theta-steel.vercel.app/workflows/implement --global --skill '*'
 ```
 
 <details>
@@ -154,7 +154,7 @@ npx skills add github/gh-stack --global --skill gh-stack
 ## implement-spec
 
 ```sh
-npx skills add https://www.skills.sh/p/enN493Rx7AtA8Th0 --global
+npx skills add https://agent-skills-theta-steel.vercel.app/workflows/implement-spec --global --skill '*'
 ```
 
 <details>
@@ -174,7 +174,7 @@ npx skills add mattpocock/skills --global --skill setup-matt-pocock-skills
 ## implementation-proof
 
 ```sh
-npx skills add https://www.skills.sh/p/Dp6CO7JxutUjpPvF --global
+npx skills add https://agent-skills-theta-steel.vercel.app/workflows/implementation-proof --global --skill '*'
 ```
 
 <details>
@@ -237,7 +237,7 @@ npx skills add nick-neely/agent-skills --global --skill tdd
 ## to-spec
 
 ```sh
-npx skills add https://www.skills.sh/p/OJCEJRaQbtFYpItT --global
+npx skills add https://agent-skills-theta-steel.vercel.app/workflows/to-spec --global --skill '*'
 ```
 
 <details>
@@ -256,7 +256,7 @@ npx skills add mattpocock/skills --global --skill setup-matt-pocock-skills
 ## to-tickets
 
 ```sh
-npx skills add https://www.skills.sh/p/xum4OqFIZwHBH5C4 --global
+npx skills add https://agent-skills-theta-steel.vercel.app/workflows/to-tickets --global --skill '*'
 ```
 
 <details>

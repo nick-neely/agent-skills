@@ -24,13 +24,15 @@ install in just one project, run the command from that project and omit
 | Update installed skills | `npx skills update --global` | `npx skills update --project` |
 | Remove an installed skill | `npx skills remove --global <skill>` | `npx skills remove <skill>` |
 
-You can pass a skill name to `update` to refresh just that skill. An update
-uses the source recorded for each installed skill. A Pack install can use
-both upstream GitHub sources and files hosted by Skills.sh. Uploaded skills
-receive changes when the Pack owner publishes them. To pick up new members,
-rerun the catalog’s current install command in the original scope. Remove any
-retired members individually after checking whether another workflow uses
-them. [Skills CLI command reference](https://github.com/vercel-labs/skills/blob/main/docs/commands.md)
+To migrate from a `skills.sh/p/...` Pack, run the current workflow install
+command once with the same scope and agent. Future updates then use the
+workflow published from this repository, including its reviewed versions of
+external skills. Direct source installs update from their respective repositories.
+
+Pass a skill name to `update` to refresh just that skill. When a workflow adds
+members, rerun its install command to pick them up. Remove retired members
+individually after checking whether another workflow uses them.
+[Skills CLI command reference](https://github.com/vercel-labs/skills/blob/main/docs/commands.md)
 
 <details>
 <summary>Manual install with symlinks</summary>

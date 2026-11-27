@@ -1,0 +1,40 @@
+name: Workflow installs
+
+on:
+  pull_request:
+  repository_dispatch:
+    types: [vercel.deployment.success]
+
+permissions:
+  contents: read
+
+jobs:
+  install:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.event.client_payload.git.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: '22'
+      - name: Install the release verification CLI
+        run: npm install --prefix "$RUNNER_TEMP/skills-cli" --ignore-scripts --no-audit --no-fund skills@1.9.1
+      - name: Build the expected release files
+        run: node scripts/build-workflows.mjs
+      - name: Verify installs and updates from the PR build
+        if: github.event_name == 'pull_request'
+        run: |
+          python3 scripts/smoke-workflows.py --cli "$RUNNER_TEMP/skills-cli/node_modules/skills/bin/cli.mjs" --site dist
+      - name: Install workflows from the deployment
+        if: github.event_name == 'repository_dispatch'
+        env:
+          DEPLOY_URL: ${{ github.event.client_payload.url }}
+        run: python3 scripts/smoke-workflows.py --cli "$RUNNER_TEMP/skills-cli/node_modules/skills/bin/cli.mjs" --url "$DEPLOY_URL"
+      - name: Verify public production discovery
+        if: github.event_name == 'repository_dispatch' && github.event.client_payload.environment == 'Production'
+        run: |
+          curl --fail --silent --show-error https://agent-skills-theta-steel.vercel.app/workflows/full-stop/.well-known/agent-skills/index.json |
+            jq -e '[.skills[].name] | index("full-stop") != null'

@@ -119,38 +119,22 @@ reach it, then regenerate the recipes.
 node scripts/validate-skills.mjs --write-install
 ```
 
-For a release, import only the manifest's members into the team-owned
-[Skills.sh Pack builder](https://www.skills.sh/docs/packs#create-a-pack).
-To upload the local members from the release commit, run the following from
-the repository root with the appropriate workflow name and Git ref.
+Merging to `main` releases the workflows through the linked Vercel project.
+The build creates each workflow from its manifest and packages each skill
+as a ZIP archive with a SHA-256 digest. The published index points to
+archives on that specific Vercel deployment so an install can finish across
+a production rollout. A change to a shared skill
+therefore ships to every workflow that includes it. Each workflow has a stable
+install URL under `/workflows/<skill-name>`. Existing `url` fields identify
+the original Skills.sh Packs for migration. New workflows only need a manifest.
 
-```bash
-(
-  set -euo pipefail
-  workflow=full-stop
-  ref=HEAD
-  commit=$(git rev-parse --verify "$ref^{commit}")
-  stage=$(mktemp -d)
-  git show "$commit:packs/$workflow.json" |
-    node -p 'JSON.parse(require("node:fs").readFileSync(0, "utf8")).members["nick-neely/agent-skills"].join("\n")' |
-    while IFS= read -r name; do
-      git archive "$commit" "skills/$name" | tar -xf - -C "$stage"
-      git show "$commit:LICENSE" > "$stage/skills/$name/REPOSITORY-LICENSE.txt"
-    done
-  printf '%s\n' "$stage/skills"
-)
-```
-
-Choose the staged skills folder and add the external members from their catalog
-entries. For later releases, open **Edit skills in pack** on the existing
-Pack. Remove each changed upload, add its updated files, and save the edit.
-The builder omits
-binary files and files larger than 2 MB. Verify the public index at the Pack
-URL plus `/.well-known/skills/index.json` and a fresh project install against
-the manifest, including the lock's recorded sources. After verification, save
-the Pack page as `url` in its manifest and regenerate. If a release adds a
-member, tell existing users to rerun the install command. If it retires a
-member, identify the skill users can remove.
+For a new external member, add its repository, skill directory, and full
+commit SHA to `external-skills.json`. The update workflow checks upstream weekly and can also be run manually.
+It opens a PR when a skill directory or an upstream license changes. Approve
+any pending workflow runs on that PR, then review and merge it to release
+the updated files.
+When adding or retiring members, tell existing users which workflow to
+reinstall or which skill they can remove.
 
 ## Before you open a PR
 

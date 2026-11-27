@@ -1,5 +1,15 @@
 # Third-party notices
 
+## Workflow downloads
+
+The generated workflows redistribute three external skills at the revisions
+in [external-skills.json](external-skills.json). Each download includes its
+upstream license.
+
+- `gh-stack` from [github/gh-stack](https://github.com/github/gh-stack), MIT.
+- `gh-fix-ci` from [openai/skills](https://github.com/openai/skills), Apache-2.0.
+- `setup-matt-pocock-skills` from [mattpocock/skills](https://github.com/mattpocock/skills), MIT.
+
 ## Tstack workflows
 
 `skills/babysit-pr`, `skills/file-pr`, `skills/full-send`, `skills/full-stop`,
@@ -121,8 +131,8 @@ My changes:
   fully works.
 - Branch files live under `references/`.
 
-Other Matt Pocock skills I use stay installed from upstream and are not
-republished here.
+The workflow downloads also include the pinned upstream
+`setup-matt-pocock-skills` listed above.
 
 ## Emil Kowalski skills
 

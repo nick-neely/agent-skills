@@ -391,8 +391,8 @@ function installRecipes(skills, packs) {
     const sources = pack?.members ?? { [LOCAL_SOURCE]: [name] };
     const recipe = shell(Object.entries(sources).map(([source, names]) =>
       `npx skills add ${source} --global --skill ${names.join(" ")}`));
-    const install = pack?.url ? [
-      shell([`npx skills add ${pack.url} --global`]),
+    const install = pack ? [
+      shell([`npx skills add https://agent-skills-theta-steel.vercel.app/workflows/${name} --global --skill '*'`]),
       "<details>",
       "<summary>Install from source</summary>",
       recipe,

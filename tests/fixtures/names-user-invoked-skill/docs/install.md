@@ -21,15 +21,25 @@ npx skills add nick-neely/agent-skills --global --skill helper
 ## manual
 
 ```sh
+npx skills add https://agent-skills-theta-steel.vercel.app/workflows/manual --global --skill '*'
+```
+
+<details>
+
+<summary>Install from source</summary>
+
+```sh
 npx skills add nick-neely/agent-skills --global --skill manual helper
 ```
+
+</details>
 
 [Read the skill](../skills/manual/SKILL.md).
 
 ## pointer
 
 ```sh
-npx skills add https://www.skills.sh/p/0x2mHeVLAzYD2i8y --global
+npx skills add https://agent-skills-theta-steel.vercel.app/workflows/pointer --global --skill '*'
 ```
 
 <details>
