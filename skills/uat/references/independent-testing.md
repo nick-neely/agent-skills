@@ -1,6 +1,6 @@
 # Hand testing to a fresh tester
 
-When you implemented the change or have its solution in context, give the test to a fresh general-purpose worker, using a task mechanism that omits conversation history when the host offers one. The handoff carries only what an outside tester would have:
+When you implemented the change or have its solution in context, give the test to a fresh general-purpose worker yourself, using a task mechanism that omits conversation history when the host offers one. An orchestrator whose delegates built the change hands off itself, not through another delegate. The handoff carries only what an outside tester would have:
 
 - The installed skill's absolute path, and the business source pointer or the user's original criteria with their provenance (never an implementer-authored checklist).
 - The intended app or repository, target URL and build when known, and established non-secret startup, role, location and fixture or reset facts. A ready URL is optional; the tester can start the app.
@@ -12,7 +12,7 @@ Example task, with real values substituted:
 
 > Independently test the user-facing behavior for the supplied goal and business criteria. Load the uat skill at `<path>`; you are the tester, so continue its workflow yourself. Derive scenarios from the supplied criteria. Reuse the intended non-production runtime, or start the local app through its documented workflow; the operator handles developer SSO. Stay within these action limits: `<limits>`. Return the report path and gaps.
 
-The tester owns requirement discovery, scenario design and browser work. Help it with environment and access facts only. Findings return to you for normal handling.
+The tester owns requirement discovery, scenario design, browser work and the report. Help it with environment and access facts only. When it returns without a complete report, resume it or start a new tester; never write or rewrite its report yourself. Findings return to you for normal handling.
 
 For a retest, the handoff also carries the original report and finding IDs, symptom, reproduction, evidence, remaining action limits and reset facts, per [informed verification](follow-up.md#retest-as-a-new-run).
 
