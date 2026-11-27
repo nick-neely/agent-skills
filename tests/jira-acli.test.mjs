@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { cpSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 
@@ -16,7 +16,7 @@ test('Jira conversion, backups, description replacement, and link behavior', (t)
   cpSync(join(repo, 'tests', 'jira-acli.py'), join(root, 'tests', 'jira-acli.py'));
   cpSync(join(repo, 'skills', 'jira-acli', 'scripts'), join(root, 'skills', 'jira-acli', 'scripts'), {
     recursive: true,
-    filter: (source) => !source.includes('__pycache__') && !source.endsWith('.pyc'),
+    filter: (source) => basename(source) !== '__pycache__' && !source.endsWith('.pyc'),
   });
 
   const result = spawnSync('python3', ['-I', join(root, 'tests', 'jira-acli.py')], {
