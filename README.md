@@ -52,6 +52,7 @@ ln -s "$PWD/agent-skills/skills/uat" ~/.claude/skills/
 ## Skills
 
 <!-- skills-catalog:start -->
+<!-- Generated; do not edit by hand. Edit catalog.json, then run: node scripts/validate-skills.mjs --write-readme -->
 
 ### Plan and implement
 

@@ -424,7 +424,7 @@ function installRecipes(skills, packs) {
 // them. Never regenerate from a catalog that fails another check. `blocked`
 // reflects only those checks, so one stale region never stops another from
 // being written in the same run.
-function checkGenerated(path, { label, start: startMarker, end: endMarker, content, write, flag, blocked }) {
+function checkGenerated(path, { label, start: startMarker, end: endMarker, source, content, write, flag, blocked }) {
   if (!existsSync(path)) {
     fail(`${label} file is missing: ${path}`);
     return;
@@ -442,7 +442,9 @@ function checkGenerated(path, { label, start: startMarker, end: endMarker, conte
     return;
   }
   const current = file.subarray(start, end).toString("utf8");
-  const expected = `${startMarker}\n\n${content}\n\n`;
+  // The note names the source, so someone who opens the file edits that instead.
+  const note = `<!-- Generated; do not edit by hand. Edit ${source}, then run: node scripts/validate-skills.mjs ${flag} -->`;
+  const expected = `${startMarker}\n${note}\n\n${content}\n\n`;
   if (current.replace(/\r\n/g, "\n") === expected) return;
   if (!write) {
     fail(`${label} are stale; run node scripts/validate-skills.mjs ${flag}: ${path}`);
@@ -725,6 +727,7 @@ if (checkCatalog) {
     label: "Install recipes",
     start: INSTALL_START,
     end: INSTALL_END,
+    source: "packs/ and SKILL.md frontmatter",
     content: installRecipes(validated, packs),
     write: writeInstall,
     flag: "--write-install",
@@ -735,6 +738,7 @@ if (checkCatalog) {
       label: "README catalog sections",
       start: CATALOG_START,
       end: CATALOG_END,
+      source: "catalog.json",
       content: readmeCatalog(catalog),
       write: writeReadme,
       flag: "--write-readme",
