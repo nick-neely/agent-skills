@@ -1,6 +1,7 @@
 # Install a skill
 
 <!-- install-commands:start -->
+<!-- Generated; do not edit by hand. Edit packs/ and SKILL.md frontmatter, then run: node scripts/validate-skills.mjs --write-install -->
 
 ## extra
 

@@ -146,6 +146,7 @@ expect_broken 'Invalid catalog.json:' catalog.json '"categories":' '"categories"
 expect_broken 'Invalid catalog.json fields' catalog.json '"categories"' '"sections"'
 expect_broken 'Em dash found' catalog.json 'A skill nothing' 'A skill \u2014 nothing'
 expect_broken 'README catalog sections are stale' README.md 'A skill nothing depends on.' 'Something else.'
+expect_broken 'README catalog sections are stale' README.md 'Edit catalog.json, then run' 'Edit this section by hand'
 expect_broken 'README catalog sections lack generation markers' README.md '<!-- skills-catalog:start -->' ''
 expect_broken 'README catalog sections have duplicate generation markers' README.md \
   '<!-- skills-catalog:end -->' '<!-- skills-catalog:end -->\n<!-- skills-catalog:start -->\n<!-- skills-catalog:end -->'
@@ -170,6 +171,7 @@ expect_broken 'Pack omission must name a conditional companion' packs/pointer.js
   '"members": {\n    "nick-neely/agent-skills": [\n      "pointer",\n      "helper",' \
   '"omit": {"helper": "skip helper"}, "members": {\n    "nick-neely/agent-skills": [\n      "pointer",'
 expect_broken 'Install recipes are stale' docs/install.md 'manual helper' 'manual'
+expect_broken 'Install recipes are stale' docs/install.md 'SKILL.md frontmatter, then run' 'this section by hand, then run'
 expect_broken 'Install recipes lack generation markers' docs/install.md '<!-- install-commands:start -->' ''
 expect_broken 'Install recipes have duplicate generation markers' docs/install.md \
   '<!-- install-commands:end -->' '<!-- install-commands:end -->\n<!-- install-commands:start -->\n<!-- install-commands:end -->'

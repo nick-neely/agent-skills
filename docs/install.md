@@ -12,6 +12,7 @@ workflows that include `setup-matt-pocock-skills`, run
 configured. See the [setup instructions](https://github.com/mattpocock/skills/blob/main/docs/engineering/setup-matt-pocock-skills.md).
 
 <!-- install-commands:start -->
+<!-- Generated; do not edit by hand. Edit packs/ and SKILL.md frontmatter, then run: node scripts/validate-skills.mjs --write-install -->
 
 ## babysit-pr
 

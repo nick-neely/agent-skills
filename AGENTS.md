@@ -11,6 +11,9 @@ context.
 - Plain hyphens, never em dashes.
 - Run `./scripts/validate` before proposing any change. Add a negative fixture
   for any validation rule you add.
+- The README skill catalog and `docs/install.md` are generated between marker
+  comments. Each region's first line names its source and the command that
+  regenerates it: edit the source, never the region.
 - Edit source here. Do not edit an installed copy under an agent runtime
   directory - reinstall through the skills CLI instead.
 
