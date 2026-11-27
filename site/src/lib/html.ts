@@ -9,3 +9,7 @@ export const inlineHTML = (text: string) => escapeHTML(text).replace(/`([^`]+)`/
 export const plainText = (text: string) => text.replace(/`/g, "");
 
 export const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+/** "a, b and c", or with another conjunction. */
+export const list = (items: readonly string[], conjunction = "and") =>
+  items.length < 3 ? items.join(` ${conjunction} `) : `${items.slice(0, -1).join(", ")} ${conjunction} ${items.at(-1)}`;

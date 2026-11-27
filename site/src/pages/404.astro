@@ -1,5 +1,6 @@
 ---
 import Base from "../layouts/Base.astro";
+import { infoPath } from "../lib/info-pages.ts";
 ---
 <Base title="Wrong door" description="That page does not exist here." canonical={false}>
   <main class="wrap not-found" id="main">
@@ -9,6 +10,7 @@ import Base from "../layouts/Base.astro";
     <p class="nf-links">
       <a class="lu lu-rest" href="/">Back to the catalog</a>
       <a class="lu lu-rest" href="https://nickneely.dev" rel="noreferrer">Or through the front door</a>
+      <a class="lu lu-rest" href={infoPath("contact")}>Report a broken link</a>
     </p>
   </main>
 </Base>

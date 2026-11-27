@@ -1,6 +1,6 @@
 import { posix } from "node:path";
 
-import { Marked, type Tokens } from "marked";
+import { Marked, type Token, type Tokens } from "marked";
 import { bundledLanguages, createCssVariablesTheme, createHighlighter } from "shiki";
 
 import { escapeHTML } from "./html.ts";
@@ -37,14 +37,21 @@ function highlight(code: string, lang: string | undefined): string {
  * raw HTML is escaped rather than passed through, which would make it vanish.
  */
 export function renderSkillMarkdown(name: string, markdown: string): string {
+  return render(markdown, (token) => {
+    if (token.type === "link" || token.type === "image") {
+      const link = token as Tokens.Link | Tokens.Image;
+      link.href = resolveSkillLink(name, link.href);
+    }
+  });
+}
+
+/** Renders one of the site's own Markdown pages, such as About, with the same rules. */
+export const renderPageMarkdown = (markdown: string) => render(markdown);
+
+function render(markdown: string, walkTokens?: (token: Token) => void): string {
   const marked = new Marked({
     gfm: true,
-    walkTokens(token) {
-      if (token.type === "link" || token.type === "image") {
-        const link = token as Tokens.Link | Tokens.Image;
-        link.href = resolveSkillLink(name, link.href);
-      }
-    },
+    walkTokens,
     renderer: {
       html: ({ text }) => escapeHTML(text),
       code: ({ text, lang }) => highlight(text, lang?.split(/\s+/)[0]),

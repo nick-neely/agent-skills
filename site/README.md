@@ -52,11 +52,18 @@ rewrite in `rewrites` never applies to a path that has a file:
 - Any other trailing slash redirects once to the path without it. Canonical
   URLs, links and the sitemap never end in a slash, and `astro.config.mjs`
   sets `trailingSlash: "never"` to match.
-- `/` and `/skills/<name>` answer a request whose `Accept` header mentions
-  `text/markdown` with `/index.md` or `/skills/<name>.md`. Both forms send
-  `Vary: Accept`, and the HTML sends a `Link` to its Markdown twin.
+- `/`, `/skills/<name>`, `/about`, `/privacy` and `/contact` answer a request
+  whose `Accept` header mentions `text/markdown` with their `.md` twin
+  (`/index.md` for the home page). Both forms send `Vary: Accept`, and the
+  HTML sends a `Link` to its Markdown twin.
+- Response headers live in `routes` as `continue` rules, not in `headers`:
+  Vercel appends `headers` after every route, which would put them in the
+  error phase below.
+- After `{ "handle": "filesystem" }`, the `{ "handle": "error" }` phase runs
+  only when no file answered. A request that accepts `text/markdown` gets
+  `/404.md` with a 404 status and a Markdown content type; any other request
+  gets `404.html` with a 404 status. Both send `Vary: Accept`.
 
-Vercel serves `404.html` with a 404 status for any path without a file.
 `test/site.test.mjs` checks these rules against Vercel's own route compiler.
 
 ## Data
@@ -86,11 +93,15 @@ pages, the copy buttons, `/skills/<name>.md` and `/llms.txt`.
   the catalog, ask, recommend, install and confirm, with a checkpoint for the
   reader's approval before each consequential step. It names agents and
   skills from the same data as the pages.
-- `/404`, `/sitemap.xml`, `/robots.txt`.
+- `/about`, `/privacy` and `/contact`, linked from the footer. Each is written
+  once as Markdown in `src/lib/info-pages.ts`, rendered for the page and
+  served as is at `/<page>.md`.
+- `/404`, its Markdown form `/404.md`, `/sitemap.xml`, `/robots.txt`.
 
 Every page carries Open Graph and Twitter card tags with `/social-card.png`,
 and JSON-LD: the home page a `WebSite` and an `ItemList` of the catalog, each
-skill page a `SoftwareSourceCode` and a `BreadcrumbList`.
+skill page a `SoftwareSourceCode` and a `BreadcrumbList`, and the About,
+Privacy and Contact pages an `AboutPage`, `WebPage` and `ContactPage`.
 
 Interactive parts are small scripts in `src/scripts/`. Every page reads
 correctly without them; controls that need a script stay hidden until it runs.

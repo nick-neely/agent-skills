@@ -1,10 +1,12 @@
 // Plain-text views of the catalog for agents: one Markdown page per skill, the
-// home page as Markdown, the setup guide, llms.txt and llms-full.txt. All of
+// home page as Markdown, the setup guide, the Markdown 404, llms.txt and
+// llms-full.txt. All of
 // them use the same catalog and command builder as the pages.
 
 import { catalog, getSkill, installTarget, installedBy, kindLabel, skillMarkdownPath, skillPath, fileURL, REPOSITORY_URL, type Skill } from "./catalog.ts";
 import { AGENTS, AGENT_NAMES, SITE_ORIGIN, commandText, siteInstall } from "./commands.ts";
-import { plainText } from "./html.ts";
+import { list, plainText } from "./html.ts";
+import { INFO_PAGES, infoMarkdownPath, infoPath } from "./info-pages.ts";
 import { site } from "./site.ts";
 
 const absolute = (path: string) => `${SITE_ORIGIN}${path}`;
@@ -13,6 +15,7 @@ export const SETUP_PATH = "/setup.md";
 export const HOME_MARKDOWN_PATH = "/index.md";
 export const LLMS_PATH = "/llms.txt";
 export const LLMS_FULL_PATH = "/llms-full.txt";
+export const NOT_FOUND_MARKDOWN_PATH = "/404.md";
 export const ROOT_INDEX_PATH = "/.well-known/agent-skills/index.json";
 /** The one workflow the home page offers first. */
 export const FEATURED = "full-stop";
@@ -20,8 +23,6 @@ export const FEATURED = "full-stop";
 /** What a person pastes into their agent to be walked through choosing skills. */
 export const SETUP_PROMPT = `Help me pick and install agent skills from ${site.owner}'s catalog. Read ${absolute(SETUP_PATH)} and follow it. Check with me before installing anything.`;
 
-const list = (items: readonly string[], conjunction = "and") =>
-  items.length < 3 ? items.join(` ${conjunction} `) : `${items.slice(0, -1).join(", ")} ${conjunction} ${items.at(-1)}`;
 const agentNames = AGENTS.map((agent) => AGENT_NAMES[agent]);
 const intro = `${site.owner}'s agent skills for coding agents such as ${list(agentNames)}, published as source. Workflows chain several skills into a delivery loop: state what a change must prove, build it test-first, review it, and open a pull request that shows it.`;
 
@@ -125,6 +126,27 @@ export function llmsText(): string {
     "",
     ...installSection("## Install"),
     ...catalogLines((title) => `## ${title}`),
+    "## About this site",
+    "",
+    ...INFO_PAGES.map((page) => `- [${page.title}](${absolute(infoPath(page.slug))}): ${page.description} Markdown: ${absolute(infoMarkdownPath(page.slug))}`),
+    "",
+  ].join("\n");
+}
+
+/** The body of a 404 for a request that asked for Markdown. */
+export function notFoundMarkdown(): string {
+  return [
+    "# Not found",
+    "",
+    `> There is no page at this address on ${new URL(SITE_ORIGIN).host}. The link may be mistyped, or the page may have moved.`,
+    "",
+    `Skill pages live at \`${absolute(skillPath("<name>"))}\`, and each has a Markdown version at \`${absolute(skillMarkdownPath("<name>"))}\`. To find what you were looking for:`,
+    "",
+    `- [llms.txt](${absolute(LLMS_PATH)}): every skill and workflow with its page and Markdown version.`,
+    `- [Setup guide](${absolute(SETUP_PATH)}): instructions for an agent helping a person choose and install skills.`,
+    `- [Catalog](${absolute("/")}): the home page, also as Markdown at ${absolute(HOME_MARKDOWN_PATH)}.`,
+    `- [Contact](${absolute(infoPath("contact"))}): report a broken link.`,
+    "",
   ].join("\n");
 }
 

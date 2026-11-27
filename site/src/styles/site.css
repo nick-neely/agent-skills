@@ -482,6 +482,11 @@ kbd { font: 500 0.75rem/1 var(--font-mono); color: var(--muted-foreground); bord
 .pager-l { font: 450 0.75rem/1 var(--font-mono); color: var(--muted-foreground); }
 .pager-n { font: 550 0.92rem/1.3 var(--font-mono); overflow-wrap: anywhere; }
 
+/* ---------- About, Privacy, Contact ---------- */
+.read { padding-top: 40px; }
+.read-meta { font: 450 0.76rem/1.6 var(--font-mono); color: var(--muted-foreground); margin: 0; }
+.read-body { margin-top: 22px; }
+
 /* ---------- 404 ---------- */
 .not-found { display: flex; flex-direction: column; align-items: flex-start; gap: 24px; padding-top: 96px; padding-bottom: 48px; }
 .nf-code { margin: 0; font: 450 13px/1 var(--font-mono); letter-spacing: 0.18em; text-transform: uppercase; color: var(--muted-foreground); }
@@ -497,7 +502,7 @@ kbd { font: 500 0.75rem/1 var(--font-mono); color: var(--muted-foreground); bord
   .toc { position: static; padding-top: 20px; }
   .toc ol { display: none; }
   .back { margin-bottom: 0; }
-  .top { padding-top: 20px; }
+  .top, .read { padding-top: 20px; }
   .members { grid-template-columns: minmax(0, 1fr); }
   .cat-body { grid-template-columns: minmax(0, 1fr); gap: 20px; }
   .rail { position: static; }

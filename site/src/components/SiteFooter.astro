@@ -1,6 +1,7 @@
 ---
 import SiteMark from "./SiteMark.astro";
 import { LLMS_PATH, SETUP_PATH } from "../lib/agent-text.ts";
+import { INFO_PAGES, infoPath } from "../lib/info-pages.ts";
 import { site } from "../lib/site.ts";
 
 const links = [
@@ -9,7 +10,8 @@ const links = [
   [site.github, "GitHub"],
   [SETUP_PATH, "setup.md"],
   [LLMS_PATH, "llms.txt"],
-] as const;
+  ...INFO_PAGES.map((page) => [infoPath(page.slug), page.title] as const),
+];
 ---
 <footer class="site-foot">
   <div class="wrap site-foot-in">
