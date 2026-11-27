@@ -18,7 +18,7 @@ Before editing, state four short entries. When the caller hands you entries it s
 
 - **Proves:** the acceptance criteria, the rules that must always hold and the failures worth catching, each with its expected result taken from the ticket. Mark an expectation you inferred as inferred.
 - **Seams:** the public interface each one is tested through, naming the technique where a risk calls for more than example tests.
-- **Runtime:** a check the user or the project asks for; otherwise the first row below that fits each part of the change, such as an owner screen and an agent-facing contract, naming the part each check covers. When the first two rows fit the same flow, run `uat` alone. The project asks in its agent instructions or its flow-walk notes, which are at the path those instructions name, otherwise `docs/agents/flow-walk.md`.
+- **Runtime:** for each part of the change, such as an owner screen and an agent-facing contract, a check the user or the project asks for that covers it, otherwise the first row below that fits it, naming the part each check covers. When the first two rows fit the same flow, run `uat` alone. The project asks in its agent instructions or its flow-walk notes, which are at the path those instructions name, otherwise `docs/agents/flow-walk.md`.
 
 | The change | Runtime check |
 | --- | --- |
@@ -57,22 +57,20 @@ Done: the behavior is implemented and the required checks pass.
 
 ## 3. Check it running
 
-Run the **Runtime** check against a build you know holds this change. For `uat` or `flow-walk`, call that skill as the one who built the change, so it hands the test to a fresh tester; keep any label it puts on a run made without one. Point the tester at that build, and have it return anything it needs from the user that step 1 did not arrange as a blocker instead of waiting. Handle the findings as that skill says, within the ticket's scope: what falls outside it, including a bug the skill would file, goes in the report. For your own look, fix what it turns up and look again. When the check led to code changes, run the narrower checks on them before review.
+Run each **Runtime** check against a build you know holds this change. For `uat` or `flow-walk`, call that skill as the one who built the change, so it hands the test to a fresh tester; keep any label it puts on a run made without one. Point the tester at that build, and have it return anything it needs from the user that step 1 did not arrange as a blocker instead of waiting. Handle the findings as that skill says, within the ticket's scope: what falls outside it, including a bug the skill would file, goes in the report. For your own look, fix what it turns up and look again. When the check led to code changes, run the narrower checks on them before review.
 
 When the skill is not installed, the app cannot be run or reached, the skill would hand the check back to the user, or the check needs something from the user that step 1 did not arrange, use the changed path yourself where you can and record the check as not run, with what blocked it. A check that needs a later stage, such as a preview deployment, is deferred: record its exact steps and who runs them.
 
-Done: the check has a result, or is recorded as not run with its blocker or deferred with its steps.
+Done: each check has a result, or is recorded as not run with its blocker or deferred with its steps.
 
 ## 4. Audit and review
 
 Call the Skill tool with "comment-audit" in apply mode on the current change. Then call "code-review", passing the ticket and comparing against the caller's commit, with uncommitted work included.
 
-A round is one review and the fixes it prompts. When a round fixed something substantive, call "code-review" again on the whole change with those fixes, passing the findings they answer, until a round finds nothing substantive. Follow the project's review rules for how many rounds a change needs and when review stops; without them, stop after three reviews. When the reviews run out, report any substantive finding still open, and any fix the last round made, as unreviewed, rather than settling either yourself. Run the required checks once the last fix is in.
-
-When a fix made after the runtime check changes what that check covered or what a user sees or does, check that fix at runtime too: by the skill's own recheck rule where one ran, otherwise by the row of step 1's table that fits the fix.
+A round is one review and the fixes it prompts. Fix each substantive finding, and report one you cannot fix within the ticket. When a fix changes what a runtime check covered or what a user sees or does, check it at runtime before the next review, by the skill's own recheck rule where one ran, otherwise by the row of step 1's table that fits the fix. Then call "code-review" again on the whole change, passing every substantive finding from earlier rounds, until a round finds nothing substantive. Follow the project's review rules for how many rounds a change needs and when review stops; without them, stop after three reviews. When the reviews run out, report every substantive finding still open, and any fix the last round made, as unreviewed, rather than settling either yourself. Run the required checks on the final code.
 
 Done: a review round found nothing substantive, or the reviews ran out with what is open or unreviewed reported, and the required checks pass on the final code.
 
 ## 5. Report
 
-Give the caller each **Proves** line with the evidence you observed for it, or "unproven" with the reason. Then give one line per step naming each skill this method called, or what was done in its place and why; the runtime check's result; each review round's outcome; the required checks with their results; and any finding left outside the ticket.
+Give the caller each **Proves** line with the evidence you observed for it, or "unproven" with the reason. Then give one line per step naming each skill this method called, or what was done in its place and why; each runtime check's result; each review round's outcome; the required checks with their results; and any finding left outside the ticket.
