@@ -36,5 +36,5 @@ jobs:
       - name: Verify public production discovery
         if: github.event_name == 'repository_dispatch' && github.event.client_payload.environment == 'Production'
         run: |
-          curl --fail --silent --show-error https://agent-skills-theta-steel.vercel.app/workflows/full-stop/.well-known/agent-skills/index.json |
+          curl --fail --silent --show-error https://skills.nickneely.dev/workflows/full-stop/.well-known/agent-skills/index.json |
             jq -e '[.skills[].name] | index("full-stop") != null'
