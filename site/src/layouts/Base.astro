@@ -1,0 +1,82 @@
+---
+import "../styles/site.css";
+// The three faces the first screen renders, preloaded so they usually arrive
+// before the first paint. They resolve to the same files site.css declares.
+import displayFont from "@fontsource-variable/bricolage-grotesque/files/bricolage-grotesque-latin-wght-normal.woff2?url";
+import sansFont from "@fontsource-variable/hanken-grotesk/files/hanken-grotesk-latin-wght-normal.woff2?url";
+import monoFont from "@fontsource-variable/jetbrains-mono/files/jetbrains-mono-latin-wght-normal.woff2?url";
+import commandFit from "../scripts/command-fit.js?raw";
+import SiteFooter from "../components/SiteFooter.astro";
+import SiteHeader from "../components/SiteHeader.astro";
+import { LLMS_PATH } from "../lib/agent-text.ts";
+import { SITE_ORIGIN } from "../lib/commands.ts";
+import { jsonLd, pageTitle, site, socialCard } from "../lib/site.ts";
+import { themeScript } from "../lib/site-theme.ts";
+
+interface Props {
+  /** The page's own name; the site and owner are appended. Omit on the home page. */
+  title?: string;
+  description?: string;
+  /** Raw Markdown for this page, for agents. */
+  markdown?: string;
+  /** False for pages that are not part of the site's map, such as the 404. */
+  canonical?: boolean;
+  /** schema.org objects for this page, each written as its own JSON-LD script. */
+  structuredData?: Record<string, unknown>[];
+}
+
+const { title, description = site.description, markdown, canonical = true, structuredData = [] } = Astro.props;
+const fullTitle = pageTitle(title);
+const url = new URL(Astro.url.pathname.replace(/\/$/, "") || "/", SITE_ORIGIN).href;
+const image = new URL(socialCard.path, SITE_ORIGIN).href;
+// The plain-HTML install of Vercel Web Analytics: page views without cookies.
+// Local servers have no /_vercel route, so the script loads only when deployed.
+const analytics = `window.va=window.va||function(){(window.vaq=window.vaq||[]).push(arguments)};if(!/^(localhost|127\\.0\\.0\\.1|\\[::1\\])$/.test(location.hostname)){const s=document.createElement("script");s.defer=true;s.src="/_vercel/insights/script.js";document.head.appendChild(s)}`;
+---
+<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{fullTitle}</title>
+    <meta name="description" content={description} />
+    {canonical ? <link rel="canonical" href={url} /> : <meta name="robots" content="noindex" />}
+    {markdown && <link rel="alternate" type="text/markdown" href={markdown} title="Markdown" />}
+    <link rel="alternate" type="text/plain" href={LLMS_PATH} title="llms.txt" />
+    <meta name="is-agentic-site-type" content="content" />
+    <link rel="preload" href={displayFont} as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href={sansFont} as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href={monoFont} as="font" type="font/woff2" crossorigin />
+    <meta name="theme-color" content={site.themeColors.dark} />
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link id="site-favicon" rel="icon" href={site.favicons.dark} sizes="32x32" type="image/png" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content={`${site.name} - ${site.owner}`} />
+    <meta property="og:title" content={title ?? fullTitle} />
+    <meta property="og:description" content={description} />
+    {canonical && <meta property="og:url" content={url} />}
+    <meta property="og:image" content={image} />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content={String(socialCard.width)} />
+    <meta property="og:image:height" content={String(socialCard.height)} />
+    <meta property="og:image:alt" content={socialCard.alt} />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title ?? fullTitle} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={image} />
+    <meta name="twitter:image:alt" content={socialCard.alt} />
+    {structuredData.map((data) => <script type="application/ld+json" is:inline set:html={jsonLd(data)} />)}
+    <script is:inline set:html={themeScript} />
+    <script is:inline set:html={commandFit} />
+    <script is:inline set:html={analytics} />
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+    <div class="shell">
+      <SiteHeader />
+      <slot />
+      <SiteFooter />
+    </div>
+    <p class="sr-only" aria-live="polite" data-announcer></p>
+  </body>
+</html>

@@ -14,6 +14,8 @@ import tempfile
 from threading import Thread
 
 ROOT = Path(__file__).resolve().parents[1]
+# A workflow entry and a standalone skill, both installed alone from the site root.
+ROOT_SKILLS = ("full-stop", "tdd")
 
 
 class LocalServer(ThreadingHTTPServer):
@@ -47,29 +49,31 @@ def run_cli(cli, project, *args):
     )
 
 
-def install(cli, project, url):
-    run_cli(cli, project, "add", url, "--skill", "*", "--agent", "codex", "--copy", "--yes")
+def install(cli, project, url, skill="*"):
+    run_cli(cli, project, "add", url, "--skill", skill, "--agent", "codex", "--copy", "--yes")
 
 
 def file_paths(root):
     return {p.relative_to(root) for p in root.rglob("*") if p.is_file()}
 
 
-def verify_install(project, workflow_url, members, artifact):
+def verify_install(project, workflow_url, members, site, artifact):
     installed = project / ".agents/skills"
     lock = json.loads((project / "skills-lock.json").read_text())["skills"]
     expected = {name for names in members.values() for name in names}
     assert set(lock) == expected, (workflow_url, sorted(lock), sorted(expected))
+    index = json.loads(artifact.read_text())
+    index["skills"] = [entry for entry in index["skills"] if entry["name"] in expected]
+    assert {entry["name"] for entry in index["skills"]} == expected, (workflow_url, artifact)
     assert {skill.name for skill in installed.iterdir()} == expected
     for skill, entry in lock.items():
         assert entry["sourceType"] == "well-known", (skill, entry)
         assert entry["sourceUrl"].rstrip("/") == workflow_url, (skill, entry)
         assert entry["wellKnownDigest"], (skill, entry)
         assert (installed / skill / "SKILL.md").is_file()
-    index = json.loads(artifact.read_text())
     for entry in index["skills"]:
         digest = entry["digest"].removeprefix("sha256:")
-        archive = artifact.parents[4] / "archives" / (digest + ".zip")
+        archive = site / "archives" / (digest + ".zip")
         installed_files = installed / entry["name"]
         with ZipFile(archive) as package:
             assert set(package.namelist()) == {p.as_posix() for p in file_paths(installed_files)}
@@ -87,9 +91,19 @@ def smoke(cli, base, work, migration, site):
             old = json.loads((project / "skills-lock.json").read_text())["skills"]
             assert old["full-stop"]["sourceUrl"].rstrip("/") == migration
         install(cli, project, url)
-        verify_install(project, url, json.loads(path.read_text())["members"],
+        verify_install(project, url, json.loads(path.read_text())["members"], site,
                        site / "workflows" / path.stem / ".well-known/agent-skills/index.json")
         print(f"Verified {url}", flush=True)
+    # The root index lists every local skill and installs any one alone, without its workflow.
+    root_index = json.loads((site / ".well-known/agent-skills/index.json").read_text())
+    local = {path.name for path in (ROOT / "skills").iterdir() if path.is_dir()}
+    assert {entry["name"] for entry in root_index["skills"]} == local, sorted(local)
+    for name in ROOT_SKILLS:
+        project = work / f"root-{name}"
+        project.mkdir()
+        install(cli, project, base, name)
+        verify_install(project, base, {"local": [name]}, site, site / ".well-known/agent-skills/index.json")
+        print(f"Verified {base} --skill {name}", flush=True)
 
 
 def update_across_releases(cli, site, work):

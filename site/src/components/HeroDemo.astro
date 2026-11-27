@@ -1,0 +1,30 @@
+---
+// The hero's demo of a full-stop session. This static final frame is the
+// page's own content: what renders without JavaScript and under
+// prefers-reduced-motion, and the box the animated island lays itself over,
+// so hydrating it never moves the page. The frame is decorative: everything
+// it shows, the page also states in text.
+import HeroDemoLive from "./HeroDemoLive.tsx";
+import { proof, proofTitle, request, result, steps } from "../lib/hero-demo.ts";
+---
+<figure class="demo" data-hero-demo>
+  <div class="demo-bar">
+    <span class="demo-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+    <span class="demo-title">agent session - full stop</span>
+  </div>
+  <div class="demo-body" aria-hidden="true">
+    <p class="d-in"><span class="d-p">&gt;</span> {request}</p>
+    <p class="d-h">{proofTitle}</p>
+    <ul class="d-proof">
+      {proof.map((line) => <li>{line}</li>)}
+    </ul>
+    <ul class="d-steps">
+      {steps.map(({ label, detail }) => (
+        <li><span class="d-ok">✓</span><span class="d-l">{label}</span><span class="d-x">{detail}</span></li>
+      ))}
+    </ul>
+    <p class="d-end"><span class="dot"></span>{result}</p>
+  </div>
+  <HeroDemoLive client:visible />
+  <figcaption class="sr-only">An example full-stop session: it states what the change must prove, then runs tests, a flow walk and review, files the pull request and stops when CI is green, ready for you to merge.</figcaption>
+</figure>

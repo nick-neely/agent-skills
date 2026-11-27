@@ -79,7 +79,7 @@ expect_broken() {
     const fs = require("node:fs");
     const [path, from, to] = process.argv
       .slice(1)
-      .map((arg) => arg.replaceAll("\\n", "\n").replaceAll("\\u00a0", "\u00a0"));
+      .map((arg) => arg.replaceAll("\\n", "\n").replaceAll("\\u00a0", "\u00a0").replaceAll("\\u2014", "\u2014"));
     // A checkout may carry CRLF endings; the validator reads both.
     const text = fs.readFileSync(path, "utf8").replaceAll("\r\n", "\n");
     if (!text.includes(from)) throw new Error(`fixture text not found: ${from}`);
@@ -129,12 +129,26 @@ expect_broken 'Declared dependency helper is never named' skills/pointer/SKILL.m
 expect_broken 'Declared dependency outside is never named' skills/pointer/SKILL.md '`sample/tools@outside`' 'that outside tool'
 expect_broken 'Skill names undeclared skill sample/tools@outside' skills/pointer/SKILL.md \
   'uses: helper manual sample/tools@outside' 'uses: helper manual'
-expect_broken 'README skill manual must have one matching Install action' README.md \
-  ' ([Install](docs/install.md#manual))' ''
-expect_broken 'README skill manual must have one matching Install action' README.md \
-  'docs/install.md#manual' 'docs/install.md#helper'
-expect_broken 'README skill manual must have one matching Install action' README.md \
-  'A user-invoked skill' '[Install](docs/install.md#manual) A user-invoked skill'
+extra_entry=',\n        {\n          "name": "extra",\n          "summary": "A skill nothing depends on.",\n          "featured": false\n        }'
+expect_broken 'Catalog is missing skill extra' catalog.json "$extra_entry" ''
+expect_broken 'Catalog lists skill helper more than once' catalog.json '"name": "extra"' '"name": "helper"'
+expect_broken 'Catalog lists unknown skill other' catalog.json '"name": "extra"' '"name": "other"'
+expect_broken 'Catalog skill extra needs a one-line summary' catalog.json '"A skill nothing depends on."' '""'
+expect_broken 'Catalog skill extra needs a one-line summary' catalog.json '"A skill nothing depends on."' '"  "'
+expect_broken 'Catalog skill manual featured must be true or false' catalog.json '"featured": true' '"featured": "true"'
+expect_broken 'Catalog skill entry needs only name, summary and featured' catalog.json \
+  '"featured": true' '"featured": true, "tags": []'
+expect_broken 'Catalog category needs a one-line title' catalog.json '"Methods other skills follow."' '""'
+expect_broken 'Catalog category needs a one-line title' catalog.json \
+  '"title": "Workflows",' '"title": "Workflows", "slug": "workflows",'
+expect_broken 'Catalog category Workflows appears more than once' catalog.json '"Shared methods"' '"Workflows"'
+expect_broken 'Invalid catalog.json:' catalog.json '"categories":' '"categories"'
+expect_broken 'Invalid catalog.json fields' catalog.json '"categories"' '"sections"'
+expect_broken 'Em dash found' catalog.json 'A skill nothing' 'A skill \u2014 nothing'
+expect_broken 'README catalog sections are stale' README.md 'A skill nothing depends on.' 'Something else.'
+expect_broken 'README catalog sections lack generation markers' README.md '<!-- skills-catalog:start -->' ''
+expect_broken 'README catalog sections have duplicate generation markers' README.md \
+  '<!-- skills-catalog:end -->' '<!-- skills-catalog:end -->\n<!-- skills-catalog:start -->\n<!-- skills-catalog:end -->'
 expect_broken 'Invalid Pack manifest:' packs/manual.json '"members":' '"members"'
 expect_broken 'Invalid Pack manifest fields' packs/manual.json '"members"' '"skills"'
 expect_broken 'Invalid Pack member list' packs/manual.json '"helper"' '"../helper"'
@@ -173,7 +187,8 @@ check_broken_layout() {
 }
 # Exercise missing files independently from dependency and syntax failures.
 check_broken_layout 'Missing workflow Pack manifest' packs/manual.json
-check_broken_layout 'Missing install recipes' docs/install.md
+check_broken_layout 'Install recipes file is missing' docs/install.md
+check_broken_layout 'Missing catalog.json' catalog.json
 extra_pack="$temporary/extra-pack"
 cp -R "$repo/tests/fixtures/names-user-invoked-skill" "$extra_pack"
 cp "$extra_pack/packs/manual.json" "$extra_pack/packs/extra.json"
@@ -213,6 +228,39 @@ if grep -Fq 'npx skills add nick-neely/agent-skills --global --skill manual help
   printf 'Stale install command was overwritten despite invalid catalog\n' >&2
   exit 1
 fi
+
+# --write-readme does the same for the README catalog, and one stale region
+# does not stop the other from being written in the same run.
+readme_fixture="$temporary/write-readme"
+cp -R "$repo/tests/fixtures/names-user-invoked-skill" "$readme_fixture"
+node -e '
+  const fs = require("node:fs");
+  const [path, expected] = process.argv.slice(1);
+  const text = fs.readFileSync(path, "utf8").replace(/\r?\n/g, "\r\n");
+  fs.writeFileSync(expected, text);
+  fs.writeFileSync(path, text.replace("A skill nothing depends on.", "Stale."));
+' "$readme_fixture/README.md" "$temporary/write-readme-expected.md"
+cp "$readme_fixture/docs/install.md" "$temporary/write-readme-install.md"
+node -e '
+  const fs = require("node:fs");
+  const path = process.argv[1];
+  fs.writeFileSync(path, fs.readFileSync(path, "utf8").replace("manual helper", "manual"));
+' "$readme_fixture/docs/install.md"
+node "$repo/scripts/validate-skills.mjs" --write-install --write-readme "$readme_fixture" >/dev/null
+cmp -s "$readme_fixture/README.md" "$temporary/write-readme-expected.md"
+cmp -s "$readme_fixture/docs/install.md" "$temporary/write-readme-install.md"
+node -e '
+  const fs = require("node:fs");
+  const [readme, catalog] = process.argv.slice(1);
+  fs.writeFileSync(readme, fs.readFileSync(readme, "utf8").replace("A skill nothing depends on.", "Stale."));
+  fs.writeFileSync(catalog, fs.readFileSync(catalog, "utf8").replace("\"name\": \"extra\"", "\"name\": \"other\""));
+' "$readme_fixture/README.md" "$readme_fixture/catalog.json"
+if node "$repo/scripts/validate-skills.mjs" --write-readme "$readme_fixture" >/dev/null 2>"$temporary/stderr"; then
+  printf 'README catalog was written from an invalid catalog\n' >&2
+  exit 1
+fi
+grep -Fq 'README catalog sections were not written' "$temporary/stderr"
+grep -Fq 'Stale.' "$readme_fixture/README.md"
 expect_invalid empty-folded-description 'Folded description requires indented content'
 expect_invalid overlong-folded-description 'Frontmatter description exceeds 1024 characters'
 expect_invalid quoted-overlong-folded-description 'Frontmatter description exceeds 1024 characters'

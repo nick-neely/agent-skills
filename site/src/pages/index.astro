@@ -1,0 +1,34 @@
+---
+import Base from "../layouts/Base.astro";
+import Catalog from "../components/Catalog.astro";
+import HeroDemo from "../components/HeroDemo.astro";
+import InstallControl from "../components/InstallControl.astro";
+import KindBadge from "../components/KindBadge.astro";
+import SetupPrompt from "../components/SetupPrompt.astro";
+import { FEATURED, HOME_MARKDOWN_PATH } from "../lib/agent-text.ts";
+import { getSkill, skillPath } from "../lib/catalog.ts";
+import { homeData } from "../lib/structured-data.ts";
+
+const featured = getSkill(FEATURED);
+const installs = featured.pack?.members.length ?? 0;
+---
+<Base markdown={HOME_MARKDOWN_PATH} structuredData={homeData()}>
+  <main class="wrap home" id="main">
+    <section class="hero" aria-labelledby="hero-h">
+      <div class="hero-copy">
+        <h1 id="hero-h">Agent skills, with opinions.</h1>
+        <p class="lede">I'm Nick, and these are the skills I give my coding agents. They're strict on purpose: every change starts with what it must prove and ends with a pull request that shows it.</p>
+        <div class="feature">
+          <p class="feature-h"><span class="eyebrow">Start here</span><a class="lu feature-name" href={skillPath(featured.name)}>{featured.name}</a><KindBadge skill={featured} /></p>
+          <p class="feature-p">Hand it an issue or spec. It proves the change, gets it reviewed and opens the pull request, then stops so you can merge. Installs all {installs} skills it needs.</p>
+          <InstallControl skill={featured} />
+        </div>
+        <SetupPrompt />
+      </div>
+      <div class="hero-demo">
+        <HeroDemo />
+      </div>
+    </section>
+    <Catalog />
+  </main>
+</Base>

@@ -1,7 +1,45 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
-  "installCommand": "",
-  "buildCommand": "node scripts/build-workflows.mjs",
-  "outputDirectory": "dist"
+  "installCommand": "npx --yes pnpm@11.25.0 --dir site install --frozen-lockfile",
+  "buildCommand": "node scripts/build-workflows.mjs && node scripts/build-site.mjs",
+  "outputDirectory": "dist",
+  "routes": [
+    { "src": "^/workflows/([a-z0-9-]+)/?$", "status": 308, "headers": { "Location": "/skills/$1" } },
+    { "src": "^/(.+)/$", "status": 308, "headers": { "Location": "/$1" } },
+    {
+      "src": "^/$",
+      "has": [{ "type": "header", "key": "accept", "value": "(.*)text/markdown(.*)" }],
+      "dest": "/index.md",
+      "headers": { "Content-Type": "text/markdown; charset=utf-8", "Vary": "Accept", "Link": "<https://skills.nickneely.dev/>; rel=\"canonical\"" }
+    },
+    {
+      "src": "^/skills/([a-z0-9-]+)$",
+      "has": [{ "type": "header", "key": "accept", "value": "(.*)text/markdown(.*)" }],
+      "dest": "/skills/$1.md",
+      "headers": { "Content-Type": "text/markdown; charset=utf-8", "Vary": "Accept", "Link": "<https://skills.nickneely.dev/skills/$1>; rel=\"canonical\"" }
+    },
+    {
+      "src": "^/(about|privacy|contact)$",
+      "has": [{ "type": "header", "key": "accept", "value": "(.*)text/markdown(.*)" }],
+      "dest": "/$1.md",
+      "headers": { "Content-Type": "text/markdown; charset=utf-8", "Vary": "Accept", "Link": "<https://skills.nickneely.dev/$1>; rel=\"canonical\"" }
+    },
+    { "src": "^/$", "headers": { "Vary": "Accept", "Link": "</index.md>; rel=\"alternate\"; type=\"text/markdown\"" }, "continue": true },
+    { "src": "^/skills/([a-z0-9-]+)$", "headers": { "Vary": "Accept", "Link": "</skills/$1.md>; rel=\"alternate\"; type=\"text/markdown\"" }, "continue": true },
+    { "src": "^/(about|privacy|contact)$", "headers": { "Vary": "Accept", "Link": "</$1.md>; rel=\"alternate\"; type=\"text/markdown\"" }, "continue": true },
+    { "src": "^/skills/[a-z0-9-]+\\.md$", "headers": { "Content-Type": "text/markdown; charset=utf-8" }, "continue": true },
+    { "src": "^/(index|setup|about|privacy|contact|404)\\.md$", "headers": { "Content-Type": "text/markdown; charset=utf-8" }, "continue": true },
+    { "src": "^/(llms|llms-full)\\.txt$", "headers": { "Content-Type": "text/plain; charset=utf-8" }, "continue": true },
+    { "handle": "filesystem" },
+    { "handle": "error" },
+    {
+      "src": "^/.*$",
+      "has": [{ "type": "header", "key": "accept", "value": "(.*)text/markdown(.*)" }],
+      "status": 404,
+      "dest": "/404.md",
+      "headers": { "Content-Type": "text/markdown; charset=utf-8", "Vary": "Accept" }
+    },
+    { "src": "^/.*$", "status": 404, "dest": "/404.html", "headers": { "Vary": "Accept" } }
+  ]
 }

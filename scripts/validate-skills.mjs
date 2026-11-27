@@ -12,8 +12,9 @@ import {
 import { dirname, join, relative, resolve, sep } from "node:path";
 
 const args = process.argv.slice(2);
-// Rewrites the generated install recipes instead of checking them.
+// Rewrite the generated install recipes or README catalog instead of checking them.
 const writeInstall = args.includes("--write-install");
+const writeReadme = args.includes("--write-readme");
 const root = resolve(args.find((arg) => !arg.startsWith("--")) || process.cwd());
 const skillsRoot = join(root, "skills");
 const noticesPath = join(root, "THIRD_PARTY_NOTICES.md");
@@ -41,10 +42,20 @@ const LOCAL_SOURCE = "nick-neely/agent-skills";
 const PACK_URL = /^https:\/\/(?:www\.)?skills\.sh\/p\/[A-Za-z0-9_-]+$/;
 const INSTALL_START = "<!-- install-commands:start -->";
 const INSTALL_END = "<!-- install-commands:end -->";
+const CATALOG_START = "<!-- skills-catalog:start -->";
+const CATALOG_END = "<!-- skills-catalog:end -->";
 const SKILL_NAME_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 const ALLOWED_SKILL_SUBDIRS = ["scripts", "references", "assets", "agents"];
 const SKILL_INSTALL_PATH = /~\/\.(claude|codex|cursor|agents)\/skills\//;
-const ROOT_DOCS = ["README.md", "AGENTS.md", "THIRD_PARTY_NOTICES.md", "CONTRIBUTING.md", "SECURITY.md", "docs/install.md"];
+const ROOT_DOCS = [
+  "README.md",
+  "AGENTS.md",
+  "THIRD_PARTY_NOTICES.md",
+  "CONTRIBUTING.md",
+  "SECURITY.md",
+  "docs/install.md",
+  "catalog.json",
+];
 
 function contained(path, parent) {
   const rel = relative(parent, path);
@@ -410,36 +421,101 @@ function installRecipes(skills, packs) {
 }
 
 // Rewrite only between the markers, preserving bytes and line endings around
-// them. Never regenerate commands from an invalid catalog.
-function checkInstallRecipes(path, skills, packs) {
+// them. Never regenerate from a catalog that fails another check. `blocked`
+// reflects only those checks, so one stale region never stops another from
+// being written in the same run.
+function checkGenerated(path, { label, start: startMarker, end: endMarker, content, write, flag, blocked }) {
   if (!existsSync(path)) {
-    fail(`Missing install recipes: ${path}`);
+    fail(`${label} file is missing: ${path}`);
     return;
   }
   const file = readFileSync(path);
   const count = (marker) => file.toString("latin1").split(marker).length - 1;
-  if (count(INSTALL_START) > 1 || count(INSTALL_END) > 1) {
-    fail(`Install recipes have duplicate generation markers: ${path}`);
+  if (count(startMarker) > 1 || count(endMarker) > 1) {
+    fail(`${label} have duplicate generation markers: ${path}`);
     return;
   }
-  const start = file.indexOf(INSTALL_START);
-  const end = file.indexOf(INSTALL_END);
+  const start = file.indexOf(startMarker);
+  const end = file.indexOf(endMarker);
   if (start < 0 || end < start) {
-    fail(`Install recipes lack generation markers: ${path}`);
+    fail(`${label} lack generation markers: ${path}`);
     return;
   }
   const current = file.subarray(start, end).toString("utf8");
-  const expected = `${INSTALL_START}\n\n${installRecipes(skills, packs)}\n\n`;
+  const expected = `${startMarker}\n\n${content}\n\n`;
   if (current.replace(/\r\n/g, "\n") === expected) return;
-  if (!writeInstall) {
-    fail(`Install recipes are stale; run node scripts/validate-skills.mjs --write-install: ${path}`);
-  } else if (errors.length) {
-    fail(`Install recipes were not written; fix the errors above first: ${path}`);
+  if (!write) {
+    fail(`${label} are stale; run node scripts/validate-skills.mjs ${flag}: ${path}`);
+  } else if (blocked) {
+    fail(`${label} were not written; fix the errors above first: ${path}`);
   } else {
     const eol = current.includes("\r\n") ? "\r\n" : "\n";
     writeFileSync(path,
       Buffer.concat([file.subarray(0, start), Buffer.from(expected.replace(/\n/g, eol)), file.subarray(end)]));
   }
+}
+
+// catalog.json is the human-facing catalog: ordered categories, each with an
+// optional intro and ordered skills carrying a one-line summary and a featured
+// flag. The README section and the site both read it; SKILL.md descriptions
+// are written for agent triggering instead.
+function readCatalog(path, skillNames) {
+  if (!existsSync(path)) {
+    fail(`Missing catalog.json: ${path}`);
+    return;
+  }
+  let catalog;
+  try {
+    catalog = JSON.parse(readFileSync(path, "utf8"));
+  } catch (error) {
+    fail(`Invalid catalog.json: ${path}: ${error.message}`);
+    return;
+  }
+  const isObject = (value) => value && typeof value === "object" && !Array.isArray(value);
+  const onlyKeys = (value, keys) => Object.keys(value).every((key) => keys.includes(key));
+  const isText = (value) => typeof value === "string" && value.trim() !== "" && !/[\r\n]/.test(value);
+  if (!isObject(catalog) || !onlyKeys(catalog, ["categories"]) ||
+      !Array.isArray(catalog.categories) || !catalog.categories.length) {
+    fail(`Invalid catalog.json fields: ${path}`);
+    return;
+  }
+  const titles = new Set();
+  const listed = new Set();
+  for (const category of catalog.categories) {
+    if (!isObject(category) || !onlyKeys(category, ["title", "intro", "skills"]) ||
+        !isText(category.title) || (Object.hasOwn(category, "intro") && !isText(category.intro)) ||
+        !Array.isArray(category.skills) || !category.skills.length) {
+      fail(`Catalog category needs a one-line title, an optional one-line intro and skills: ${path}`);
+      return;
+    }
+    if (titles.has(category.title)) fail(`Catalog category ${category.title} appears more than once: ${path}`);
+    titles.add(category.title);
+    for (const skill of category.skills) {
+      if (!isObject(skill) || !onlyKeys(skill, ["name", "summary", "featured"]) ||
+          typeof skill.name !== "string" || !SKILL_NAME_PATTERN.test(skill.name)) {
+        fail(`Catalog skill entry needs only name, summary and featured: ${path}`);
+        return;
+      }
+      if (!isText(skill.summary)) fail(`Catalog skill ${skill.name} needs a one-line summary: ${path}`);
+      if (typeof skill.featured !== "boolean") fail(`Catalog skill ${skill.name} featured must be true or false: ${path}`);
+      if (listed.has(skill.name)) fail(`Catalog lists skill ${skill.name} more than once: ${path}`);
+      if (!skillNames.includes(skill.name)) fail(`Catalog lists unknown skill ${skill.name}: ${path}`);
+      listed.add(skill.name);
+    }
+  }
+  for (const name of skillNames) {
+    if (!listed.has(name)) fail(`Catalog is missing skill ${name}: ${path}`);
+  }
+  return catalog;
+}
+
+function readmeCatalog(catalog) {
+  return catalog.categories.map(({ title, intro, skills }) => [
+    `### ${title}`,
+    ...(intro ? [intro] : []),
+    skills.map(({ name, summary }) =>
+      `- [\`${name}\`](skills/${name}/) ([Install](docs/install.md#${name})) - ${summary}`).join("\n"),
+  ].join("\n\n")).join("\n\n");
 }
 
 function checkLinks(path, text, skillRoot) {
@@ -504,7 +580,8 @@ function checkNoHardcodedInstallPath(path, text) {
   });
 }
 
-function checkReadmeSkillList(readmePath, skillNames, checkCatalog) {
+// A repository without catalog.json lists its skills by hand in the README.
+function checkReadmeSkillList(readmePath, skillNames) {
   if (!existsSync(readmePath)) {
     fail(`Missing README.md: ${readmePath}`);
     return;
@@ -523,13 +600,7 @@ function checkReadmeSkillList(readmePath, skillNames, checkCatalog) {
   for (const line of lines.slice(start + 1, end)) {
     const match = line.match(namePattern);
     if (!match) continue;
-    const name = match[2];
-    if (checkCatalog && (listed.has(name) ||
-        !line.startsWith(`${match[0]} ([Install](docs/install.md#${name})) - `) ||
-        line.split("[Install]").length !== 2)) {
-      fail(`README skill ${name} must have one matching Install action: ${readmePath}`);
-    }
-    listed.add(name);
+    listed.add(match[2]);
   }
   for (const name of skillNames) {
     if (!listed.has(name)) fail(`README Skills section missing skill ${name}: ${readmePath}`);
@@ -621,9 +692,13 @@ const skillNames = entries.filter((entry) => entry.isDirectory()).map((entry) =>
 const readmePath = join(root, "README.md");
 const packsRoot = join(root, "packs");
 const recipePath = join(root, "docs", "install.md");
-const checkCatalog = existsSync(packsRoot) || existsSync(recipePath) ||
+const catalogPath = join(root, "catalog.json");
+// A published collection generates its README catalog and install recipes;
+// a minimal one, such as most fixtures, only lists its skills in the README.
+const checkCatalog = existsSync(packsRoot) || existsSync(recipePath) || existsSync(catalogPath) ||
   (existsSync(readmePath) && readFileSync(readmePath, "utf8").includes("docs/install.md"));
-checkReadmeSkillList(readmePath, skillNames, checkCatalog);
+const catalog = checkCatalog ? readCatalog(catalogPath, skillNames) : undefined;
+if (!checkCatalog) checkReadmeSkillList(readmePath, skillNames);
 
 for (const { files } of validated.values()) {
   for (const file of files) {
@@ -645,7 +720,27 @@ for (const file of existsSync(skillsRoot) ? walk(skillsRoot) : []) {
 
 if (checkCatalog) {
   const packs = checkPacks(packsRoot, validated);
-  checkInstallRecipes(recipePath, validated, packs);
+  const blocked = errors.length > 0;
+  checkGenerated(recipePath, {
+    label: "Install recipes",
+    start: INSTALL_START,
+    end: INSTALL_END,
+    content: installRecipes(validated, packs),
+    write: writeInstall,
+    flag: "--write-install",
+    blocked,
+  });
+  if (catalog) {
+    checkGenerated(readmePath, {
+      label: "README catalog sections",
+      start: CATALOG_START,
+      end: CATALOG_END,
+      content: readmeCatalog(catalog),
+      write: writeReadme,
+      flag: "--write-readme",
+      blocked,
+    });
+  }
 }
 
 if (errors.length) {

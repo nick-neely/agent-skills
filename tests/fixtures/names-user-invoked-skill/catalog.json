@@ -1,0 +1,35 @@
+{
+  "categories": [
+    {
+      "title": "Workflows",
+      "skills": [
+        {
+          "name": "manual",
+          "summary": "A user-invoked skill that calls a helper.",
+          "featured": true
+        },
+        {
+          "name": "pointer",
+          "summary": "Names the user-invoked skill without calling it.",
+          "featured": false
+        },
+        {
+          "name": "extra",
+          "summary": "A skill nothing depends on.",
+          "featured": false
+        }
+      ]
+    },
+    {
+      "title": "Shared methods",
+      "intro": "Methods other skills follow.",
+      "skills": [
+        {
+          "name": "helper",
+          "summary": "A model-invoked skill.",
+          "featured": false
+        }
+      ]
+    }
+  ]
+}

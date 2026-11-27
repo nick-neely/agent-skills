@@ -143,6 +143,35 @@ function publishWorkflows(scratch) {
     return checkouts.get(key);
   }
 
+  const origin = process.env.VERCEL_URL ? "https://" + process.env.VERCEL_URL : "";
+  // Each skill is archived once, however many indexes list it.
+  function pack(source, name) {
+    const key = `${source}@${name}`;
+    if (!packages.has(key)) {
+      const files = source === localSource ? localFiles(join(localRoot, name)) : externalFiles(source, name, pins, checkout);
+      if (source === localSource) addNotice(files, "REPOSITORY-LICENSE.txt", localLicense);
+      const directory = mkdtempSync(join(scratch, "skill-"));
+      for (const [path, bytes] of files) {
+        const target = join(directory, path);
+        mkdirSync(dirname(target), { recursive: true });
+        writeFileSync(target, bytes);
+      }
+      const zip = directory + ".zip";
+      execFileSync("python3", [join(root, "scripts", "archive-workflow-skill.py"), directory, zip]);
+      const digest = createHash("sha256").update(readFileSync(zip)).digest("hex");
+      renameSync(zip, join(archives, digest + ".zip"));
+      packages.set(key, { name, description: skillDescription(name, files), type: "archive",
+        url: origin + "/archives/" + digest + ".zip", digest: "sha256:" + digest });
+    }
+    return packages.get(key);
+  }
+  function writeIndex(directory, skills) {
+    const discovery = join(directory, ".well-known", "agent-skills");
+    mkdirSync(discovery, { recursive: true });
+    const index = { $schema: "https://schemas.agentskills.io/discovery/0.2.0/schema.json", skills };
+    writeFileSync(join(discovery, "index.json"), `${JSON.stringify(index, null, 2)}\n`);
+  }
+
   const manifests = readdirSync(join(root, "packs")).filter((file) => file.endsWith(".json")).sort();
   if (!manifests.length) throw new Error("No workflow manifests found in packs/");
   for (const file of manifests) {
@@ -152,7 +181,6 @@ function publishWorkflows(scratch) {
     if (!Array.isArray(members?.[localSource]) || !members[localSource].includes(workflow)) {
       throw new Error(`Workflow ${workflow} must include its entry skill`);
     }
-    const discovery = join(site, "workflows", workflow, ".well-known", "agent-skills");
     const skills = [];
     const names = new Set();
     for (const [source, list] of Object.entries(members)) {
@@ -163,36 +191,22 @@ function publishWorkflows(scratch) {
         checkName(name);
         if (names.has(name)) throw new Error(`Duplicate install name ${name} in workflow ${workflow}`);
         names.add(name);
-        const key = `${source}@${name}`;
-        if (!packages.has(key)) {
-          const files = source === localSource ? localFiles(join(localRoot, name)) : externalFiles(source, name, pins, checkout);
-          if (source === localSource) addNotice(files, "REPOSITORY-LICENSE.txt", localLicense);
-          const directory = mkdtempSync(join(scratch, "skill-"));
-          for (const [path, bytes] of files) {
-            const target = join(directory, path);
-            mkdirSync(dirname(target), { recursive: true });
-            writeFileSync(target, bytes);
-          }
-          const zip = directory + ".zip";
-          execFileSync("python3", [join(root, "scripts", "archive-workflow-skill.py"), directory, zip]);
-          const digest = createHash("sha256").update(readFileSync(zip)).digest("hex");
-          renameSync(zip, join(archives, digest + ".zip"));
-          const origin = process.env.VERCEL_URL ? "https://" + process.env.VERCEL_URL : "";
-          packages.set(key, { name, description: skillDescription(name, files), type: "archive",
-            url: origin + "/archives/" + digest + ".zip", digest: "sha256:" + digest });
-        }
-        skills.push(packages.get(key));
+        skills.push(pack(source, name));
       }
     }
-    mkdirSync(discovery, { recursive: true });
-    const index = { $schema: "https://schemas.agentskills.io/discovery/0.2.0/schema.json", skills };
-    writeFileSync(join(discovery, "index.json"), `${JSON.stringify(index, null, 2)}\n`);
+    writeIndex(join(site, "workflows", workflow), skills);
   }
+
+  // The site root indexes every local skill on its own, so
+  // `npx skills add <site> --skill <name>` installs any one of them.
+  const local = readdirSync(localRoot, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map(({ name }) => name).sort();
+  local.forEach(checkName);
+  writeIndex(site, local.map((name) => pack(localSource, name)));
 
   const output = join(root, "dist");
   rmSync(output, { recursive: true, force: true });
   renameSync(site, output);
-  console.log(`Built ${manifests.length} workflow indexes in dist/workflows/`);
+  console.log(`Built ${manifests.length} workflow indexes in dist/workflows/ and a root index of ${local.length} skills`);
 }
 
 const scratch = mkdtempSync(join(root, ".workflow-build-"));

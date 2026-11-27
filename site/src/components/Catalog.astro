@@ -1,0 +1,84 @@
+---
+import CommandBlock from "./CommandBlock.astro";
+import CopyButton from "./CopyButton.astro";
+import KindBadge from "./KindBadge.astro";
+import ScopeToggle from "./ScopeToggle.astro";
+import { catalog, installTarget, skillPath, workflowCount } from "../lib/catalog.ts";
+import { inlineHTML, plainText, plural } from "../lib/html.ts";
+
+const { categories, skills } = catalog();
+const total = skills.length;
+const sectionId = (slug: string) => `cat-${slug}`;
+---
+<section class="catalog" id="catalog" aria-labelledby="catalog-h" data-catalog data-scope-root data-scope="global">
+  <div class="catalog-head">
+    <h2 id="catalog-h">Catalog</h2>
+    <p>{total} skills, {workflowCount()} of them workflows that install everything they need in one command.</p>
+  </div>
+  <div class="bar">
+    <label class="filter js-only">
+      <span class="sr-only">Filter skills</span>
+      <span class="prompt" aria-hidden="true">&gt;</span>
+      <input type="search" data-filter placeholder="filter by name or summary" autocomplete="off" spellcheck="false" aria-describedby="catalog-count" aria-keyshortcuts="/" />
+      <kbd aria-hidden="true">/</kbd>
+    </label>
+    <span class="seg js-only" role="group" aria-label="Show">
+      <button type="button" data-kind-filter="all" aria-pressed="true">all</button>
+      <button type="button" data-kind-filter="workflow" aria-pressed="false">workflows</button>
+      <button type="button" data-kind-filter="skill" aria-pressed="false">skills</button>
+    </span>
+    <ScopeToggle label="Install scope for every command in the catalog" visibleLabel="Scope, all rows" />
+    <span class="count js-only" id="catalog-count" aria-live="polite" data-filter-count>{total} of {total}</span>
+  </div>
+  <div class="cat-body">
+    <nav class="rail" aria-label="Catalog sections" data-section-nav>
+      <ol role="list">
+        {categories.map((c) => (
+          <li data-rail-item={c.slug}>
+            <a href={`#${sectionId(c.slug)}`}><span class="rail-t">{c.title}</span><span class="rail-n" data-rail-count>{c.skills.length}</span></a>
+          </li>
+        ))}
+      </ol>
+    </nav>
+    <div class="cats">
+      {categories.map((c) => (
+        <section class="cat" id={sectionId(c.slug)} aria-labelledby={`${sectionId(c.slug)}-h`} data-category={c.slug} data-total={c.skills.length}>
+          <header class="cat-head">
+            <h3 id={`${sectionId(c.slug)}-h`}><span class="cat-num">{String(c.number).padStart(2, "0")}</span>{c.title}</h3>
+            <span class="cat-count" data-category-count>{plural(c.skills.length, "skill")}</span>
+            {c.intro && <p class="cat-intro" set:html={inlineHTML(c.intro)} />}
+          </header>
+          <ul class="list" role="list">
+            {c.skills.map((s) => (
+              <li class="item" data-row data-install data-name={s.name} data-packed={String(Boolean(s.pack))} data-kind={s.kind} data-hay={`${s.name} ${plainText(s.summary)}`.toLowerCase()}>
+                <div class="item-main">
+                  <a class="name" href={skillPath(s.name)}>{s.name}</a>
+                  <span class="kcell"><KindBadge skill={s} /></span>
+                  <p class="sum" set:html={inlineHTML(s.summary)} />
+                </div>
+                <span class="act js-only">
+                  <CopyButton label="Copy install" name={`Copy install command for ${s.name}`} class="btn row-copy" />
+                  <button type="button" class="btn peek" aria-expanded="false" aria-controls={`cmd-${s.name}`} aria-label={`Show command for ${s.name}`} data-peek={s.name}>
+                    <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4"></path></svg>
+                  </button>
+                </span>
+                <div class="cmdrow" id={`cmd-${s.name}`} hidden>
+                  <CommandBlock target={installTarget(s)} />
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ))}
+      <div class="empty" data-empty hidden>
+        <p>Nothing matches <code data-empty-query></code>.</p>
+        <button type="button" class="btn" data-clear>Clear filter</button>
+      </div>
+    </div>
+  </div>
+</section>
+<script>
+  import "../scripts/install.ts";
+  import "../scripts/catalog.ts";
+  import "../scripts/sections.ts";
+</script>

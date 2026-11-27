@@ -1,0 +1,27 @@
+---
+import SiteMark from "./SiteMark.astro";
+import ThemeToggle from "./ThemeToggle.astro";
+import { site } from "../lib/site.ts";
+---
+<header class="site-head">
+  <div class="wrap site-head-in">
+    <span class="brand">
+      <a class="brand-home" href={site.home} aria-label={`${site.owner} home`}>
+        <SiteMark class="mark-sm" />
+        <span class="brand-name">{site.owner}</span>
+      </a>
+      <span class="brand-slash" aria-hidden="true">/</span>
+      <a class="brand-site lu" href="/">skills</a>
+    </span>
+    <div class="site-head-r">
+      <nav aria-label="Primary navigation">
+        <ul class="site-nav" role="list">
+          <li><a class="lu" href="/#catalog">Catalog</a></li>
+          <li><a class="lu" href={site.repository} rel="noreferrer">GitHub</a></li>
+          <li class="site-nav-home"><a class="lu" href={site.home} rel="noreferrer">nickneely.dev</a></li>
+        </ul>
+      </nav>
+      <ThemeToggle />
+    </div>
+  </div>
+</header>

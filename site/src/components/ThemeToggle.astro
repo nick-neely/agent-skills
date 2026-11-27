@@ -1,0 +1,13 @@
+---
+// Which theme is active is expressed in CSS through the `dark` class, so the
+// icon and the label are right from the first paint, before any script runs.
+---
+<button type="button" class="theme-toggle js-only" data-theme-toggle>
+  <svg class="icon-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3c.132 0 .263 0 .393 0a7.5 7.5 0 0 0 7.92 12.446a9 9 0 1 1 -8.313 -12.454z"></path></svg>
+  <svg class="icon-sun" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 12m-4 0a4 4 0 1 0 8 0a4 4 0 1 0 -8 0"></path><path d="M3 12h1m8 -9v1m8 8h1m-9 8v1m-6.4 -15.4l.7 .7m12.1 -.7l-.7 .7m0 11.4l.7 .7m-12.1 -.7l-.7 .7"></path></svg>
+  <span class="sr-only label-to-dark">Switch to dark theme</span>
+  <span class="sr-only label-to-light">Switch to light theme</span>
+</button>
+<script>
+  import "../scripts/theme.ts";
+</script>

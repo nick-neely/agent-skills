@@ -1,0 +1,13 @@
+---
+import { kindLabel, type Skill } from "../lib/catalog.ts";
+
+interface Props {
+  skill: Skill;
+}
+const { skill } = Astro.props;
+const count = skill.kind === "workflow" ? skill.pack?.members.length : undefined;
+---
+<span class:list={["kind", skill.kind]}>
+  {kindLabel[skill.kind]}
+  {count !== undefined && <span class="kind-n"><span class="sr-only">, installs </span>{count}<span class="sr-only"> skills</span></span>}
+</span>

@@ -84,11 +84,12 @@ function fixture(t) {
     },
   });
   const workflow = (name, ...paths) => join(repo, "dist", "workflows", name, ".well-known", "agent-skills", ...paths);
-  return { repo, upstream, git, commit, pinnedCommit, run, workflow, json, pins };
+  const rootIndex = () => JSON.parse(readFileSync(join(repo, "dist", ".well-known", "agent-skills", "index.json"), "utf8"));
+  return { repo, upstream, git, commit, pinnedCommit, run, workflow, rootIndex, json, pins };
 }
 
 test("publishes exact workflow membership, pinned assets and applicable licenses", (t) => {
-  const { repo, run, workflow } = fixture(t);
+  const { repo, run, workflow, rootIndex } = fixture(t);
   const result = run();
   assert.equal(result.status, 0, result.stderr);
   const alpha = JSON.parse(readFileSync(workflow("alpha", "index.json"), "utf8"));
@@ -111,10 +112,30 @@ test("publishes exact workflow membership, pinned assets and applicable licenses
   assert.equal(archiveFile(alpha, 0, "REPOSITORY-LICENSE.txt").toString(), "Local repository license.\n");
   assert.equal(archiveFile(alpha, 2, "LICENSE.md").toString(), "Skill-specific license.\n");
 
+  // The root index lists every local skill once, sharing the workflows' archives, and no external skill.
+  const index = rootIndex();
+  assert.equal(index.$schema, alpha.$schema);
+  assert.deepEqual(index.skills.map(({ name }) => name), ["alpha", "beta", "standalone"]);
+  assert.deepEqual(index.skills[0], alpha.skills[0]);
+  assert.deepEqual(index.skills[1], beta.skills[0]);
+  assert.equal(index.skills[2].description, "standalone description.");
+  assert.equal(archiveFile(index, 2, "SKILL.md").toString(), "---\nname: standalone\ndescription: standalone description.\n---\nstandalone instructions.\n");
+  assert.equal(archiveFile(index, 2, "REPOSITORY-LICENSE.txt").toString(), "Local repository license.\n");
+
   rmSync(join(repo, "packs", "beta.json"));
   const rebuild = run();
   assert.equal(rebuild.status, 0, rebuild.stderr);
   assert.equal(existsSync(workflow("beta", "index.json")), false);
+  assert.deepEqual(rootIndex().skills.map(({ name }) => name), ["alpha", "beta", "standalone"]);
+});
+
+test("refuses a local skill directory with an invalid name", (t) => {
+  const { repo, run } = fixture(t);
+  mkdirSync(join(repo, "skills", "Bad_Name"));
+  writeFileSync(join(repo, "skills", "Bad_Name", "SKILL.md"), "---\nname: Bad_Name\ndescription: Bad.\n---\n");
+  const result = run();
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /Invalid skill name: Bad_Name/);
 });
 
 test("refuses a moving external revision and keeps the prior output", (t) => {

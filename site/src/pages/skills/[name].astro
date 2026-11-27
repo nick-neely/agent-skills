@@ -1,0 +1,210 @@
+---
+import Base from "../../layouts/Base.astro";
+import DependencyGraph from "../../components/DependencyGraph.astro";
+import InstallControl from "../../components/InstallControl.astro";
+import KindBadge from "../../components/KindBadge.astro";
+import {
+  catalog,
+  externalURL,
+  fileURL,
+  installedBy,
+  ref,
+  skillMarkdownPath,
+  skillPath,
+  usedBy,
+  type Connection,
+  type Skill,
+} from "../../lib/catalog.ts";
+import { inlineHTML, plainText, plural } from "../../lib/html.ts";
+import { renderSkillMarkdown } from "../../lib/markdown.ts";
+import { skillData } from "../../lib/structured-data.ts";
+
+export function getStaticPaths() {
+  return catalog().skills.map((skill) => ({ params: { name: skill.name }, props: { skill } }));
+}
+
+interface Props {
+  skill: Skill;
+}
+
+const { skill } = Astro.props;
+const all = catalog().skills;
+const index = all.indexOf(skill);
+const previous = all[index - 1];
+const next = all[index + 1];
+const pack = skill.pack;
+const external = pack?.members.filter((m) => !m.local) ?? [];
+
+const requires: Connection[] = skill.requires.map((id) => ({ ref: ref(id), kind: "requires" }));
+const uses: Connection[] = skill.uses.map((id) => ({ ref: ref(id), kind: "uses" }));
+const callers = usedBy(skill.name);
+const installers = installedBy(skill.name);
+const link = (r: Connection["ref"]) => (r.local ? skillPath(r.id) : externalURL(r.id));
+
+const sections = [
+  ["install", "Install"],
+  ["requirements", "Requirements"],
+  ...(pack ? [["installs", "What this installs"]] : []),
+  ["connections", "Connections"],
+  ["files", "Files"],
+  ["instructions", "Instructions"],
+] as const;
+
+// Other files grouped by top folder, linked to GitHub and never rendered.
+const groups = new Map<string, string[]>([["", []]]);
+for (const file of skill.files) {
+  const dir = file.includes("/") ? file.slice(0, file.indexOf("/") + 1) : "";
+  groups.set(dir, [...(groups.get(dir) ?? []), file]);
+}
+const folders = [...groups].filter(([dir]) => dir);
+const html = renderSkillMarkdown(skill.name, skill.body);
+const sourceURL = fileURL(skill.name, "SKILL.md");
+---
+<Base title={skill.name} description={plainText(skill.summary)} markdown={skillMarkdownPath(skill.name)} structuredData={skillData(skill)}>
+  <div class="wrap page">
+    <nav class="toc" aria-label="On this page" data-section-nav>
+      <a class="back lu" href="/#catalog">&larr; catalog</a>
+      <ol role="list">
+        {sections.map(([id, label]) => <li><a href={`#${id}`}>{label}</a></li>)}
+      </ol>
+    </nav>
+    <main class="page-main" id="main">
+      <section class="sec top" id="install" aria-labelledby="title">
+        <h1 class="title" id="title">{skill.name}</h1>
+        <p class="tags">
+          <KindBadge skill={skill} />
+          {skill.userInvoked && <span class="kind tag">you call it by name</span>}
+        </p>
+        <p class="desc" set:html={inlineHTML(skill.summary)} />
+        {skill.kind === "shared-method" && (
+          <p class="method-note">You don't invoke a shared method yourself. The skills that follow it install it, and this command installs it with everything it names.</p>
+        )}
+        <InstallControl skill={skill} agents note />
+        {pack && <p class="hint">One command, {plural(pack.members.length, "skill")}{external.length ? ", including credited skills from other repos" : ""}.</p>}
+      </section>
+
+      <section class="sec" id="requirements" aria-labelledby="h-requirements">
+        <h2 class="rule" id="h-requirements">Requirements</h2>
+        <p class="compat">{skill.compatibility ?? "Nothing beyond a coding agent that loads skills."}</p>
+      </section>
+
+      {pack && (
+        <section class="sec" id="installs" aria-labelledby="h-installs">
+          <h2 class="rule" id="h-installs">What this installs</h2>
+          <div class="panel"><DependencyGraph skill={skill} /></div>
+          <div class="members">
+            <div>
+              <h3>Installs {pack.members.length}</h3>
+              <ul class="mlist" role="list">
+                {pack.members.map((m) =>
+                  m.local ? (
+                    <li><a class="lu" href={skillPath(m.name)}>{m.name}</a>{m.name === skill.name && <span class="k">this page</span>}</li>
+                  ) : (
+                    <li>
+                      <a class="lu" href={externalURL(m.id)} rel="noreferrer">{m.name}</a>
+                      <span class="k">from <a class="lu" href={`https://github.com/${m.repo}`} rel="noreferrer">{m.repo}</a>{catalog().external[m.id] && `, pinned at ${catalog().external[m.id]!.commit.slice(0, 7)}`}</span>
+                    </li>
+                  ),
+                )}
+              </ul>
+            </div>
+            {pack.omitted.length > 0 && (
+              <div>
+                <h3>Not installed</h3>
+                <ul class="mlist omit" role="list">
+                  {pack.omitted.map((m) => (
+                    <li><s>{m.name}</s><span class="k">{m.repo}</span><p class="reason">{m.reason}</p></li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        </section>
+      )}
+
+      <section class="sec" id="connections" aria-labelledby="h-connections">
+        <h2 class="rule" id="h-connections">Connections</h2>
+        <div class="conn">
+          {[
+            ["Requires", requires, "No other skills."],
+            ["Uses on some paths", uses, "None."],
+            ["Used by", callers, "No other skill here names it."],
+          ].map(([heading, items, empty]) => (
+            <div>
+              <h3>{heading as string}</h3>
+              {(items as Connection[]).length ? (
+                <ul class="deps" role="list">
+                  {(items as Connection[]).map((c) => (
+                    <li>
+                      <span class:list={["edge", c.kind]} aria-hidden="true"></span>
+                      <a class="lu" href={link(c.ref)} rel={c.ref.local ? undefined : "noreferrer"}>{c.ref.name}</a>
+                      {!c.ref.local && <span class="k">{c.ref.repo}</span>}
+                      {heading === "Used by" && <span class="k">{c.kind === "uses" ? "uses it on some paths" : "requires it"}</span>}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p class="none">{empty as string}</p>
+              )}
+            </div>
+          ))}
+          <div>
+            <h3>Installed by</h3>
+            {installers.length ? (
+              <ul class="deps" role="list">
+                {installers.map((w) => <li><a class="lu" href={skillPath(w.name)}>{w.name}</a></li>)}
+              </ul>
+            ) : (
+              <p class="none">No workflow installs it.</p>
+            )}
+          </div>
+        </div>
+      </section>
+
+      <section class="sec" id="files" aria-labelledby="h-files">
+        <h2 class="rule" id="h-files">Files in this skill</h2>
+        <div class="files">
+          <div class="fgroup">
+            <h3>{skill.name}/</h3>
+            <ul role="list">
+              <li><span class="file-here">SKILL.md</span><span class="k">shown below</span></li>
+              {groups.get("")!.map((f) => <li><a class="lu" href={fileURL(skill.name, f)} rel="noreferrer">{f}</a></li>)}
+            </ul>
+          </div>
+          {folders.map(([dir, list]) => (
+            <div class:list={["fgroup", { wide: list.length > 6 }]}>
+              <h3>{dir}<span class="k">{list.length}</span></h3>
+              <ul role="list">
+                {list.map((f) => <li><a class="lu" href={fileURL(skill.name, f)} rel="noreferrer">{f.slice(dir.length)}</a></li>)}
+              </ul>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section class="sec" id="instructions" aria-labelledby="h-instructions">
+        <h2 class="rule" id="h-instructions">Instructions</h2>
+        <p class="hint hint-top">The full file your agent reads, rendered. <a class="lu" href={skillMarkdownPath(skill.name)}>Raw Markdown</a></p>
+        <article class="doc" aria-labelledby="doc-path">
+          <div class="doc-bar">
+            <span class="doc-path" id="doc-path"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 1.5h5.5L13 5v9.5H4z M9.5 1.5V5H13"></path></svg>skills/{skill.name}/<b>SKILL.md</b></span>
+            <a class="lu doc-gh" href={sourceURL} rel="noreferrer">View on GitHub</a>
+          </div>
+          <div class="doc-body prose" set:html={html} />
+        </article>
+      </section>
+
+      <nav class="pager" aria-label="More skills">
+        {previous ? (
+          <a href={skillPath(previous.name)}><span class="pager-l">&larr; Previous</span><span class="pager-n">{previous.name}</span></a>
+        ) : <span></span>}
+        {next ? (
+          <a href={skillPath(next.name)} class="next"><span class="pager-l">Next &rarr;</span><span class="pager-n">{next.name}</span></a>
+        ) : <span></span>}
+      </nav>
+    </main>
+  </div>
+</Base>
+<script>
+  import "../../scripts/sections.ts";
+</script>

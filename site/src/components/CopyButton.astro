@@ -1,0 +1,16 @@
+---
+// Both labels share one grid cell, so swapping to "Copied" never changes the
+// button's width. The confirmation is announced through the page's live
+// region rather than by renaming the control mid-interaction.
+interface Props {
+  label?: string;
+  /** Accessible name; it must contain the visible label. */
+  name?: string;
+  class?: string;
+}
+const { label = "Copy", name, class: className = "" } = Astro.props;
+---
+<button type="button" class:list={["copy-btn", "js-only", className]} data-copy aria-label={name}>
+  <span class="copy-l">{label}</span>
+  <span class="copy-d" aria-hidden="true">Copied</span>
+</button>

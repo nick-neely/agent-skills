@@ -99,8 +99,35 @@ named but not declared, a declared skill that does not exist, a declaration
 the skill never names, and a `requires` cycle.
 
 When two skills need the same method, put it in a model-invoked skill whose
-description names its callers and list it under "Shared methods" in the
-README.
+description names its callers and list it under "Shared methods" in
+`catalog.json`.
+
+## The skill catalog
+
+`catalog.json` is the human-facing catalog. The README `## Skills` section
+and the landing site both read it, so `SKILL.md` stays a portable payload
+written for agents. It holds ordered `categories`, each with a `title`, an
+optional `intro` paragraph and ordered `skills`:
+
+```json
+{ "name": "my-skill", "summary": "What it does, for a person choosing a skill.", "featured": false }
+```
+
+Write `summary` as one line for a reader browsing the catalog, not as
+triggers; inline code in backticks is fine. `featured` marks the skills the
+site highlights. Every skill directory appears exactly once. After editing
+the catalog, regenerate the README section between its markers:
+
+```sh
+node scripts/validate-skills.mjs --write-readme
+```
+
+The site in `site/` builds its pages from the same files at deploy time: a
+page per catalog entry, with dependencies from `metadata`, requirements from
+`compatibility` and members from `packs/`. A new skill needs nothing extra for
+the site. A skill under the "Shared methods" category is shown as a shared
+method rather than a workflow. `./scripts/validate` also runs the site check
+when the site's dependencies are installed (`pnpm --dir site install`).
 
 ## Workflow Packs and install recipes
 
@@ -125,7 +152,10 @@ as a ZIP archive with a SHA-256 digest. The published index points to
 archives on that specific Vercel deployment so an install can finish across
 a production rollout. A change to a shared skill
 therefore ships to every workflow that includes it. Each workflow has a stable
-install URL under `/workflows/<skill-name>`. Existing `url` fields identify
+install URL under `/workflows/<skill-name>`. The build also publishes a root
+index of every local skill at `/.well-known/agent-skills/index.json`, so
+`npx skills add https://skills.nickneely.dev --skill <name>` installs any one
+skill alone with no extra step. Existing `url` fields identify
 the original Skills.sh Packs for migration. New workflows only need a manifest.
 
 For a new external member, add its repository, skill directory, and full
