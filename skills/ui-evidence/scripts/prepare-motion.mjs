@@ -15,15 +15,14 @@ import {
 } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { tmpdir } from "node:os";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { pathToFileURL } from "node:url";
+import { writeBundledFont } from "./bundled-font.mjs";
 import { CHROME, composer, imText, numberedPinArgs, textMeasurer } from "./magick-args.mjs";
 import {
   AnnotationError, annotationReport, layoutCaptions, layoutStoryboard, motionMarkdown, outputSize, outputTimeline,
   planEvents, planStoryboard, storyboardReport,
 } from "./motion-annotations.mjs";
 
-const SKILL_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const FONT_PATH = join(SKILL_ROOT, "assets", "DejaVuSans.ttf");
 const MIB = 1024 * 1024;
 const DEFAULT_MAX_BYTES = 9_500_000;
 const MAX_BYTES = 100_000_000;
@@ -164,7 +163,7 @@ function draw(args, label) {
   return run(drawBinary, args, label);
 }
 
-const makeMeasure = () => textMeasurer((args) => draw(args, "ImageMagick text measurement"), FONT_PATH);
+const makeMeasure = () => textMeasurer((args) => draw(args, "ImageMagick text measurement"), fontPath);
 
 // One transparent overlay per event at the final output size: the planned
 // outline and pin around a control, and the caption area's pin, keys, and text.
@@ -177,24 +176,24 @@ function renderEvent(event, layout, size, out) {
     const { outline: o, corner, pin } = planned.marks;
     args.push("-fill", "none", "-stroke", event.color, "-strokewidth", String(chrome.stroke),
       "-draw", `roundrectangle ${o.x},${o.y} ${o.x + o.width - 1},${o.y + o.height - 1} ${corner},${corner}`);
-    if (pin) place(numberedPinArgs(event.step, event.color, chrome, FONT_PATH), pin.cx - chrome.radius, pin.cy - chrome.radius);
+    if (pin) place(numberedPinArgs(event.step, event.color, chrome, fontPath), pin.cx - chrome.radius, pin.cy - chrome.radius);
   }
   if (planned.items.length || planned.text) {
     const { y: top, height: boxHeight } = layout.box;
     if (!layout.band) args.push("-fill", CHROME.header, "-stroke", "none", "-draw", `rectangle 0,${top} ${size.width - 1},${top + boxHeight - 1}`);
     const middle = (itemHeight) => top + Math.floor((boxHeight - itemHeight) / 2);
     for (const item of planned.items) {
-      if (item.type === "pin") place(numberedPinArgs(event.step, event.color, chrome, FONT_PATH), item.x, middle(item.size));
+      if (item.type === "pin") place(numberedPinArgs(event.step, event.color, chrome, fontPath), item.x, middle(item.size));
       else {
         const y = middle(item.height);
         args.push("-fill", CHROME.panel, "-stroke", CHROME.border, "-strokewidth", String(Math.max(1, chrome.ring)),
           "-draw", `roundrectangle ${item.x},${y} ${item.x + item.width - 1},${y + item.height - 1} 4,4`);
-        place(["-background", "none", "-fill", CHROME.text, "-stroke", "none", "+size", "-font", FONT_PATH,
+        place(["-background", "none", "-fill", CHROME.text, "-stroke", "none", "+size", "-font", fontPath,
           "-pointsize", String(layout.keyFont), `label:${imText(item.text)}`], item.x + chrome.labelPad, y + chrome.labelPad);
       }
     }
     if (planned.text) {
-      place(["-background", "none", "-fill", "#ffffff", "-stroke", "none", "-font", FONT_PATH,
+      place(["-background", "none", "-fill", "#ffffff", "-stroke", "none", "-font", fontPath,
         "-pointsize", String(layout.font), "-size", `${Math.floor(planned.text.width)}x`, `caption:${imText(event.caption)}`],
       planned.text.x, middle(planned.text.height));
     }
@@ -210,7 +209,7 @@ function renderBadge(layout, size, out) {
   const top = layout.box.y + Math.floor((layout.box.height - badge.height) / 2);
   args.push("-fill", "#9a6700", "-stroke", "none",
     "-draw", `roundrectangle ${badge.x},${top} ${badge.x + badge.width - 1},${top + badge.height - 1} 6,6`);
-  composer(args)(["-background", "none", "-fill", "#ffffff", "-stroke", "none", "+size", "-font", FONT_PATH,
+  composer(args)(["-background", "none", "-fill", "#ffffff", "-stroke", "none", "+size", "-font", fontPath,
     "-pointsize", String(layout.keyFont), `label:${imText(badge.text)}`], badge.x + chrome.labelPad, top + chrome.labelPad);
   draw([...args, "-strip", `PNG32:${out}`], "ImageMagick pause badge");
   return out;
@@ -226,11 +225,11 @@ function renderStoryboard(layout, frames, out) {
     args.push("-fill", "none", "-stroke", CHROME.border, "-strokewidth", "2",
       "-draw", `rectangle ${image.x - 1},${image.y - 1} ${image.x + image.width},${image.y + image.height}`);
     // Neutral checkpoint pins, so checkpoint numbers are not read as step numbers.
-    place(numberedPinArgs(panel.checkpoint.index, CHROME.muted, chrome, FONT_PATH), panel.pin.cx - chrome.radius, panel.pin.cy - chrome.radius);
-    place(["-background", "none", "-fill", CHROME.text, "-stroke", "none", "-font", FONT_PATH,
+    place(numberedPinArgs(panel.checkpoint.index, CHROME.muted, chrome, fontPath), panel.pin.cx - chrome.radius, panel.pin.cy - chrome.radius);
+    place(["-background", "none", "-fill", CHROME.text, "-stroke", "none", "-font", fontPath,
       "-pointsize", String(chrome.legendFont), "-size", `${Math.floor(panel.text.width)}x`, `caption:${imText(panel.checkpoint.label)}`],
     panel.text.x, panel.text.y);
-    place(["-background", "none", "-fill", CHROME.muted, "-stroke", "none", "-font", FONT_PATH,
+    place(["-background", "none", "-fill", CHROME.muted, "-stroke", "none", "-font", fontPath,
       "-pointsize", String(chrome.labelFont), "-size", `${Math.floor(panel.text.width)}x`, `caption:${imText(panel.time)}`],
     panel.text.x, panel.timeY);
   });
@@ -505,7 +504,7 @@ function buildReviewSheet(input, output, temp, media, interval) {
     ...montage.prefix,
     "-background", "white",
     "-fill", "#111827",
-    "-font", FONT_PATH,
+    "-font", fontPath,
     "-pointsize", "18",
     "-tile", "4x",
     "-geometry", "360x+8+8",
@@ -537,12 +536,17 @@ function buildPreview(previewPath, input, output) {
 const options = parseArgs(process.argv.slice(2));
 requireBinary("ffmpeg");
 requireBinary("ffprobe");
-if (!existsSync(FONT_PATH)) die(`bundled font missing at ${FONT_PATH}`);
 const temp = mkdtempSync(join(tmpdir(), "ui-evidence-motion-"));
 const cleanup = () => {
   if (!options.keepTemp) rmSync(temp, { recursive: true, force: true });
 };
 process.once("exit", cleanup);
+let fontPath;
+try {
+  fontPath = writeBundledFont(temp);
+} catch (error) {
+  die(error.message);
+}
 if (options.inspect) {
   const input = resolve(options.inspect);
   if (!existsSync(input)) die(`no such input: ${input}`);

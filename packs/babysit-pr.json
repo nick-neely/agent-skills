@@ -1,0 +1,12 @@
+{
+  "members": {
+    "nick-neely/agent-skills": [
+      "babysit-pr",
+      "leaving-pr-comments"
+    ],
+    "openai/skills": [
+      "gh-fix-ci"
+    ]
+  },
+  "url": "https://www.skills.sh/p/o2bgkk3rR1e5Rndd"
+}

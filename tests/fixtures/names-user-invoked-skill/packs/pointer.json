@@ -1,0 +1,13 @@
+{
+  "members": {
+    "nick-neely/agent-skills": [
+      "pointer",
+      "helper",
+      "manual"
+    ],
+    "sample/tools": [
+      "outside"
+    ]
+  },
+  "url": "https://www.skills.sh/p/0x2mHeVLAzYD2i8y"
+}

@@ -4,3 +4,5 @@ node_modules/
 .codex/
 __pycache__/
 *.pyc
+/dist/
+/.workflow-build-*/

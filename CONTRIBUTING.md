@@ -98,13 +98,43 @@ letter is read as a call to a skill, so keep shell variables inside code. The va
 named but not declared, a declared skill that does not exist, a declaration
 the skill never names, and a `requires` cycle.
 
-The README's install table is generated from those declarations. After
-changing one, run `node scripts/validate-skills.mjs --write-install` and commit
-the result; a stale table fails validation.
-
 When two skills need the same method, put it in a model-invoked skill whose
 description names its callers and list it under "Shared methods" in the
 README.
+
+## Workflow Packs and install recipes
+
+Every catalog entry in the README links to its recipe in
+[docs/install.md](docs/install.md). Standalone skills install by name. A
+skill with dependencies has a manifest at `packs/<skill-name>.json`, with
+`members` grouped by their source repository. Include the entry skill and
+every reachable required or conditional companion. When the workflow rules
+exclude a conditional path, record the omitted skill and the reason in
+`omit`. Use `owner/repo@skill` for an external omission.
+
+When a skill's dependencies change, review the manifests of workflows that
+reach it, then regenerate the recipes.
+
+```sh
+node scripts/validate-skills.mjs --write-install
+```
+
+Merging to `main` releases the workflows through the linked Vercel project.
+The build creates each workflow from its manifest and packages each skill
+as a ZIP archive with a SHA-256 digest. The published index points to
+archives on that specific Vercel deployment so an install can finish across
+a production rollout. A change to a shared skill
+therefore ships to every workflow that includes it. Each workflow has a stable
+install URL under `/workflows/<skill-name>`. Existing `url` fields identify
+the original Skills.sh Packs for migration. New workflows only need a manifest.
+
+For a new external member, add its repository, skill directory, and full
+commit SHA to `external-skills.json`. The update workflow checks upstream weekly and can also be run manually.
+It opens a PR when a skill directory or an upstream license changes. Approve
+any pending workflow runs on that PR, then review and merge it to release
+the updated files.
+When adding or retiring members, tell existing users which workflow to
+reinstall or which skill they can remove.
 
 ## Before you open a PR
 

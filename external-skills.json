@@ -1,0 +1,14 @@
+{
+  "github/gh-stack@gh-stack": {
+    "commit": "80b6d6e910cc1b7eaa26b961d7721ade21084fed",
+    "path": "skills/gh-stack"
+  },
+  "mattpocock/skills@setup-matt-pocock-skills": {
+    "commit": "bbadaa631c37af594e5a05c9cefacd9956136b18",
+    "path": "skills/engineering/setup-matt-pocock-skills"
+  },
+  "openai/skills@gh-fix-ci": {
+    "commit": "49f948faa9258a0c61caceaf225e179651397431",
+    "path": "skills/.curated/gh-fix-ci"
+  }
+}

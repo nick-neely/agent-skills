@@ -12,7 +12,7 @@ import {
 import { dirname, join, relative, resolve, sep } from "node:path";
 
 const args = process.argv.slice(2);
-// Rewrites the README's generated install table instead of checking it.
+// Rewrites the generated install recipes instead of checking them.
 const writeInstall = args.includes("--write-install");
 const root = resolve(args.find((arg) => !arg.startsWith("--")) || process.cwd());
 const skillsRoot = join(root, "skills");
@@ -37,12 +37,14 @@ const BOOLEAN_FRONTMATTER_KEYS = ["disable-model-invocation"];
 // some paths reach, each a space-separated list.
 const METADATA_KEYS = ["requires", "uses"];
 const EXTERNAL_SKILL = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+@([a-z0-9]+(?:-[a-z0-9]+)*)$/;
+const LOCAL_SOURCE = "nick-neely/agent-skills";
+const PACK_URL = /^https:\/\/(?:www\.)?skills\.sh\/p\/[A-Za-z0-9_-]+$/;
 const INSTALL_START = "<!-- install-commands:start -->";
 const INSTALL_END = "<!-- install-commands:end -->";
 const SKILL_NAME_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 const ALLOWED_SKILL_SUBDIRS = ["scripts", "references", "assets", "agents"];
 const SKILL_INSTALL_PATH = /~\/\.(claude|codex|cursor|agents)\/skills\//;
-const ROOT_DOCS = ["README.md", "AGENTS.md", "THIRD_PARTY_NOTICES.md", "CONTRIBUTING.md", "SECURITY.md"];
+const ROOT_DOCS = ["README.md", "AGENTS.md", "THIRD_PARTY_NOTICES.md", "CONTRIBUTING.md", "SECURITY.md", "docs/install.md"];
 
 function contained(path, parent) {
   const rel = relative(parent, path);
@@ -287,92 +289,156 @@ function checkDependencies(skills) {
   }
 }
 
-// What one skill reaches. `needs` follows requires alone, itself first, and
-// `sometimes` is everything else reachable; each holds repository skills in
-// `local` and other repositories' in `outside`. Declaration order keeps the
-// output stable.
-function installSets(name, skills) {
-  const reach = (start, keys) => {
-    const local = [...start];
-    const outside = [];
-    for (let index = 0; index < local.length; index += 1) {
-      for (const token of keys.flatMap((key) => skills.get(local[index])[key])) {
-        if (EXTERNAL_SKILL.test(token)) {
-          if (!outside.includes(token)) outside.push(token);
-        } else if (skills.has(token) && !local.includes(token)) {
-          local.push(token);
-        }
-      }
+function reachableSkills(start, skills, fields, omit = {}) {
+  const local = [start];
+  const members = new Set([start]);
+  for (const name of local) {
+    for (const token of fields.flatMap((field) => skills.get(name)[field])) {
+      if (Object.hasOwn(omit, token) || members.has(token)) continue;
+      members.add(token);
+      if (skills.has(token)) local.push(token);
     }
-    return { local, outside };
-  };
-  const needs = reach([name], ["requires"]);
-  const all = reach(needs.local, ["requires", "uses"]);
-  return {
-    needs,
-    sometimes: {
-      local: all.local.slice(needs.local.length),
-      outside: all.outside.filter((token) => !needs.outside.includes(token)),
-    },
-  };
+  }
+  return members;
 }
 
-function installTable(skills) {
-  const cell = (list) => (list.length ? `\`${list.join(" ")}\`` : "-");
-  const rows = [...skills.keys()]
-    .sort()
-    .filter((name) => skills.get(name).requires.length || skills.get(name).uses.length)
-    .map((name) => {
-      const { needs, sometimes } = installSets(name, skills);
-      const outside = [
-        ...needs.outside.map((token) => `\`${token}\` (required)`),
-        ...sometimes.outside.map((token) => `\`${token}\``),
-      ];
-      return `| \`${name}\` | ${cell(needs.local)} | ${cell(sometimes.local)} | ${outside.join(", ") || "-"} |`;
-    });
-  if (!rows.length) return "";
-  return [
-    "| Skill | Install | Add for the paths that use them | From other repositories |",
-    "| --- | --- | --- | --- |",
-    ...rows,
-    "",
-  ].join("\n");
+function readPack(path) {
+  let pack;
+  try {
+    pack = JSON.parse(readFileSync(path, "utf8"));
+  } catch (error) {
+    fail(`Invalid Pack manifest: ${path}: ${error.message}`);
+    return;
+  }
+  const isObject = (value) => value && typeof value === "object" && !Array.isArray(value);
+  if (!isObject(pack) || !isObject(pack.members) ||
+      Object.keys(pack).some((key) => !["members", "omit", "url"].includes(key)) ||
+      (Object.hasOwn(pack, "omit") && !isObject(pack.omit))) {
+    fail(`Invalid Pack manifest fields: ${path}`);
+    return;
+  }
+  for (const [source, names] of Object.entries(pack.members)) {
+    if (!Array.isArray(names) || !names.length ||
+        names.some((name) => typeof name !== "string" || !SKILL_NAME_PATTERN.test(name))) {
+      fail(`Invalid Pack member list for ${source}: ${path}`);
+      return;
+    }
+    if (new Set(names).size !== names.length) fail(`Duplicate Pack member in ${source}: ${path}`);
+  }
+  if (Object.hasOwn(pack, "url") && (typeof pack.url !== "string" || !PACK_URL.test(pack.url))) {
+    fail(`Invalid Skills.sh Pack URL: ${path}`);
+  }
+  return pack;
 }
 
-// The README is where someone installing by hand looks, so its table is
-// generated from the declarations and a stale copy fails. It is written only
-// from declarations that passed every other check, and only between its
-// markers.
-function checkInstallTable(readmePath, skills) {
-  if (!existsSync(readmePath)) return;
-  // Bytes, so a rewrite leaves everything outside the markers exactly as it
-  // was, whatever its encoding.
-  const readme = readFileSync(readmePath);
-  const count = (marker) => readme.toString("latin1").split(marker).length - 1;
-  const table = installTable(skills);
+function checkPackMembership(path, name, pack, skills) {
+  const all = reachableSkills(name, skills, ["requires", "uses"]);
+  const expected = reachableSkills(name, skills, ["requires", "uses"], pack.omit);
+  const required = new Set([name]);
+  for (const member of expected) {
+    for (const dependency of skills.get(member)?.requires ?? []) required.add(dependency);
+  }
+  for (const [token, reason] of Object.entries(pack.omit ?? {})) {
+    if (!all.has(token) || required.has(token) || typeof reason !== "string" || !reason.trim()) {
+      fail(`Pack omission must name a conditional companion and explain why it is out of scope: ${token}: ${path}`);
+    }
+  }
+  const actual = new Set(Object.entries(pack.members).flatMap(([source, names]) =>
+    names.map((member) => source === LOCAL_SOURCE ? member : `${source}@${member}`)));
+  for (const token of expected) {
+    if (!actual.has(token)) fail(`Pack is missing member ${token}: ${path}`);
+  }
+  for (const token of actual) {
+    if (!expected.has(token)) fail(`Unexpected Pack member ${token}: ${path}`);
+  }
+}
+
+function checkPacks(packsRoot, skills) {
+  const workflowNames = [...skills].filter(([, skill]) => skill.requires.length || skill.uses.length)
+    .map(([name]) => name);
+  const expectedFiles = new Set(workflowNames.map((name) => `${name}.json`));
+  const files = existsSync(packsRoot) ? readdirSync(packsRoot, { withFileTypes: true }) : [];
+  for (const file of files) {
+    if (!file.isFile() || !expectedFiles.delete(file.name)) {
+      fail(`Unexpected Pack manifest: ${join(packsRoot, file.name)}`);
+    }
+  }
+  for (const file of expectedFiles) fail(`Missing workflow Pack manifest: ${join(packsRoot, file)}`);
+
+  const packs = new Map();
+  const publishedIds = new Set();
+  for (const name of workflowNames) {
+    const fileName = `${name}.json`;
+    if (expectedFiles.has(fileName)) continue;
+    const path = join(packsRoot, fileName);
+    const pack = readPack(path);
+    if (!pack) continue;
+    checkPackMembership(path, name, pack, skills);
+    if (typeof pack.url === "string" && PACK_URL.test(pack.url)) {
+      const id = pack.url.split("/").at(-1);
+      if (publishedIds.has(id)) fail(`Duplicate Skills.sh Pack URL: ${path}`);
+      publishedIds.add(id);
+    }
+    packs.set(name, pack);
+  }
+  return packs;
+}
+
+function installRecipes(skills, packs) {
+  const shell = (lines) => ["```sh", ...lines, "```"].join("\n");
+  const sections = [...skills.keys()].sort().map((name) => {
+    const pack = packs.get(name);
+    const sources = pack?.members ?? { [LOCAL_SOURCE]: [name] };
+    const recipe = shell(Object.entries(sources).map(([source, names]) =>
+      `npx skills add ${source} --global --skill ${names.join(" ")}`));
+    const install = pack ? [
+      shell([`npx skills add https://skills.nickneely.dev/workflows/${name} --global --skill '*'`]),
+      "<details>",
+      "<summary>Install from source</summary>",
+      recipe,
+      "</details>",
+    ] : [recipe];
+    const { compatibility } = skills.get(name);
+    return [
+      `## ${name}`,
+      ...install,
+      ...(compatibility ? [compatibility] : []),
+      `[Read the skill](../skills/${name}/SKILL.md).`,
+    ].join("\n\n");
+  });
+  return sections.join("\n\n");
+}
+
+// Rewrite only between the markers, preserving bytes and line endings around
+// them. Never regenerate commands from an invalid catalog.
+function checkInstallRecipes(path, skills, packs) {
+  if (!existsSync(path)) {
+    fail(`Missing install recipes: ${path}`);
+    return;
+  }
+  const file = readFileSync(path);
+  const count = (marker) => file.toString("latin1").split(marker).length - 1;
   if (count(INSTALL_START) > 1 || count(INSTALL_END) > 1) {
-    fail(`README has more than one install table: ${readmePath}`);
+    fail(`Install recipes have duplicate generation markers: ${path}`);
     return;
   }
-  const start = readme.indexOf(INSTALL_START);
-  const end = readme.indexOf(INSTALL_END);
+  const start = file.indexOf(INSTALL_START);
+  const end = file.indexOf(INSTALL_END);
   if (start < 0 || end < start) {
-    if (table) fail(`README lacks the generated install table between ${INSTALL_START} and ${INSTALL_END}: ${readmePath}`);
+    fail(`Install recipes lack generation markers: ${path}`);
     return;
   }
-  const current = readme.subarray(start, end).toString("utf8");
-  const expected = `${INSTALL_START}\n${table}`;
+  const current = file.subarray(start, end).toString("utf8");
+  const expected = `${INSTALL_START}\n\n${installRecipes(skills, packs)}\n\n`;
   if (current.replace(/\r\n/g, "\n") === expected) return;
   if (!writeInstall) {
-    fail(`README install table is stale; run scripts/validate-skills.mjs --write-install: ${readmePath}`);
+    fail(`Install recipes are stale; run node scripts/validate-skills.mjs --write-install: ${path}`);
   } else if (errors.length) {
-    fail(`README install table was not written; fix the errors above first: ${readmePath}`);
+    fail(`Install recipes were not written; fix the errors above first: ${path}`);
   } else {
     const eol = current.includes("\r\n") ? "\r\n" : "\n";
-    writeFileSync(
-      readmePath,
-      Buffer.concat([readme.subarray(0, start), Buffer.from(expected.replace(/\n/g, eol)), readme.subarray(end)]),
-    );
+    writeFileSync(path,
+      Buffer.concat([file.subarray(0, start), Buffer.from(expected.replace(/\n/g, eol)), file.subarray(end)]));
   }
 }
 
@@ -438,8 +504,7 @@ function checkNoHardcodedInstallPath(path, text) {
   });
 }
 
-function checkReadmeSkillList(root, skillNames) {
-  const readmePath = join(root, "README.md");
+function checkReadmeSkillList(readmePath, skillNames, checkCatalog) {
   if (!existsSync(readmePath)) {
     fail(`Missing README.md: ${readmePath}`);
     return;
@@ -457,7 +522,14 @@ function checkReadmeSkillList(root, skillNames) {
   const namePattern = /^-\s*\[`([a-z0-9-]+)`\]\(skills\/([a-z0-9-]+)\/\)/;
   for (const line of lines.slice(start + 1, end)) {
     const match = line.match(namePattern);
-    if (match) listed.add(match[2]);
+    if (!match) continue;
+    const name = match[2];
+    if (checkCatalog && (listed.has(name) ||
+        !line.startsWith(`${match[0]} ([Install](docs/install.md#${name})) - `) ||
+        line.split("[Install]").length !== 2)) {
+      fail(`README skill ${name} must have one matching Install action: ${readmePath}`);
+    }
+    listed.add(name);
   }
   for (const name of skillNames) {
     if (!listed.has(name)) fail(`README Skills section missing skill ${name}: ${readmePath}`);
@@ -498,6 +570,7 @@ for (const entry of entries) {
   }
   validated.set(entry.name, {
     path: skillPath,
+    compatibility: fields.compatibility,
     files: walk(skillRoot).filter((path) => path.endsWith(".md")),
     requires: tokens(metadata.requires),
     uses: tokens(metadata.uses),
@@ -545,7 +618,12 @@ for (const entry of entries) {
 }
 
 const skillNames = entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name);
-checkReadmeSkillList(root, skillNames);
+const readmePath = join(root, "README.md");
+const packsRoot = join(root, "packs");
+const recipePath = join(root, "docs", "install.md");
+const checkCatalog = existsSync(packsRoot) || existsSync(recipePath) ||
+  (existsSync(readmePath) && readFileSync(readmePath, "utf8").includes("docs/install.md"));
+checkReadmeSkillList(readmePath, skillNames, checkCatalog);
 
 for (const { files } of validated.values()) {
   for (const file of files) {
@@ -565,7 +643,10 @@ for (const file of existsSync(skillsRoot) ? walk(skillsRoot) : []) {
   }
 }
 
-checkInstallTable(join(root, "README.md"), validated);
+if (checkCatalog) {
+  const packs = checkPacks(packsRoot, validated);
+  checkInstallRecipes(recipePath, validated, packs);
+}
 
 if (errors.length) {
   for (const error of errors) process.stderr.write(`${error}\n`);

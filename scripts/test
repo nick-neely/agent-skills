@@ -129,42 +129,90 @@ expect_broken 'Declared dependency helper is never named' skills/pointer/SKILL.m
 expect_broken 'Declared dependency outside is never named' skills/pointer/SKILL.md '`sample/tools@outside`' 'that outside tool'
 expect_broken 'Skill names undeclared skill sample/tools@outside' skills/pointer/SKILL.md \
   'uses: helper manual sample/tools@outside' 'uses: helper manual'
-expect_broken 'README install table is stale' README.md '`manual helper`' '`manual`'
-expect_broken 'README install table is stale' skills/pointer/SKILL.md \
-  'uses: helper manual sample/tools@outside' 'requires: sample/tools@outside\n  uses: helper manual'
-expect_broken 'README lacks the generated install table' README.md '<!-- install-commands:start -->' ''
-expect_broken 'README has more than one install table' README.md \
+expect_broken 'README skill manual must have one matching Install action' README.md \
+  ' ([Install](docs/install.md#manual))' ''
+expect_broken 'README skill manual must have one matching Install action' README.md \
+  'docs/install.md#manual' 'docs/install.md#helper'
+expect_broken 'README skill manual must have one matching Install action' README.md \
+  'A user-invoked skill' '[Install](docs/install.md#manual) A user-invoked skill'
+expect_broken 'Invalid Pack manifest:' packs/manual.json '"members":' '"members"'
+expect_broken 'Invalid Pack manifest fields' packs/manual.json '"members"' '"skills"'
+expect_broken 'Invalid Pack member list' packs/manual.json '"helper"' '"../helper"'
+expect_broken 'Duplicate Pack member' packs/manual.json '"helper"' '"manual"'
+expect_broken 'Invalid Skills.sh Pack URL' packs/pointer.json 'https://www.skills.sh/p/' 'https://example.com/p/'
+expect_broken 'Duplicate Skills.sh Pack URL' packs/manual.json '"members":' \
+  '"url": "https://skills.sh/p/0x2mHeVLAzYD2i8y", "members":'
+expect_broken 'Pack is missing member helper' packs/manual.json ',\n      "helper"' ''
+expect_broken 'Pack is missing member sample/tools@outside' packs/pointer.json \
+  ',\n    "sample/tools": [\n      "outside"\n    ]' ''
+expect_broken 'Unexpected Pack member wrong/tools@outside' packs/pointer.json '"sample/tools"' '"wrong/tools"'
+expect_broken 'Pack omission must name a conditional companion' packs/manual.json '"members":' \
+  '"omit": {"helper": "out of scope"}, "members":'
+expect_broken 'Pack omission must name a conditional companion' packs/pointer.json '"members":' \
+  '"omit": {"sample/tools@outside": ""}, "members":'
+expect_broken 'Pack omission must name a conditional companion' packs/pointer.json '"members":' \
+  '"omit": {"extra": "out of scope"}, "members":'
+expect_broken 'Pack omission must name a conditional companion' packs/pointer.json \
+  '"members": {\n    "nick-neely/agent-skills": [\n      "pointer",\n      "helper",' \
+  '"omit": {"helper": "skip helper"}, "members": {\n    "nick-neely/agent-skills": [\n      "pointer",'
+expect_broken 'Install recipes are stale' docs/install.md 'manual helper' 'manual'
+expect_broken 'Install recipes lack generation markers' docs/install.md '<!-- install-commands:start -->' ''
+expect_broken 'Install recipes have duplicate generation markers' docs/install.md \
   '<!-- install-commands:end -->' '<!-- install-commands:end -->\n<!-- install-commands:start -->\n<!-- install-commands:end -->'
 
-# --write-install repairs a stale table, touches nothing outside the markers,
-# and refuses to write from declarations that fail another check.
+check_broken_layout() {
+  local expected=$1
+  local fixture="$temporary/broken-install-$(basename "$2")"
+  cp -R "$repo/tests/fixtures/names-user-invoked-skill" "$fixture"
+  rm "$fixture/$2"
+  if node "$repo/scripts/validate-skills.mjs" "$fixture" >/dev/null 2>"$temporary/stderr"; then
+    printf 'Install fixture missing %s unexpectedly passed: %s\n' "$2" "$fixture" >&2
+    exit 1
+  fi
+  grep -Fq "$expected" "$temporary/stderr"
+}
+# Exercise missing files independently from dependency and syntax failures.
+check_broken_layout 'Missing workflow Pack manifest' packs/manual.json
+check_broken_layout 'Missing install recipes' docs/install.md
+extra_pack="$temporary/extra-pack"
+cp -R "$repo/tests/fixtures/names-user-invoked-skill" "$extra_pack"
+cp "$extra_pack/packs/manual.json" "$extra_pack/packs/extra.json"
+if node "$repo/scripts/validate-skills.mjs" "$extra_pack" >/dev/null 2>"$temporary/stderr"; then
+  printf 'A standalone skill with a Pack unexpectedly passed\n' >&2
+  exit 1
+fi
+grep -Fq 'Unexpected Pack manifest' "$temporary/stderr"
+
+# --write-install repairs stale recipes, touches nothing outside the markers,
+# and refuses to write from a catalog that fails another check.
 write_fixture="$temporary/write-install"
 cp -R "$repo/tests/fixtures/names-user-invoked-skill" "$write_fixture"
-# The first line ends in CRLF and holds a byte that is not valid UTF-8, so a
-# rewrite that normalized or re-encoded the file would change bytes outside
-# the table.
 node -e '
   const fs = require("node:fs");
   const [path, expected] = process.argv.slice(1);
-  const text = fs.readFileSync(path, "utf8").replaceAll("\r\n", "\n");
+  const text = fs.readFileSync(path, "utf8").replace(/\r?\n/g, "\r\n");
   const head = Buffer.concat([Buffer.from("caf"), Buffer.from([0xe9]), Buffer.from("\r\n")]);
   fs.writeFileSync(expected, Buffer.concat([head, Buffer.from(text)]));
-  fs.writeFileSync(path, Buffer.concat([head, Buffer.from(text.replace("`manual helper`", "`manual`"))]));
-' "$write_fixture/README.md" "$temporary/write-install-expected.md"
+  fs.writeFileSync(path, Buffer.concat([head, Buffer.from(text.replace("manual helper", "manual"))]));
+' "$write_fixture/docs/install.md" "$temporary/write-install-expected.md"
 node "$repo/scripts/validate-skills.mjs" --write-install "$write_fixture" >/dev/null
-cmp -s "$write_fixture/README.md" "$temporary/write-install-expected.md"
+cmp -s "$write_fixture/docs/install.md" "$temporary/write-install-expected.md"
 node -e '
   const fs = require("node:fs");
-  const [readme, skill] = process.argv.slice(1);
-  fs.writeFileSync(readme, fs.readFileSync(readme, "utf8").replace("`manual helper`", "`manual`"));
+  const [recipes, skill] = process.argv.slice(1);
+  fs.writeFileSync(recipes, fs.readFileSync(recipes, "utf8").replace("manual helper", "manual"));
   fs.writeFileSync(skill, fs.readFileSync(skill, "utf8").replace("uses: helper", "uses: helper missing"));
-' "$write_fixture/README.md" "$write_fixture/skills/pointer/SKILL.md"
+' "$write_fixture/docs/install.md" "$write_fixture/skills/pointer/SKILL.md"
 if node "$repo/scripts/validate-skills.mjs" --write-install "$write_fixture" >/dev/null 2>"$temporary/stderr"; then
-  printf '%s\n' 'Install table was written from failing declarations' >&2
+  printf 'Install recipes were written from failing declarations\n' >&2
   exit 1
 fi
-grep -Fq 'README install table was not written' "$temporary/stderr"
-grep -Fq '| `manual` | `manual` |' "$write_fixture/README.md"
+grep -Fq 'Install recipes were not written' "$temporary/stderr"
+grep -Fq 'npx skills add nick-neely/agent-skills --global --skill manual' "$write_fixture/docs/install.md"
+if grep -Fq 'npx skills add nick-neely/agent-skills --global --skill manual helper' "$write_fixture/docs/install.md"; then
+  printf 'Stale install command was overwritten despite invalid catalog\n' >&2
+  exit 1
+fi
 expect_invalid empty-folded-description 'Folded description requires indented content'
 expect_invalid overlong-folded-description 'Frontmatter description exceeds 1024 characters'
 expect_invalid quoted-overlong-folded-description 'Frontmatter description exceeds 1024 characters'

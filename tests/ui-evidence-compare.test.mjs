@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 
 import assert from "node:assert/strict";
+import { isUtf8 } from "node:buffer";
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -13,13 +14,15 @@ import {
   sectionMarkdown, segmentCrosses, suggestCrops, unnamedMeasurements,
 } from "../skills/ui-evidence/scripts/comparison-layout.mjs";
 
+import { writeBundledFont } from "../skills/ui-evidence/scripts/bundled-font.mjs";
+
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const scripts = join(repo, "skills", "ui-evidence", "scripts");
+const skillRoot = join(repo, "skills", "ui-evidence");
+const scripts = join(skillRoot, "scripts");
 const compareScript = join(scripts, "compare.mjs");
 const anchorsScript = join(scripts, "anchors.mjs");
 const regionsScript = join(scripts, "regions.mjs");
 const reference = join(repo, "skills", "ui-evidence", "references", "comparisons.md");
-const font = join(repo, "skills", "ui-evidence", "assets", "DejaVuSans.ttf");
 const temp = mkdtempSync(join(tmpdir(), "ui-evidence-compare-test-"));
 after(() => rmSync(temp, { recursive: true, force: true }));
 
@@ -103,11 +106,11 @@ function frames(gif) {
 
 const sha = (path) => createHash("sha256").update(readFileSync(path)).digest("hex");
 
-function compare(dir, spec) {
+function compare(dir, spec, script = compareScript) {
   const specPath = join(dir, "spec.json");
   writeFileSync(specPath, JSON.stringify(spec, null, 2));
   const out = join(dir, "out");
-  const result = spawnSync(process.execPath, [compareScript, "--spec", specPath, "--out-dir", out], { encoding: "utf8" });
+  const result = spawnSync(process.execPath, [script, "--spec", specPath, "--out-dir", out], { encoding: "utf8" });
   return { ...result, out, result: result.status === 0 ? JSON.parse(result.stdout) : null };
 }
 
@@ -575,8 +578,24 @@ test("generated Markdown neutralizes media syntax in explanations and keeps alt 
 // ---------------------------------------------------------------------------
 // Rendered comparisons
 
-test("the combined image keeps labelled panels at one scale with exact crop transforms", media, () => {
+test("a text-only Pack copy renders labelled panels at one scale with exact crop transforms", media, () => {
   const dir = caseDir();
+  const installed = join(dir, "installed skill");
+  cpSync(skillRoot, installed, {
+    recursive: true,
+    filter: (path) => {
+      const info = statSync(path);
+      if (info.isDirectory()) return true;
+      if (info.size > 2_000_000) return false;
+      const content = readFileSync(path);
+      return isUtf8(content) && !content.includes(0);
+    },
+  });
+  assert.ok(existsSync(join(installed, "assets", "DejaVuSans-LICENSE.txt")));
+  assert.ok(!existsSync(join(installed, "assets", "DejaVuSans.ttf")));
+  const preflight = spawnSync(process.execPath,
+    [join(installed, "scripts", "preflight.mjs"), "--compare", "--json"], { encoding: "utf8" });
+  assert.equal(preflight.status, 0, preflight.stdout + preflight.stderr);
   cardPair(dir);
   const before = join(dir, "before.png");
   const afterImage = join(dir, "after.png");
@@ -587,7 +606,7 @@ test("the combined image keeps labelled panels at one scale with exact crop tran
     layout: "side-by-side",
     crop: [20, 10, 200, 120],
     callouts: [{ id: 3, text: "The card moved 30 px right.", before: [40, 30, 60, 40], after: [70, 30, 60, 40] }],
-  });
+  }, join(installed, "scripts", "compare.mjs"));
   assert.equal(run.status, 0, run.stderr);
   const { comparison } = run.result;
   assert.equal(comparison.layout, "side-by-side");
@@ -740,6 +759,7 @@ test("the onion skin blends after over before at the requested opacity in regist
 test("redaction reaches every derived comparison, crop, zoom, flip frame, and overlay", media, () => {
   for (const style of ["pixelate", "block"]) {
     const dir = caseDir();
+    const font = writeBundledFont(dir);
     const secret = ["-fill", "#00ff00", "-font", font, "-pointsize", "22", "-annotate", "+202+172", "SECRET"];
     image(join(dir, "before.png"), 300, 200, [{ color: "#ff0000", rect: [40, 30, 60, 40] }], secret);
     image(join(dir, "after.png"), 300, 200, [{ color: "#0000ff", rect: [70, 30, 60, 40] }], secret);
@@ -869,6 +889,7 @@ const near = (a, b) => a.every((value, index) => Math.abs(value - b[index]) <= 4
 
 test("clean, pin-only, and emphasised comparisons keep targets, neighbours, and redaction intact in both layouts", media, () => {
   const dir = caseDir();
+  const font = writeBundledFont(dir);
   // A settings toolbar: account text, Save, and an unannotated Cancel button,
   // then an unannotated heading with a new badge just below it in the after
   // state, and a secret in an unrelated corner that must be redacted.

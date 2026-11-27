@@ -2,11 +2,8 @@
 // Report dependencies for the requested operation without changing the machine.
 
 import { spawnSync } from "node:child_process";
-import { existsSync, writeSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-
-const FONT_PATH = join(resolve(dirname(fileURLToPath(import.meta.url)), ".."), "assets", "DejaVuSans.ttf");
+import { writeSync } from "node:fs";
+import { readBundledFont } from "./bundled-font.mjs";
 
 const HELP = `preflight.mjs - verify dependencies for the requested UI evidence operation
 
@@ -220,9 +217,12 @@ if (["annotate", "compare"].includes(mode) || annotations) {
     missingHint(magick.result, "imagemagick"));
 }
 if (["prepare", "annotate", "compare"].includes(mode)) {
-  const font = existsSync(FONT_PATH);
-  add("bundled font", font, font ? "present" : "missing from the skill",
-    font ? null : "reinstall the skill; the font ships with it");
+  try {
+    readBundledFont();
+    add("bundled font", true, "present");
+  } catch (error) {
+    add("bundled font", false, error.message, "reinstall the skill; the font ships with it");
+  }
 }
 
 if (mode === "publish") {
