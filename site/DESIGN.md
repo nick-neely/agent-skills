@@ -18,17 +18,17 @@ colors:
   signal-light: "oklch(0.555 0.128 60)"
 typography:
   display:
-    fontFamily: "Bricolage Grotesque Variable, ui-sans-serif, system-ui, sans-serif"
+    fontFamily: "Bricolage Grotesque Variable, Bricolage Grotesque Fallback, ui-sans-serif, system-ui, sans-serif"
     fontWeight: 700
     lineHeight: 1.05
     letterSpacing: "-0.02em"
   body:
-    fontFamily: "Hanken Grotesk Variable, ui-sans-serif, system-ui, sans-serif"
+    fontFamily: "Hanken Grotesk Variable, Hanken Grotesk Fallback, ui-sans-serif, system-ui, sans-serif"
     fontSize: "1rem"
     fontWeight: 400
     lineHeight: 1.6
   mono:
-    fontFamily: "JetBrains Mono Variable, ui-monospace, SFMono-Regular, Menlo, monospace"
+    fontFamily: "JetBrains Mono Variable, JetBrains Mono Fallback, ui-monospace, SFMono-Regular, Menlo, monospace"
     fontSize: "0.875rem"
     fontWeight: 450
     lineHeight: 1.5
@@ -85,6 +85,9 @@ white. Surfaces step up one level (`surface-*`) for command blocks and cards;
 - **Bricolage Grotesque** for the display moment only: the hero line and page
   titles.
 - **Hanken Grotesk** for prose: summaries and rendered `SKILL.md` instructions.
+Each family has a metric-matched local fallback face (`<Family> Fallback`, in
+`site.css`) so text does not reflow when the web font arrives.
+
 - **JetBrains Mono** for navigation, skill names, commands, metadata, status
   tags and badges. Monospace is a deliberate developer-tool signal, not
   decoration.
