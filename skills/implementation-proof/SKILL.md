@@ -10,7 +10,7 @@ metadata:
 
 The method a calling workflow follows to implement a ticket or spec and show that it works. The caller supplies the ticket, the commit to compare against, and how open questions get answered. For a batch of a wide refactor that goes green only at a later ticket, the caller also names the tests that stand in for the required checks until that ticket. Fetching the ticket, the closing commit and delivery stay with the caller. When a skill this method requires is not installed, stop and name it instead of doing its work another way.
 
-The **required checks** are what the project's instructions say a change must pass before it is done, usually what its CI runs; without such instructions, the full test suite. While working, use the narrower checks the project offers, such as one test file or the tests affected by changed files. Name any required check the host cannot run as not run.
+The **required checks** are what the project's instructions say a change must pass before it is done; without such instructions, what its CI runs, and without CI, the full test suite. While working, use the narrower checks the project offers, such as one test file or the tests affected by changed files. A required check the host cannot run is named in the report as not run, with the reason; "the required checks pass" below means every one the host can run.
 
 ## 1. Say what you will prove
 
@@ -67,11 +67,11 @@ Done: the check has a result, or is recorded as not run with its blocker or defe
 
 Call the Skill tool with "comment-audit" in apply mode on the current change. Then call "code-review", passing the ticket and comparing against the caller's commit, with uncommitted work included.
 
-A round is one review and the fixes it prompts. When a round fixed something substantive, call "code-review" again on the whole change with those fixes, passing the findings they answer, until a round finds nothing substantive. Follow the project's review rules for how many rounds a change needs and when review stops; without them, stop after three rounds. When the rounds run out with a substantive finding open, report it rather than settling it yourself. Run the required checks once the last fix is in.
+A round is one review and the fixes it prompts. When a round fixed something substantive, call "code-review" again on the whole change with those fixes, passing the findings they answer, until a round finds nothing substantive. Follow the project's review rules for how many rounds a change needs and when review stops; without them, stop after three reviews. When the reviews run out, report any substantive finding still open, and any fix the last round made, as unreviewed, rather than settling either yourself. Run the required checks once the last fix is in.
 
 When a fix made after the runtime check changes what that check covered or what a user sees or does, check that fix at runtime too: by the skill's own recheck rule where one ran, otherwise by the row of step 1's table that fits the fix.
 
-Done: a review round found nothing substantive, or the rounds ran out with the open findings reported, and the required checks pass on the final code.
+Done: a review round found nothing substantive, or the reviews ran out with what is open or unreviewed reported, and the required checks pass on the final code.
 
 ## 5. Report
 
