@@ -19,6 +19,9 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / "skills" / "jira-acli" / "scripts"
+# Cached bytecode embeds absolute paths, which validate rejects under skills/.
+# The runner passes -I, so PYTHONDONTWRITEBYTECODE would be ignored.
+sys.dont_write_bytecode = True
 
 
 def load(name):
