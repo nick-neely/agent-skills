@@ -56,6 +56,8 @@ rewrite in `rewrites` never applies to a path that has a file:
   whose `Accept` header mentions `text/markdown` with their `.md` twin
   (`/index.md` for the home page). Both forms send `Vary: Accept`, and the
   HTML sends a `Link` to its Markdown twin.
+- The `hit` phase adds the canonical `Link` to skill Markdown after Vercel
+  resolves an existing file. Direct `.md` requests get it too.
 - Response headers live in `routes` as `continue` rules, not in `headers`:
   Vercel appends `headers` after every route, which would put them in the
   error phase below.
