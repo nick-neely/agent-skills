@@ -51,7 +51,7 @@ Communication to and from subagents should be sparse. Communicate primarily thro
 
 7. **Check the whole.** Run the runtime check step 2 chose for the criteria that span tickets once, on a build of the top of the integration branch, calling `uat` or `flow-walk` yourself as the one who built the change, as `implementation-proof` does, not through a delegate. Then call the Skill tool with "code-review": for one pull request on the integration branch against step 1's commit, passing the spec; for a stack on each layer against its parent's tip, passing that layer's tickets as what it must satisfy and the spec and layer map as context. Criteria that span layers are judged at the top layer.
 
-   Fix every substantive finding from either in a fresh implementer subagent that follows the method for the fixes, up to its review: the next review round covers them. A fix goes on the layer that owns the code it changes; rebase the layers above it with the `gh-stack` skill and run the required checks at each layer. When a fix changes what this step's runtime check covered, run that check again on the top layer's build.
+   Fix every substantive finding from either in a fresh implementer subagent that follows the method for the fixes through its comment audit; the next review round covers them. A fix goes on the layer that owns the code it changes; rebase the layers above it with the `gh-stack` skill and run the required checks at each layer. When a fix changes what this step's runtime check covered, run that check again on the top layer's build.
 
    Review each fixed layer again, or the integration branch for one pull request, in rounds as the method's step 4 counts them, until a round finds nothing substantive or the rounds run out.
 
