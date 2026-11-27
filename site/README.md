@@ -141,9 +141,10 @@ unchanged under its MIT license; see its README before touching it.
 ## Analytics
 
 Page views use Vercel Web Analytics' plain script, loaded only on deployed
-hosts. Each successful copy sends a `Copy install` event with the skill, scope
-and kind, or a `Copy setup prompt` event. No cookies. Custom events need a Vercel plan that includes them;
-sending one without it is harmless.
+hosts. Each successful copy sends a `Copy install` event with the skill and
+scope, or a `Copy setup prompt` event. No cookies. The Pro plan's custom events
+allow two properties, so the event sends no more than that; the skill's kind
+follows from its name.
 
 ## Design tooling
 

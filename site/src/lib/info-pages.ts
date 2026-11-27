@@ -68,7 +68,7 @@ Page views are counted with [Vercel Web Analytics](https://vercel.com/docs/analy
 
 The site also sends two events when a copy succeeds:
 
-- \`Copy install\`, with the skill's name, the scope you chose (global or project) and whether it is a workflow, a skill or a shared method.
+- \`Copy install\`, with the skill's name and the scope you chose (global or project).
 - \`Copy setup prompt\`, with no other data.
 
 The copied text itself is never sent. Analytics loads only on the deployed site, never on a local copy.

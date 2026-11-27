@@ -87,7 +87,7 @@ function copied(button: HTMLElement): Copied | undefined {
     return {
       text: commandText(target(install), scope, agentsOf(install)),
       message: `Copied the install command for ${install.dataset.name}.`,
-      event: { name: "Copy install", data: { skill: install.dataset.name ?? "", scope, kind: install.dataset.kind ?? "" } },
+      event: { name: "Copy install", data: { skill: install.dataset.name ?? "", scope } },
     };
   }
   const snippet = button.closest<HTMLElement>("[data-snippet]");
