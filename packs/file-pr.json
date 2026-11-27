@@ -1,0 +1,17 @@
+{
+  "members": {
+    "nick-neely/agent-skills": [
+      "file-pr",
+      "ui-evidence",
+      "babysit-pr",
+      "leaving-pr-comments"
+    ],
+    "github/gh-stack": [
+      "gh-stack"
+    ],
+    "openai/skills": [
+      "gh-fix-ci"
+    ]
+  },
+  "url": "https://www.skills.sh/p/nJ7ZVhO8kJF9tqFk"
+}

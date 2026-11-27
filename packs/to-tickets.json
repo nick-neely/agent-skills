@@ -1,0 +1,22 @@
+{
+  "members": {
+    "nick-neely/agent-skills": [
+      "to-tickets",
+      "implement",
+      "implement-spec",
+      "implementation-proof",
+      "code-review",
+      "uat",
+      "flow-walk",
+      "tdd",
+      "comment-audit"
+    ],
+    "mattpocock/skills": [
+      "setup-matt-pocock-skills"
+    ],
+    "github/gh-stack": [
+      "gh-stack"
+    ]
+  },
+  "url": "https://www.skills.sh/p/xum4OqFIZwHBH5C4"
+}

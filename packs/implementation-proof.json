@@ -1,0 +1,16 @@
+{
+  "members": {
+    "nick-neely/agent-skills": [
+      "implementation-proof",
+      "tdd",
+      "comment-audit",
+      "code-review",
+      "uat",
+      "flow-walk"
+    ],
+    "github/gh-stack": [
+      "gh-stack"
+    ]
+  },
+  "url": "https://www.skills.sh/p/Dp6CO7JxutUjpPvF"
+}

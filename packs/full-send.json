@@ -1,0 +1,25 @@
+{
+  "members": {
+    "nick-neely/agent-skills": [
+      "full-send",
+      "implementation-proof",
+      "sol-loop",
+      "file-pr",
+      "babysit-pr",
+      "tdd",
+      "comment-audit",
+      "code-review",
+      "ui-evidence",
+      "uat",
+      "flow-walk",
+      "leaving-pr-comments"
+    ],
+    "openai/skills": [
+      "gh-fix-ci"
+    ]
+  },
+  "omit": {
+    "github/gh-stack@gh-stack": "This workflow delivers one pull request against the default branch. Stacked pull request paths in its shared helpers do not apply."
+  },
+  "url": "https://www.skills.sh/p/RXPZKgoV9ofJFUO8"
+}

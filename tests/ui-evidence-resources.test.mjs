@@ -81,6 +81,7 @@ test("annotations isolate concurrent sessions and close their own session after 
     writeFileSync(join(sessions, "capture-session"), "keep this session");
     writeFileSync(preload, String.raw`
       import cp from "node:child_process";
+      import { createHash } from "node:crypto";
       import { appendFileSync, readFileSync, rmSync, writeFileSync } from "node:fs";
       import { join } from "node:path";
       import { syncBuiltinESMExports } from "node:module";
@@ -109,6 +110,12 @@ test("annotations isolate concurrent sessions and close their own session after 
         else if (command === "screenshot") {
           if (process.env.FAKE_FAIL_SHOT === "1") throw new Error("simulated screenshot failure");
           const html = readFileSync(readFileSync(session, "utf8"), "utf8");
+          const [, fontUrl] = html.match(/src: url\("([^"]+)"\) format\("truetype"\)/);
+          const font = readFileSync(fileURLToPath(fontUrl));
+          const hash = createHash("sha256").update(font).digest("hex");
+          if (hash !== "58568c88a01b80dfc056daca3eeafd434a0380df1a48dda53f0de0d716109bbd") {
+            throw new Error("annotation HTML must use the original DejaVu Sans font bytes");
+          }
           writeFileSync(args.at(-1), html);
         } else if (command === "close") rmSync(session, { force: true });
         else throw new Error("unexpected browser command " + command);

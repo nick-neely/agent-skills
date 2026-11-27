@@ -2,7 +2,7 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -11,9 +11,18 @@ import test from "node:test";
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const preflight = join(repo, "skills", "ui-evidence", "scripts", "preflight.mjs");
 
-function fixture(settings = {}) {
+function fixture(settings = {}, fontFile) {
   const root = mkdtempSync(join(tmpdir(), "ui-evidence-preflight-test-"));
   const preload = join(root, "tool-boundary.mjs");
+  let entry = preflight;
+  if (fontFile !== undefined) {
+    const staged = join(root, "staged");
+    cpSync(resolve(dirname(preflight), ".."), staged, { recursive: true });
+    entry = join(staged, "scripts", "preflight.mjs");
+    const fontPath = join(staged, "assets", "DejaVuSans.ttf.base64.txt");
+    if (fontFile === null) rmSync(fontPath);
+    else writeFileSync(fontPath, fontFile);
+  }
   writeFileSync(preload, String.raw`
     import cp from "node:child_process";
     import { appendFileSync } from "node:fs";
@@ -53,7 +62,7 @@ function fixture(settings = {}) {
     syncBuiltinESMExports();
   `);
   return {
-    run: (...args) => spawnSync(process.execPath, [preflight, ...args], {
+    run: (...args) => spawnSync(process.execPath, [entry, ...args], {
       encoding: "utf8",
       env: {
         ...process.env,
@@ -310,6 +319,22 @@ test("annotation preflight requires ImageMagick and the bundled font", () => {
     assert.equal(report.checks.some((check) => check.name === "gh authentication"), false);
   } finally {
     tools.cleanup();
+  }
+});
+
+test("preflight diagnoses missing and corrupted Pack font payloads", () => {
+  for (const [font, message] of [[null, /missing from the skill/], ["AA==", /failed its integrity check/]]) {
+    const tools = fixture({ media: true }, font);
+    try {
+      const result = tools.run("--compare", "--json");
+      assert.equal(result.status, 1, result.stdout + result.stderr);
+      const check = JSON.parse(result.stdout).checks.find((item) => item.name === "bundled font");
+      assert.equal(check.ok, false);
+      assert.match(check.detail, message);
+      assert.match(check.fix, /reinstall the skill/);
+    } finally {
+      tools.cleanup();
+    }
   }
 });
 

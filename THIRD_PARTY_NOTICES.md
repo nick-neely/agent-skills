@@ -152,7 +152,8 @@ My changes to the UI method:
 
 ## DejaVu Sans
 
-`skills/ui-evidence/assets/DejaVuSans.ttf` is part of the
+`skills/ui-evidence/assets/DejaVuSans.ttf.base64.txt` ships the original TrueType
+font as text so it survives Pack hosting. The font is part of the
 [DejaVu fonts](https://dejavu-fonts.github.io/). DejaVu's own changes are in the
 public domain; the underlying glyphs are covered by the Bitstream Vera and Arev
 copyrights. The full license is at

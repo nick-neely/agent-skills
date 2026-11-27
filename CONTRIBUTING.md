@@ -98,13 +98,59 @@ letter is read as a call to a skill, so keep shell variables inside code. The va
 named but not declared, a declared skill that does not exist, a declaration
 the skill never names, and a `requires` cycle.
 
-The README's install table is generated from those declarations. After
-changing one, run `node scripts/validate-skills.mjs --write-install` and commit
-the result; a stale table fails validation.
-
 When two skills need the same method, put it in a model-invoked skill whose
 description names its callers and list it under "Shared methods" in the
 README.
+
+## Workflow Packs and install recipes
+
+Every catalog entry in the README links to its recipe in
+[docs/install.md](docs/install.md). Standalone skills install by name. A
+skill with dependencies has a manifest at `packs/<skill-name>.json`, with
+`members` grouped by their source repository. Include the entry skill and
+every reachable required or conditional companion. When the workflow rules
+exclude a conditional path, record the omitted skill and the reason in
+`omit`. Use `owner/repo@skill` for an external omission.
+
+When a skill's dependencies change, review the manifests of workflows that
+reach it, then regenerate the recipes.
+
+```sh
+node scripts/validate-skills.mjs --write-install
+```
+
+For a release, import only the manifest's members into the team-owned
+[Skills.sh Pack builder](https://www.skills.sh/docs/packs#create-a-pack).
+To upload the local members from the release commit, run the following from
+the repository root with the appropriate workflow name and Git ref.
+
+```bash
+(
+  set -euo pipefail
+  workflow=full-stop
+  ref=HEAD
+  commit=$(git rev-parse --verify "$ref^{commit}")
+  stage=$(mktemp -d)
+  git show "$commit:packs/$workflow.json" |
+    node -p 'JSON.parse(require("node:fs").readFileSync(0, "utf8")).members["nick-neely/agent-skills"].join("\n")' |
+    while IFS= read -r name; do
+      git archive "$commit" "skills/$name" | tar -xf - -C "$stage"
+      git show "$commit:LICENSE" > "$stage/skills/$name/REPOSITORY-LICENSE.txt"
+    done
+  printf '%s\n' "$stage/skills"
+)
+```
+
+Choose the staged skills folder and add the external members from their catalog
+entries. For later releases, open **Edit skills in pack** on the existing
+Pack. Remove each changed upload, add its updated files, and save the edit.
+The builder omits
+binary files and files larger than 2 MB. Verify the public index at the Pack
+URL plus `/.well-known/skills/index.json` and a fresh project install against
+the manifest, including the lock's recorded sources. After verification, save
+the Pack page as `url` in its manifest and regenerate. If a release adds a
+member, tell existing users to rerun the install command. If it retires a
+member, identify the skill users can remove.
 
 ## Before you open a PR
 

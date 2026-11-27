@@ -14,15 +14,12 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { writeBundledFont } from "./bundled-font.mjs";
 import {
   DEFAULT_DISPLAY_WIDTH, PALETTE, anchorToImageRect, asArray, changedBounds, chooseLayout, chromeFor, contains,
   detailWindows, intersect, pixelSurface, planComparison, rectFrom, sectionMarkdown, snapOut, unnamedMeasurements,
 } from "./comparison-layout.mjs";
 import { CHROME, argumentBatches, geometry, imText, numberedPinArgs, textMeasurer } from "./magick-args.mjs";
-
-const SKILL_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const FONT_PATH = join(SKILL_ROOT, "assets", "DejaVuSans.ttf");
 
 const HELP = `compare.mjs - compose a readable before/after comparison
 
@@ -65,6 +62,7 @@ function parseArgs(argv) {
 }
 
 let magickBinary;
+let fontPath;
 
 function resolveMagick() {
   const candidates = process.platform === "win32" ? ["magick"] : ["magick", "convert"];
@@ -113,7 +111,7 @@ function imageSize(path) {
   return imageSizes.get(path);
 }
 
-const makeMeasure = () => textMeasurer(magick, FONT_PATH);
+const makeMeasure = () => textMeasurer(magick, fontPath);
 const sameSize = (a, b) => a.width === b.width && a.height === b.height;
 const roundPx = (value) => Math.round(value * 10) / 10;
 const formatPx = (value) => `${roundPx(value)} px`;
@@ -236,10 +234,10 @@ function cropJob(panel, window, zoom, out) {
   return { args, out, size };
 }
 
-const pinArgs = (id, color, chrome) => numberedPinArgs(id, color, chrome, FONT_PATH);
+const pinArgs = (id, color, chrome) => numberedPinArgs(id, color, chrome, fontPath);
 
 const labelArgs = (text, pointsize, background, color) =>
-  ["-background", background, "-fill", color, "-stroke", "none", "+size", "-font", FONT_PATH,
+  ["-background", background, "-fill", color, "-stroke", "none", "+size", "-font", fontPath,
     "-pointsize", String(pointsize), `label:${imText(text)}`];
 
 const pillArgs = (text, color, chrome) =>
@@ -486,7 +484,6 @@ function main() {
   const specDir = dirname(specPath);
 
   magickBinary = resolveMagick();
-  if (!existsSync(FONT_PATH)) die(`bundled font missing: ${FONT_PATH}`);
 
   primeImageSizes(["before", "after"].map((key) => panelImage(spec, key, specDir)));
   const panels = { before: loadPanel(spec, "before", specDir), after: loadPanel(spec, "after", specDir) };
@@ -615,10 +612,11 @@ function main() {
   }
 
   const outDir = resolve(options.outDir);
-  mkdirSync(outDir, { recursive: true });
   const temp = mkdtempSync(join(tmpdir(), "ui-evidence-compare-"));
-  const measure = makeMeasure();
   try {
+    fontPath = writeBundledFont(temp);
+    mkdirSync(outDir, { recursive: true });
+    const measure = makeMeasure();
     for (const panel of Object.values(panels)) panel.source = redact(panel, redactions[panel.key], temp);
     findFocus(callouts, panels);
 

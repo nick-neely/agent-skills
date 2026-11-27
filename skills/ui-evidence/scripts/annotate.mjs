@@ -14,10 +14,9 @@ import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:
 import { readFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { pathToFileURL } from "node:url";
+import { writeBundledFont } from "./bundled-font.mjs";
 
-const SKILL_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const FONT_PATH = join(SKILL_ROOT, "assets", "DejaVuSans.ttf");
 const SESSION = `uie-ann-${randomUUID().replaceAll("-", "").slice(0, 12)}`;
 
 // One accent reads as deliberate. Rotating only kicks in when a single image
@@ -276,7 +275,6 @@ async function main() {
 
   const magick = resolveMagick();
   requireAgentBrowser();
-  if (!existsSync(FONT_PATH)) die(`bundled font missing: ${FONT_PATH}`);
 
   const temp = mkdtempSync(join(tmpdir(), "ui-evidence-annotation-"));
   const cleanup = () => {
@@ -285,6 +283,7 @@ async function main() {
   let sessionStarted = false;
 
   try {
+    const fontPath = writeBundledFont(temp);
     const annotations = Array.isArray(spec.annotations) ? spec.annotations : [];
     const crop = spec.crop ? { ...spec.crop, pad: spec.crop.pad ?? 0 } : null;
 
@@ -380,7 +379,7 @@ async function main() {
 <style>
   @font-face {
     font-family: "Bundled";
-    src: url("${pathToFileURL(FONT_PATH).href}") format("truetype");
+    src: url("${pathToFileURL(fontPath).href}") format("truetype");
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; background: #ffffff; }

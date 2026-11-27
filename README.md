@@ -9,15 +9,35 @@ machine.
 
 ## Install
 
-With the [`skills`](https://www.skills.sh) CLI:
+Choose **Install** beside a skill in the [catalog](#skills), then copy its
+[Skills CLI](https://www.skills.sh/docs/cli) command and select your agent. A
+workflow recipe includes the skills it calls, including companions for
+conditional paths. Standalone recipes install one skill.
 
-```sh
-npx skills add nick-neely/agent-skills --list          # see what's here
-npx skills add nick-neely/agent-skills --skill uat --global
-```
+The recipes use `--global` to install for your user across projects. For an
+install in just one project, run the command from that project and omit
+`--global` from every `add` line.
 
-Or install by hand: clone the repo and symlink the skill directory into your
-agent's skills directory (`~/.claude/skills/`, `~/.codex/skills/`, and so on).
+| To do this | Global | Project |
+| --- | --- | --- |
+| List installed skills | `npx skills list --global` | `npx skills list` |
+| Update installed skills | `npx skills update --global` | `npx skills update --project` |
+| Remove an installed skill | `npx skills remove --global <skill>` | `npx skills remove <skill>` |
+
+You can pass a skill name to `update` to refresh just that skill. An update
+uses the source recorded for each installed skill. A Pack install can use
+both upstream GitHub sources and files hosted by Skills.sh. Uploaded skills
+receive changes when the Pack owner publishes them. To pick up new members,
+rerun the catalog’s current install command in the original scope. Remove any
+retired members individually after checking whether another workflow uses
+them. [Skills CLI command reference](https://github.com/vercel-labs/skills/blob/main/docs/commands.md)
+
+<details>
+<summary>Manual install with symlinks</summary>
+
+Clone the repository and symlink each needed skill directory into your agent's
+skills directory. The [install recipes](docs/install.md) list the skill names
+and sources for each workflow.
 
 ```sh
 git clone https://github.com/nick-neely/agent-skills.git
@@ -25,98 +45,62 @@ mkdir -p ~/.claude/skills
 ln -s "$PWD/agent-skills/skills/uat" ~/.claude/skills/
 ```
 
-Skills that shell out have their own runtime dependencies, listed in each
-`SKILL.md`. `ui-evidence` checks its own up front with
-`scripts/preflight.mjs`.
-
-Some skills call others. The table below says what to install with each one;
-a skill with no row needs nothing else. Pass every name in a row's Install
-column to one command, and add the next column's names for the paths that use
-them, such as browser testing or screenshots:
-
-```sh
-npx skills add nick-neely/agent-skills --global --skill implement implementation-proof tdd comment-audit code-review
-```
-
-<!-- install-commands:start -->
-| Skill | Install | Add for the paths that use them | From other repositories |
-| --- | --- | --- | --- |
-| `babysit-pr` | `babysit-pr` | `leaving-pr-comments` | `openai/skills@gh-fix-ci` |
-| `file-pr` | `file-pr` | `ui-evidence babysit-pr leaving-pr-comments` | `github/gh-stack@gh-stack`, `openai/skills@gh-fix-ci` |
-| `full-send` | `full-send implementation-proof sol-loop file-pr babysit-pr tdd comment-audit code-review` | `ui-evidence uat flow-walk leaving-pr-comments` | `github/gh-stack@gh-stack`, `openai/skills@gh-fix-ci` |
-| `full-stop` | `full-stop full-send implementation-proof sol-loop file-pr babysit-pr tdd comment-audit code-review` | `ui-evidence uat flow-walk leaving-pr-comments` | `github/gh-stack@gh-stack`, `openai/skills@gh-fix-ci` |
-| `implement` | `implement implementation-proof tdd comment-audit code-review` | `uat flow-walk` | `github/gh-stack@gh-stack` |
-| `implement-spec` | `implement-spec implementation-proof code-review tdd comment-audit` | `uat flow-walk` | `github/gh-stack@gh-stack`, `mattpocock/skills@setup-matt-pocock-skills` |
-| `implementation-proof` | `implementation-proof tdd comment-audit code-review` | `uat flow-walk` | `github/gh-stack@gh-stack` |
-| `to-spec` | `to-spec` | - | `mattpocock/skills@setup-matt-pocock-skills` |
-| `to-tickets` | `to-tickets` | `implement implement-spec implementation-proof code-review uat flow-walk tdd comment-audit` | `mattpocock/skills@setup-matt-pocock-skills`, `github/gh-stack@gh-stack` |
-<!-- install-commands:end -->
-
-A name in the last column has the form `owner/repo@skill` and installs from
-that repository:
-
-```sh
-npx skills add github/gh-stack --global --skill gh-stack
-```
-
-The table is generated from each skill's `metadata` declarations, so it cannot
-drift from them. Tools a skill needs, such as the GitHub CLI or agent-browser,
-are on its `compatibility` line.
+</details>
 
 ## Skills
 
 ### Plan and implement
 
-- [`to-spec`](skills/to-spec/) - Synthesize the current conversation into a spec
+- [`to-spec`](skills/to-spec/) ([Install](docs/install.md#to-spec)) - Synthesize the current conversation into a spec
   and publish it to the issue tracker.
-- [`to-tickets`](skills/to-tickets/) - Break a spec or plan into tracer-bullet
+- [`to-tickets`](skills/to-tickets/) ([Install](docs/install.md#to-tickets)) - Break a spec or plan into tracer-bullet
   tickets that declare their blocking edges.
-- [`prototype`](skills/prototype/) - Answer a design question with throwaway
+- [`prototype`](skills/prototype/) ([Install](docs/install.md#prototype)) - Answer a design question with throwaway
   code: divergent UI variants behind a live picker, or candidate logic models
   run through scenarios with a recommendation.
-- [`implement`](skills/implement/) - Implement a ticket or spec through
+- [`implement`](skills/implement/) ([Install](docs/install.md#implement)) - Implement a ticket or spec through
   `implementation-proof`, asking any open question once up front, then commit.
-- [`implement-spec`](skills/implement-spec/) - Implement a whole spec from its
+- [`implement-spec`](skills/implement-spec/) ([Install](docs/install.md#implement-spec)) - Implement a whole spec from its
   ticket graph on one integration branch, a fresh implementer per ticket
   following `implementation-proof`, ready to file as one PR or a short stack.
-- [`tdd`](skills/tdd/) - Build test-first in red-green slices at agreed seams,
+- [`tdd`](skills/tdd/) ([Install](docs/install.md#tdd)) - Build test-first in red-green slices at agreed seams,
   with a reference on what makes a test worth keeping.
-- [`jira-acli`](skills/jira-acli/) - Read, plan, and update Jira work items through
+- [`jira-acli`](skills/jira-acli/) ([Install](docs/install.md#jira-acli)) - Read, plan, and update Jira work items through
   Atlassian ACLI, with Markdown conversion, backups, and verified description
   and link writes. Requires local Jira authentication and explicit write intent.
 
 ### Review and deliver
 
-- [`comment-audit`](skills/comment-audit/) - Review relevant comments and
+- [`comment-audit`](skills/comment-audit/) ([Install](docs/install.md#comment-audit)) - Review relevant comments and
   report a table of recommended actions. Request edits to apply them, as
   `implementation-proof` does before code review.
-- [`code-review`](skills/code-review/) - Review implementation changes against
+- [`code-review`](skills/code-review/) ([Install](docs/install.md#code-review)) - Review implementation changes against
   project standards and the spec, including callers outside the diff.
-- [`babysit-pr`](skills/babysit-pr/) - Monitor CI and review bots, address
+- [`babysit-pr`](skills/babysit-pr/) ([Install](docs/install.md#babysit-pr)) - Monitor CI and review bots, address
   findings, and stop within a bounded review budget.
-- [`file-pr`](skills/file-pr/) - Review the branch diff, reuse or open a PR
+- [`file-pr`](skills/file-pr/) ([Install](docs/install.md#file-pr)) - Review the branch diff, reuse or open a PR
   and attach warranted UI evidence. Without a repository template, the body
   leads with a summary and UI evidence, then merge danger, verification and
   decisions.
-- [`full-send`](skills/full-send/) - Implement an issue or spec through
+- [`full-send`](skills/full-send/) ([Install](docs/install.md#full-send)) - Implement an issue or spec through
   `implementation-proof`, then prove, file, babysit and merge.
-- [`full-stop`](skills/full-stop/) - Follow the same implementation and
+- [`full-stop`](skills/full-stop/) ([Install](docs/install.md#full-stop)) - Follow the same implementation and
   delivery workflow, leaving the PR ready for the user to merge.
-- [`leaving-pr-comments`](skills/leaving-pr-comments/) - Write and verify
+- [`leaving-pr-comments`](skills/leaving-pr-comments/) ([Install](docs/install.md#leaving-pr-comments)) - Write and verify
   evidence-backed GitHub comments and review replies.
-- [`sol-loop`](skills/sol-loop/) - Run bounded independent code review with
+- [`sol-loop`](skills/sol-loop/) ([Install](docs/install.md#sol-loop)) - Run bounded independent code review with
   Sol through explicit T3 or native reviewer routes.
 
 ### Test flows and prepare visuals
 
-- [`flow-walk`](skills/flow-walk/) - For a new or reshaped user flow, hand one
+- [`flow-walk`](skills/flow-walk/) ([Install](docs/install.md#flow-walk)) - For a new or reshaped user flow, hand one
   user goal to a fresh tester before code review, and sort its report on
   friction, copy weight and hierarchy.
-- [`uat`](skills/uat/) - Test acceptance criteria and explore user workflows
+- [`uat`](skills/uat/) ([Install](docs/install.md#uat)) - Test acceptance criteria and explore user workflows
   with agent-browser, retaining reproducible findings and responsive checks.
-- [`ui-evidence`](skills/ui-evidence/) - Capture, prepare, annotate, compare, and publish
+- [`ui-evidence`](skills/ui-evidence/) ([Install](docs/install.md#ui-evidence)) - Capture, prepare, annotate, compare, and publish
   UI screenshots and video into a pull request or issue.
-- [`generated-image-assets`](skills/generated-image-assets/) - Remove an image's
+- [`generated-image-assets`](skills/generated-image-assets/) ([Install](docs/install.md#generated-image-assets)) - Remove an image's
   background, verify the alpha edges, and size it for shipping.
 
 ### Shared methods
@@ -125,13 +109,10 @@ A shared method holds a discipline that several skills follow, so the rule
 lives in one place. You don't invoke one yourself: install it alongside the
 skills that name it.
 
-- [`implementation-proof`](skills/implementation-proof/) - The method behind
+- [`implementation-proof`](skills/implementation-proof/) ([Install](docs/install.md#implementation-proof)) - The method behind
   `implement`, `implement-spec`, `full-send` and `full-stop`: state what the
   work must prove, build it test-first, check it running when the change calls
   for it, then audit comments and review.
-
-Several workflows call separately installed skills. Read their `SKILL.md`
-before use; installing this collection does not install external skills or tools.
 
 See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for upstream sources,
 licenses, and customization notes.
