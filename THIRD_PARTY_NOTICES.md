@@ -98,8 +98,8 @@ cut at ticket boundaries, for the user to file.
 two reference files are unchanged apart from moving under `references/`. The
 skill takes seams a calling workflow has already settled instead of confirming
 them again, states the seam-placement rule itself in place of a call to the
-upstream `codebase-design` skill, runs only the test at hand each cycle and the
-affected tests once a slice is green, and names no other skill.
+upstream `codebase-design` skill, runs the smallest run that includes the test at
+hand each cycle and the affected tests once a slice is green, and names no other skill.
 
 `skills/implementation-proof` carries the method that grew out of that adapted
 skill and includes the same MIT license. It states what the work must prove
